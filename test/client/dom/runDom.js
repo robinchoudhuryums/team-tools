@@ -15170,8 +15170,8 @@ test('DQ1 DOM: a manager\'s Team table marks a rep with partial days beside the 
   assert.strictEqual(chips.length, 1, 'one rep has partial days');
   assert.ok(chips[0].textContent === '2 partial' && /Jo Tran/.test(chips[0].parentNode.textContent) && /Jun 12 \(0\.5 day\), Jun 9 \(not counted\)/.test(chips[0].getAttribute('title')), chips[0].outerHTML);
   const hints = () => Array.from(host.querySelectorAll('.m-hint')).map((n) => n.textContent);
-  assert.ok(hints().some((t) => /1 rep with partial days in this window — Jo Tran: Jun 12 \(0\.5 day\), Jun 9 \(not counted\)\. The figures in this table are not adjusted for them\./.test(t)),
-    'THE CAPABILITY: the days are text on the page, not only a hover — ' + hints().join(' | '));
+  assert.ok(hints().some((t) => /1 rep with partial days in this window — Jo Tran: Jun 12 \(0\.5 day\), Jun 9 \(not counted\)\. Ans \/ day counts each as its share; no count, rate or talk time is changed\./.test(t)),
+    'THE CAPABILITY: the days are text on the page, not only a hover (DS2: on a range the line names the one figure that counts them) — ' + hints().join(' | '));
   const tsv = h.read('mTeamTableTsv_')(data, 'reps', { key: 'repName', dir: 'asc' }).split('\n');
   assert.ok(/\tPartial days$/.test(tsv[0]) && /^Jo Tran\t.*\tJun 12 \(0\.5 day\), Jun 9 \(not counted\)$/.test(tsv.find((l) => /^Jo Tran/.test(l))) && /\t$/.test(tsv.find((l) => /^Ana Lopez/.test(l))), tsv.join(' / '));
   // No partial day in the window: no chip, no line, no column.
@@ -15354,4 +15354,99 @@ test('FR2 DOM: the time-off bulk bar — two selected, one approved and one refu
   assert.match(dlg.querySelector('.modal-title').textContent, /^1 request not approved$/);
   assert.match(dlg.querySelector('.ui-dialog-body').textContent, /1 approved\. Not approved:.*Sam Ortiz · 2026-12-01 — This request was already decided by another manager\./);
   assert.strictEqual(dlg.querySelectorAll('.ui-dialog-cancel').length, 0);
+});
+
+section('DOM harness — cycle 26 decisions, second round (DS1 a rep\'s confirm request, DS2 answered per credited day)');
+
+test('DS1 DOM: a rep\'s pay statement offers "Confirm Clock In" on a time set from app activity; the press asks first, then FILES a confirm request and reloads the statement — nothing is applied; a pending request takes the button away and shows on the day', async () => {
+  const h = boot(); h.bootShell();
+  const stmt = (adjustments) => ({ period: { start: '2026-11-01', end: '2026-11-30', cycle: 'Monthly', offset: 0 }, maxOffset: 6, pto: [], adjustments: adjustments || {}, totalHours: 9.1, daysWorked: 1,
+    days: [{ date: h.read('isoDateTz')(h.read('empTz')()), dayLabel: 'Today', hasData: true, clockIn: '07:56:23', clockOut: '17:00:00', infClockIn: true, infClockOut: false, hoursWorked: 9.1 }] });
+  const today = h.read('isoDateTz')(h.read('empTz')());
+  h.read('openPayStatement_')(0, '', '');
+  h.run.flushSuccess(stmt(), 'getMyPayStatement');
+  const body = () => h.document.getElementById('pay-stmt-body');
+  const btn = () => body().querySelector('.pay-stmt-confirm');
+  assert.ok(btn() && btn().textContent === 'Confirm Clock In', 'THE CAPABILITY: the rep can vouch for the inferred time — ' + body().textContent.slice(0, 200));
+  assert.deepStrictEqual([btn().getAttribute('data-cf-date'), btn().getAttribute('data-cf-type'), btn().getAttribute('data-cf-time')], [today, 'ClockIn', '07:56']);
+  assert.strictEqual(body().querySelectorAll('.pay-stmt-confirm').length, 1, 'the Clock Out was never inferred');
+  btn().click();
+  const dlg = h.$('.overlay.open.ui-dialog');
+  assert.ok(dlg && /Confirm this Clock In\?/.test(dlg.textContent) && /set by a manager from your app activity/.test(dlg.textContent) && /use Adjust to request the right time/.test(dlg.textContent), 'it asks first, and says what to do if the time is wrong');
+  assert.strictEqual(h.run.pending('submitPunchAdjustRequests').length, 0, 'nothing is sent before the rep agrees');
+  dlg.querySelector('.ui-dialog-ok').click();
+  await tick();
+  {
+    const call = h.run.pending('submitPunchAdjustRequests')[0];
+    assert.ok(call, 'the request is filed');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(call.args[0])), [{ date: today, time: '07:56', punchType: 'ClockIn', action: 'confirm', reason: '' }], 'THE RULE: a REQUEST for a manager — the same endpoint as an adjustment, never a write');
+    assert.strictEqual(h.run.calls.filter((c) => /managerSaveDay|recordPunch/.test(c.method)).length, 0);
+    h.run.flushSuccess({ success: true, count: 1 }, 'submitPunchAdjustRequests');
+    assert.match(Array.from(h.$$('#toast-stack .toast')).map((t) => t.textContent).join(' | '), /Sent to your manager — the time stays marked Inferred until they approve/);
+    // The statement reloads; the pending request shows under the day and the button is gone.
+    const adj = {}; adj[today] = [{ punchType: 'ClockIn', time: '07:56', action: 'confirm', status: 'Pending', reason: '', endTime: '' }];
+    h.run.flushSuccess(stmt(adj), 'getMyPayStatement');
+    assert.strictEqual(btn(), null, 'one open request per punch');
+    assert.match(body().textContent, /Adjustment: Confirm Clock in at .* as it is · Pending/);
+    assert.ok(body().querySelector('.punch-inf-chip'), 'and the time still reads Inferred — nothing has been approved');
+  }
+  // A refusal is said, and the button stays usable.
+  const h2 = boot(); h2.bootShell();
+  h2.read('openPayStatement_')(0, '', '');
+  h2.run.flushSuccess({ period: { start: '2026-11-01', end: '2026-11-30', cycle: 'Monthly', offset: 0 }, maxOffset: 6, pto: [], adjustments: {},
+    days: [{ date: h2.read('isoDateTz')(h2.read('empTz')()), dayLabel: 'Today', hasData: true, clockIn: '07:56:00', clockOut: '17:00:00', infClockIn: true, hoursWorked: 9 }] }, 'getMyPayStatement');
+  const b2 = h2.document.querySelector('#pay-stmt-body .pay-stmt-confirm');
+  b2.click();
+  h2.$('.overlay.open.ui-dialog .ui-dialog-ok').click();
+  await tick();
+  h2.run.flushSuccess({ success: false, error: 'Adjustment #1: The Clock In on that day is now 08:00, not the 07:56 this request confirms.' }, 'submitPunchAdjustRequests');
+  assert.match(Array.from(h2.$$('#toast-stack .toast')).map((t) => t.textContent).join(' | '), /is now 08:00, not the 07:56/);
+  assert.ok(!b2.disabled, 'the rep can try again after reloading');
+});
+
+test('DS1 DOM: a manager\'s queue names a confirm request as one — what approving does, not "ClockIn 07:56" as if it were a change; another rep\'s statement shows no Confirm button', () => {
+  const h = boot(); h.bootShell({ isManager: true });
+  mount_(h, 'mgr-adjust-queue');
+  h.document.getElementById('mgr-adjust-queue').innerHTML = h.read('renderAdjustQueueCard_')([
+    { reqId: 'r1', empName: 'Nina Patel', punchType: 'ClockIn', date: '2026-11-12', time: '07:56', reason: '', action: 'confirm' },
+    { reqId: 'r2', empName: 'Sam Ortiz', punchType: 'ClockOut', date: '2026-11-12', time: '17:00', reason: 'forgot', action: 'set' }]);
+  const rows = Array.from(h.$$('.mgr-adj-row')).map((r) => r.textContent);
+  assert.ok(/Nina Patel — Confirm ClockIn · 2026-11-12 · 07:56 \(set from app activity — approving keeps the time and clears the Inferred mark\)/.test(rows[0]), rows[0]);
+  assert.ok(/Sam Ortiz — ClockOut · 2026-11-12 · 17:00/.test(rows[1]) && !/Confirm/.test(rows[1]), rows[1]);
+  // A manager viewing a rep's statement: Edit day, never the rep's Confirm.
+  const html = h.read('payStmtHtml_')({ period: { start: '2026-11-01', end: '2026-11-30', cycle: 'Monthly', offset: 0 }, pto: [], adjustments: {}, viewingOther: { name: 'Nina Patel', id: 'E7' }, timezone: 'UTC',
+    days: [{ date: h.read('isoDateTz')('UTC'), dayLabel: 'Today', hasData: true, clockIn: '07:56:00', clockOut: '17:00:00', infClockIn: true, hoursWorked: 9 }] });
+  assert.ok(!/pay-stmt-confirm/.test(html) && /punch-inf-chip/.test(html), 'the confirm is the REP\'s to ask; a manager confirms in Day Edit');
+});
+
+test('DS2 DOM: a manager\'s Team table on a range has "Ans / day" — answered over the rep\'s credited days, the basis on hover, sortable; a single day has no such column; the copied table carries the figure and its divisor', () => {
+  const h = boot(); h.bootShell();
+  mount_(h, 'm-team-content');
+  const rep = (id, name, ans, days, credited, perDay, pd) => ({ repId: id, repName: name, totalRung: ans + 2, totalAnswered: ans, totalMissed: 2, pctAnswered: 90, tttFormatted: '1:00:00', attFormatted: '0:06:00',
+    tttSeconds: 3600, attSeconds: 360, noteCount: 8, noteCoverage: 80, noteCountUnavailable: false, intakeNotes: 1, hasCdrData: true, transferred: 0, transferPct: null, queues: {},
+    partialDays: pd || [], daysActive: days, creditedDays: credited, answeredPerDay: perDay });
+  const totals = { pctAnswered: 90, rung: 78, answered: 74, missed: 4, tttFormatted: '2:00:00', noteCount: 16, noteCoverage: 80, hasCallData: true };
+  const reps = [rep('E1', 'Jo Tran', 44, 5, 4.5, 9.8, [{ date: '2026-06-12', credit: 0.5 }]), rep('E2', 'Ana Lopez', 30, 3, 3, 10)];
+  const range = fullTeamData_({ from: '2026-06-08', to: '2026-06-15', teamTotals: totals, reps: reps });
+  h.window.mRenderTeamMetrics_(range);
+  const host = h.$('#m-team-content');
+  const heads = () => Array.from(host.querySelectorAll('table th')).map((t) => t.textContent.trim());
+  const at = heads().findIndex((t) => /^Ans \/ day/.test(t));
+  assert.ok(at > 0 && /^Answered/.test(heads()[at - 1]), 'THE CAPABILITY: the column sits beside Answered — ' + heads().join(' | '));
+  const cellOf = (name) => { const tr = Array.from(host.querySelectorAll('table tbody tr')).find((r) => r.textContent.indexOf(name) >= 0); return tr.querySelectorAll('td')[at]; };
+  assert.strictEqual(cellOf('Jo Tran').textContent.trim(), '9.8');
+  assert.strictEqual(cellOf('Jo Tran').querySelector('span').getAttribute('title'), '44 answered over 4.5 credited days (5 days with calls, 1 partial)');
+  assert.strictEqual(cellOf('Ana Lopez').querySelector('span').getAttribute('title'), '30 answered over 3 days with calls');
+  // The counts on the row are what the server sent.
+  const answeredAt = at - 1;
+  assert.strictEqual(Array.from(host.querySelectorAll('table tbody tr')).find((r) => r.textContent.indexOf('Jo Tran') >= 0).querySelectorAll('td')[answeredAt].textContent.trim(), '44', 'Answered is the count, unchanged');
+  // The copied table.
+  const tsv = h.read('mTeamTableTsv_')(range, 'reps', { key: 'repName', dir: 'asc' }).split('\n');
+  const cols = tsv[0].split('\t');
+  const jo = tsv.find((l) => /^Jo Tran/.test(l)).split('\t');
+  assert.deepStrictEqual([jo[cols.indexOf('Ans / day')], jo[cols.indexOf('Credited days')], jo[cols.indexOf('Answered')]], ['9.8', '4.5', '44']);
+  // One day: no average, no column.
+  h.window.mRenderTeamMetrics_(fullTeamData_({ teamTotals: totals, reps: reps }));
+  assert.ok(heads().length > 3 && !heads().some((t) => /^Ans \/ day/.test(t)), 'a single day has no per-day column');
+  assert.ok(!/Ans \/ day/.test(h.read('mTeamTableTsv_')(fullTeamData_({ teamTotals: totals, reps: reps }), 'reps', { key: 'repName', dir: 'asc' })));
 });

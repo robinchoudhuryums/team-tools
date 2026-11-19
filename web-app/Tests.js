@@ -1567,6 +1567,7 @@ function _registerIntegrationA_() {
 
   // #4a — punch-adjustment requests (employee batch → manager approval)
   _integrationTest('punchAdjust_submitApproveWritesPunch',     test_punchAdjust_submitApproveWritesPunch);
+  _integrationTest('punchAdjust_confirmRequestMovesOnlyTheMark', test_punchAdjust_confirmRequestMovesOnlyTheMark);
   _integrationTest('punchAdjust_batchInvalidRejected',         test_punchAdjust_batchInvalidRejected);
   _integrationTest('punchAdjust_nonManagerRejected',           test_punchAdjust_nonManagerRejected);
   _integrationTest('punchAdjust_duplicatePendingRejected',     test_punchAdjust_duplicatePendingRejected);
@@ -2595,6 +2596,55 @@ function test_punchAdjust_submitApproveWritesPunch() {
   let appr2;
   _asUser(_TEST_MGR_EMAIL, () => { appr2 = updatePunchAdjustStatus(req.reqId, 'Approved'); });
   _assertEq(appr2.success, false, 're-approve rejected (no longer pending)');
+}
+
+// Cycle 26 DS1 — a rep asks that a time set from app activity be confirmed.
+// Filing changes nothing; a manager's approval moves column J from Inferred
+// to Confirmed and leaves the time alone. A request that does not match the
+// day is refused at submit.
+function test_punchAdjust_confirmRequestMovesOnlyTheMark() {
+  _assertSuiteCaller_();
+  _clearTestState(_TEST_PH_ID);
+  const clockIn = () => {
+    const rows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
+    for (let i = rows.length - 1; i >= 2; i--) {
+      if (String(rows[i][ADP.EMP_ID]).trim() !== _TEST_PH_ID) continue;
+      if (normalizeDate_(rows[i][ADP.DATE]) !== _TEST_DATE_RECENT) continue;
+      if (normalizeType_(String(rows[i][ADP.COMMENTS])) !== 'ClockIn') continue;
+      return { mark: String(rows[i][ADP.INFERRED] || '').trim(), time: normalizeTime_(rows[i][ADP.TIME]).substring(0, 5) };
+    }
+    return null;
+  };
+  try {
+    _asUser(_TEST_MGR_EMAIL, () => {
+      _assertSuccess(managerSaveDay(_TEST_PH_ID, _TEST_DATE_RECENT,
+        { ClockIn: '07:56', ClockOut: '17:00', breaks: [], inferred: { ClockIn: true, ClockOut: false } }, 'DS1 fixture'));
+    });
+    _assertEq(clockIn().mark, ADP_INFERRED_MARK, 'the fixture Clock In is marked inferred');
+    let sub;
+    _asUser(_TEST_PH_EMAIL, () => {
+      _assertFailure(submitPunchAdjustRequests([{ date: _TEST_DATE_RECENT, time: '08:30', punchType: 'ClockIn', action: 'confirm' }]), 'is now 07:56');
+      _assertFailure(submitPunchAdjustRequests([{ date: _TEST_DATE_RECENT, time: '17:00', punchType: 'ClockOut', action: 'confirm' }]), 'not marked');
+      sub = submitPunchAdjustRequests([{ date: _TEST_DATE_RECENT, time: '07:56', punchType: 'ClockIn', action: 'confirm' }]);
+    });
+    _assertSuccess(sub);
+    _assertEq(clockIn().mark, ADP_INFERRED_MARK, 'filed, not applied — the time is still inferred');
+    let pend;
+    _asUser(_TEST_MGR_EMAIL, () => { pend = managerGetPendingAdjustments(); });
+    const req = (pend.requests || []).filter(function (r) { return r.empId === _TEST_PH_ID && r.action === 'confirm'; })[0];
+    _assertNotNull(req, 'the confirm request is in the manager queue, named as one');
+    const before = _countAuditRows(_TEST_PH_ID, 'PunchConfirm');
+    let appr;
+    _asUser(_TEST_MGR_EMAIL, () => { appr = updatePunchAdjustStatus(req.reqId, 'Approved'); });
+    _assertSuccess(appr);
+    const after = clockIn();
+    _assertEq(after.mark, ADP_CONFIRMED_MARK, 'approved: column J reads Confirmed');
+    _assertEq(after.time, '07:56', 'and the time did not move');
+    _assertEq(_countAuditRows(_TEST_PH_ID, 'PunchConfirm'), before + 1, 'one PunchConfirm audit row');
+    _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_RECENT, null), 2, 'no punch was written');
+  } finally {
+    _clearTestState(_TEST_PH_ID);
+  }
 }
 
 function test_punchAdjust_batchInvalidRejected() {

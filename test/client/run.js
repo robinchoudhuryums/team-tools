@@ -11081,7 +11081,7 @@ test('getTeamMetrics endpoint cache: org-wide key, degraded rounds never cached'
   assert.ok(/if \(useTeamCache && !teamTotals\.noteCountPartial && !transferMeta\.error && !trendFailed && !\(obRes\.error && !obRes\.steady\) && !cdrPartialDaysDegraded_\(\)\) \{/.test(f),   // DQ1: nor a round read without the partial-day marks; MET-4: a failed trend read is degraded too; M1: a failed outbound read
     'the put is gated on the round being clean');
   assert.ok(/_TEST_OVERRIDE_CDR_SS_ID/.test(f), 'bypassed under the CDR test override (the getMyMetrics pattern)');
-  assert.ok(/team_metrics_v7:' \+ from \+ ':' \+ toDate/.test(f), 'keyed by range only — every manager sees the same aggregate (v7: cycle 26 DQ1; v6: cycle 26 FQ3/FQ7; v5: cycle 26 F34/F35; v4: M1 outbound + adjusted; v3: H2 rate formula + published standard, INV-85)');
+  assert.ok(/team_metrics_v8:' \+ from \+ ':' \+ toDate/.test(f), 'keyed by range only — every manager sees the same aggregate (v8: cycle 26 DS2; v7: cycle 26 DQ1; v6: cycle 26 FQ3/FQ7; v5: cycle 26 F34/F35; v4: M1 outbound + adjusted; v3: H2 rate formula + published standard, INV-85)');
 });
 
 test('Team Metrics for reps: whitelist-built aggregate, no per-rep leak, card click-throughs', () => {
@@ -20405,9 +20405,13 @@ test('B3: a resume CONVERTS the clock-out into a break — it never just deletes
     'an existing tab self-heals its header');
   ['empPendingAdjustments_', 'getMyPunchAdjustRequests', 'managerGetPendingAdjustments',
    'punchAdjustDecideAll_'].forEach((fn) => {
-    assert.ok(/=== 'resume' \? 'resume' : 'set'/.test(extractRawFunction('Code.js', fn)),
+    assert.ok(/parAction_\(rows\[i\]\[PAR\.ACTION\]\)/.test(extractRawFunction('Code.js', fn)),
       fn + ' reads a missing ACTION as the ordinary punch write');
   });
+  // DS1 (cycle 26): ONE reader of the cell, driven — blank and unknown are 'set'.
+  const pa = vm.createContext({ String });
+  vm.runInContext(extractRawFunction('Code.js', 'parAction_'), pa);
+  assert.deepStrictEqual(['', undefined, null, 'set', 'RESUME', ' resume ', 'x'].map((v) => pa.parAction_(v)), ['set', 'set', 'set', 'set', 'resume', 'resume', 'set']);
 });
 
 test('B3: every surface STATES the effect rather than naming the punch it consumes', () => {
@@ -22411,7 +22415,7 @@ test('MW-1: Metrics trends walk WORKDAYS — metricsWorkdayIsos_ behavioural, al
   assert.ok(/metricsWorkdayIsos_\(from, to\)\.forEach/.test(rng), 'getMyMetricsRange: the per-day trend walks workdays');
   assert.strictEqual((team.match(/metricsWorkdayIsos_\(/g) || []).length, 2, 'getTeamMetrics: BOTH trends (single-day 30-day + multi-day range) walk workdays');
   assert.ok(!/setUTCDate\(/.test(rng.slice(rng.indexOf('var trend = []'))) && !/setUTCDate\(rd\.getUTCDate/.test(team), 'no calendar walk survives in either');
-  assert.ok(/metrics_my_v6:/.test(my) && /metrics_range_v6:/.test(rng) && /team_metrics_v7:/.test(team), 'all three endpoint result caches bumped — a cached calendar-day payload is never served under the new shape (INV-85; v3 = H2, v4 = M1)');
+  assert.ok(/metrics_my_v6:/.test(my) && /metrics_range_v6:/.test(rng) && /team_metrics_v8:/.test(team), 'all three endpoint result caches bumped — a cached calendar-day payload is never served under the new shape (INV-85; v3 = H2, v4 = M1)');
   assert.ok(!/metrics_my_v[12]:|metrics_range_v[12]:|team_metrics_v[12]:/.test(my + rng + team), 'no v1/v2 key survives');
   const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
   const t30 = mock.slice(mock.indexOf('function trend30('), mock.indexOf('var FIXTURES = {'));
@@ -34018,6 +34022,7 @@ test('TC-02 (cycle 23): a request is checked against the day at SUBMIT — unsta
       normalizeDate_: (v) => v, normalizeTime_: (v) => v, fmtDate_: () => 'd', fmtTime_: () => 't',
       Utilities: { getUuid: () => 'u' }, sheetSafeRow_: (r) => r, sheetSafe_: (v) => v,
       writeAuditLog_: () => {}, notifyManagersOfAdjustRequests_: () => {}, console: { warn() {} } });
+    ['parAction_', 'confirmRequestTarget_', 'confirmRequestError_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));   // DS1: the ACTION cell's one reader
     vm.runInContext(extractRawFunction('Code.js', 'submitPunchAdjustRequests'), ctx);
     return { res: JSON.parse(JSON.stringify(ctx.submitPunchAdjustRequests(requests))), appended };
   };
@@ -34653,6 +34658,7 @@ test('F63 (cycle 25): two "add a missing break" requests for one day at differen
       normalizeDate_: (v) => v, normalizeTime_: (v) => v, fmtDate_: () => 'd', fmtTime_: () => 't',
       Utilities: { getUuid: () => 'u' }, sheetSafeRow_: (r) => r, sheetSafe_: (v) => v,
       writeAuditLog_: () => {}, notifyManagersOfAdjustRequests_: () => {}, console: { warn() {} } });
+    ['parAction_', 'confirmRequestTarget_', 'confirmRequestError_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));   // DS1: the ACTION cell's one reader
     vm.runInContext(extractRawFunction('Code.js', 'submitPunchAdjustRequests'), ctx);
     return { res: JSON.parse(JSON.stringify(ctx.submitPunchAdjustRequests(requests))), appended };
   };
@@ -34894,6 +34900,7 @@ test('TC-05 (cycle 23): a rep\'s adjustment that would make a shift longer than 
       normalizeDate_: (v) => v, normalizeTime_: (v) => v, fmtDate_: () => 'd', fmtTime_: () => 't',
       Utilities: { getUuid: () => 'u' }, sheetSafeRow_: (r) => r, sheetSafe_: (v) => v,
       writeAuditLog_: () => {}, notifyManagersOfAdjustRequests_: () => {}, console: { warn() {} } });
+    ['parAction_', 'confirmRequestTarget_', 'confirmRequestError_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));   // DS1: the ACTION cell's one reader
     vm.runInContext(extractRawFunction('Code.js', 'submitPunchAdjustRequests'), ctx);
     return { res: JSON.parse(JSON.stringify(ctx.submitPunchAdjustRequests(requests))), appended };
   };
@@ -40610,6 +40617,7 @@ test('B4: payStmtAdjustments_ groups ONE rep\'s requests inside the period by da
   const ctx = vm.createContext({ String, Object, Array,
     PAR: { REQ_ID: 0, EMP_ID: 1, EMP_NAME: 2, DATE: 3, PUNCH_TYPE: 4, REQ_TIME: 5, REASON: 6, STATUS: 7, SUBMITTED_AT: 8, ACTION: 9, END_TIME: 10, BREAK_TARGET: 11 },
     normalizeDate_: (v) => String(v).substring(0, 10), normalizeTime_: (v) => String(v || ''), normalizeAuditTs_: (v) => String(v || '') });
+  vm.runInContext(extractRawFunction('Code.js', 'parAction_'), ctx);   // DS1
   vm.runInContext(extractRawFunction('Code.js', 'payStmtAdjustments_'), ctx);
   const r = (emp, date, type, time, reason, status, at, action, end) => ['R', emp, 'n', date, type, time, reason, status, at, action || '', end || '', ''];
   const rows = [['h'],
@@ -50399,7 +50407,9 @@ test('DQ1: a manager\'s Team Metrics row names the rep\'s partial days — dates
   assert.ok(/partialDaysUnavailable: cdrPartialDaysDegraded_\(\),/.test(team), 'marks that could not be read are said, never read as "none"');
   assert.ok(/&& !cdrPartialDaysDegraded_\(\)\) \{\s*try \{ teamMetricsCache\.put\(/.test(team), 'and that round is not kept');
   // No figure moves: the totals and the rep's call figures are built before and without the marks.
-  assert.ok(!/partialDays/.test(team.replace(/rep\.partialDays = [^\n]*\n/, '').replace(/partialDaysUnavailable: [^\n]*\n/, '')), 'the marks are shown, and nothing is computed from them');
+  // DS2: ONE figure is computed from them — answered per credited day — and no count, rate or total reads them.
+  assert.ok(!/partialDays/.test(team.replace(/rep\.partialDays = [^\n]*\n/, '').replace(/partialDaysUnavailable: [^\n]*\n/, '').replace(/rep\.creditedDays = metricsCreditedDays_\(rep\.daysActive, rep\.partialDays\);\n/, '')),
+    'the marks are shown, and only the per-day figure is computed from them');
   // The rep view, driven over a manager payload with marked rows.
   const rv = vm.createContext({});
   vm.runInContext(extractRawFunction('Code.js', 'teamMetricsRepView_'), rv);
@@ -50433,7 +50443,7 @@ test('DQ1: the Team table\'s partial-day chip, the line under it and the copied 
   assert.deepStrictEqual([c.mTeamPartialHintHtml_({ repView: true, teamTotals: {} }, 8), c.mTeamPartialHintHtml_(null, 8)], ['', ''], 'the rep view has no rows, so no line');
   const src = fs.readFileSync(path.join(PA_WEB, 'metrics/script_metrics.html'), 'utf8');
   assert.ok(/esc\(r\.repName\) \+ '<\/button>' \+\s*mTeamPartialChipHtml_\(r\); \} \},/.test(src), 'the chip sits beside the rep\'s name');
-  assert.ok(/html \+= mTeamPartialHintHtml_\(data, M_NAME_CAP\);/.test(src), 'the line is drawn under the table');
+  assert.ok(/html \+= mTeamPartialHintHtml_\(data, M_NAME_CAP, multiDay\);/.test(src), 'the line is drawn under the table');
   assert.ok(/if \(hasPd\) head\.push\('Partial days'\);/.test(src) && /if \(hasPd\) row\.push\(mTeamPartialText_\(r, 99\)\);/.test(src), 'the copied table carries the days as a column, only when a rep has one');
   assert.ok(/\.m-partial-chip \{/.test(src), 'the chip has a rule (g140)');
 });
@@ -50595,6 +50605,220 @@ test('FR4: a Spanish inbox refresh that FAILED behind a painted round says so, o
   const lists = stripJsComments_(extractFunction('metrics/script_metrics.html', 'spanishLoadList_'));
   assert.strictEqual((lists.match(/else spanishRefreshFailed_\(\);/g) || []).length, 4, 'both halves, both failure shapes');
   assert.strictEqual((lists.match(/if \(!opts\.background\) SPANISH_STATE\.(pending|resolved)Err = /g) || []).length, 4, 'a COLD failure still draws its own error card — only a background one is a toast');
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Cycle 26 — the operator's decisions, second round (2026-11-19)
+//  DS1 a rep may ASK to confirm their own inferred time (a manager approves)
+//  DS2 Team Metrics: answered per credited day for each rep
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\nCycle 26 decisions, second round (DS1–DS2) — a rep\'s confirm request, answered per credited day');
+
+const dsPar_ = { REQ_ID: 0, EMP_ID: 1, EMP_NAME: 2, DATE: 3, PUNCH_TYPE: 4, REQ_TIME: 5, REASON: 6, STATUS: 7, SUBMITTED_AT: 8, ACTION: 9, END_TIME: 10, BREAK_TARGET: 11 };
+
+test('DS1: the request\'s action has ONE reader; a confirm is judged against the day\'s SHOWN row — still inferred at that time is ok, already confirmed is done, anything else is refused with its reason (driven)', () => {
+  const c = vm.createContext({ String });
+  ['parAction_', 'confirmRequestTarget_', 'confirmRequestError_', 'adjEntryText_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), c));
+  const J = (v) => JSON.parse(JSON.stringify(v));
+  assert.deepStrictEqual(['confirm', ' CONFIRM ', 'resume', '', 'confirmed', 0].map((v) => c.parAction_(v)), ['confirm', 'confirm', 'resume', 'set', 'set', 'set']);
+  const row = (i, time, inferred, confirmed) => ({ rowIndex: i, time: time, inferred: !!inferred, confirmed: !!confirmed });
+  assert.deepStrictEqual(J(c.confirmRequestTarget_([row(7, '07:56', true)], '07:56')), { code: 'ok', rowIndex: 7, time: '07:56' });
+  assert.deepStrictEqual(J(c.confirmRequestTarget_([row(4, '07:50', true), row(7, '07:56', true)], '07:56')), { code: 'ok', rowIndex: 7, time: '07:56' }, 'the LAST row of the type is the one shown');
+  assert.strictEqual(c.confirmRequestTarget_([row(4, '07:56', true), row(7, '07:56', false)], '07:56').code, 'plain', 'an earlier marked duplicate is not the shown row');
+  assert.strictEqual(c.confirmRequestTarget_([row(7, '07:56', false, true)], '07:56').code, 'done');
+  assert.deepStrictEqual(J(c.confirmRequestTarget_([row(7, '08:00', true)], '07:56')), { code: 'changed', time: '08:00' }, 'another time stands — even an inferred one');
+  assert.deepStrictEqual(J(c.confirmRequestTarget_([row(7, '08:00', false, true)], '07:56')), { code: 'changed', time: '08:00' });
+  assert.strictEqual(c.confirmRequestTarget_([row(7, '07:56', false)], '07:56').code, 'plain');
+  assert.deepStrictEqual([c.confirmRequestTarget_([], '07:56').code, c.confirmRequestTarget_(undefined, '07:56').code], ['none', 'none']);
+  assert.deepStrictEqual([{ code: 'ok' }, { code: 'done' }].map((t) => c.confirmRequestError_(t, 'ClockIn', '2026-11-12', '07:56')), ['', '']);
+  assert.strictEqual(c.confirmRequestError_({ code: 'none' }, 'ClockOut', '2026-11-12', '17:06'), 'There is no Clock Out on 2026-11-12 to confirm.');
+  assert.strictEqual(c.confirmRequestError_({ code: 'changed', time: '08:00' }, 'ClockIn', '2026-11-12', '07:56'), 'The Clock In on 2026-11-12 is now 08:00, not the 07:56 this request confirms.');
+  assert.strictEqual(c.confirmRequestError_({ code: 'plain', time: '07:56' }, 'ClockIn', '2026-11-12', '07:56'), 'The Clock In on 2026-11-12 is not marked as set from app activity, so there is nothing to confirm.');
+  assert.match(c.confirmRequestError_(null, 'ClockIn', 'd', 't'), /^There is no Clock In/);
+  assert.deepStrictEqual([c.adjEntryText_({ action: 'confirm', punchType: 'ClockIn', time: '07:56' }), c.adjEntryText_({ action: 'set', punchType: 'ClockOut', time: '17:00' })],
+    ['Confirm ClockIn 07:56 (set from app activity)', 'ClockOut 17:00'], 'the manager email names a confirm as one');
+  // The index carries each row's mark, and the adjust writer clears it with the time it replaces.
+  const ix = stripJsComments_(extractRawFunction('Code.js', 'buildAdjustPunchIndex_'));
+  assert.ok(/inferred: adpRowInferred_\(rows\[i\]\), confirmed: adpRowConfirmed_\(rows\[i\]\) \}\);/.test(ix), 'every index row says whether it is inferred or confirmed');
+  assert.ok(/if \(m\.rowIndex === target\.rowIndex\) \{ m\.time = time; m\.inferred = false; m\.confirmed = false; \}/.test(stripJsComments_(extractRawFunction('Code.js', 'writeAdjustPunchForEmployee_'))),
+    'an approved adjustment in the same batch leaves no stale mark in the index');
+});
+
+test('DS1: a rep\'s confirm request is FILED, not applied — refused unless the time is standing and still inferred, never needs a reason, cannot ride a break, and is blocked by a pending adjustment of the same punch (driven)', () => {
+  const run = (requests, dayRows, pendingRows) => {
+    const appended = []; const notified = [];
+    const ctx = vm.createContext({ String, Object, Array, JSON, Math, console: { warn() {} },
+      getEmployeeInfo_: () => ({ id: 'E1', name: 'Ann', email: 'ann@x' }),
+      LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+      empTz_: () => 'UTC', fmtDateTz_: () => '2026-11-19', fmtTimeTz_: () => '12:00:00', daysBetween_: (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000),
+      CONFIG: { ADJUST_WINDOW_DAYS: 30, OLD_ADJUST_ALERT_DAYS: 7 }, PUNCH_LABELS_: ['ClockIn', 'LunchOut', 'LunchIn', 'ClockOut'], BREAK_PUNCH_TYPES: ['LunchOut', 'LunchIn'],
+      PAR: dsPar_, Date,
+      buildAdjustPunchIndex_: () => ({ all: dayRows || {}, idx: {} }),
+      breakIntentNorm_: () => ({ mode: '', target: '' }), breakIntentCell_: () => '', breakAdjustTargetRow_: () => ({ code: 'ok' }),
+      adjustIndexLastTime_: (ix, d, t) => { const l = (ix.all[d + '|' + t] || []); return l.length ? l[l.length - 1].time : ''; }, adjustShiftSpanError_: () => null,
+      findExistingPunch_: () => null,
+      getOrCreatePunchAdjustSheet_: () => ({ getDataRange: () => ({ getValues: () => [['h']].concat(pendingRows || []) }), appendRow: (r) => appended.push(r), getRange: () => ({ setValue() {} }) }),
+      normalizeDate_: (v) => v, normalizeTime_: (v) => v, fmtDate_: () => 'd', fmtTime_: () => 't',
+      Utilities: { getUuid: () => 'u' }, sheetSafeRow_: (r) => r, sheetSafe_: (v) => v,
+      writeAuditLog_: () => {}, notifyManagersOfAdjustRequests_: (e, list) => notified.push(list) });
+    ['parAction_', 'confirmRequestTarget_', 'confirmRequestError_', 'submitPunchAdjustRequests'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+    return { res: JSON.parse(JSON.stringify(ctx.submitPunchAdjustRequests(requests))), appended, notified };
+  };
+  const inf = { '2026-11-05|ClockIn': [{ rowIndex: 7, time: '07:56', inferred: true, confirmed: false }], '2026-11-05|ClockOut': [{ rowIndex: 8, time: '17:00', inferred: false, confirmed: false }] };
+  const req = (over) => Object.assign({ date: '2026-11-05', time: '07:56', punchType: 'ClockIn', action: 'confirm', reason: '' }, over || {});
+  // Filed: a Pending row with the action — and nothing else written anywhere.
+  let r = run([req()], inf);
+  assert.ok(r.res.success, JSON.stringify(r.res));
+  assert.strictEqual(r.appended.length, 1);
+  assert.deepStrictEqual([r.appended[0][dsPar_.PUNCH_TYPE], r.appended[0][dsPar_.REQ_TIME], r.appended[0][dsPar_.STATUS], r.appended[0][dsPar_.ACTION], r.appended[0][dsPar_.REASON]],
+    ['ClockIn', '07:56', 'Pending', 'confirm', ''], 'THE RULE: a request for a manager — fourteen days back, with no reason asked of the rep');
+  assert.strictEqual(r.notified[0][0].action, 'confirm', 'and the managers are told');
+  // Refused: nothing is queued.
+  const refused = (requests, day, pending, re) => { const x = run(requests, day, pending); assert.ok(!x.res.success && re.test(x.res.error) && x.appended.length === 0, JSON.stringify(x.res)); };
+  refused([req({ punchType: 'ClockOut', time: '17:00' })], inf, null, /Clock Out on 2026-11-05 is not marked as set from app activity/);
+  refused([req({ time: '08:00' })], inf, null, /Clock In on 2026-11-05 is now 07:56, not the 08:00 this request confirms/);
+  refused([req()], {}, null, /There is no Clock In on 2026-11-05 to confirm/);
+  refused([req()], { '2026-11-05|ClockIn': [{ rowIndex: 7, time: '07:56', inferred: false, confirmed: true }] }, null, /already been confirmed/);
+  refused([req({ punchType: 'LunchOut' })], inf, null, /only a Clock In or Clock Out can be confirmed/);
+  refused([req({ date: '2026-11-20' })], inf, null, /future date/);
+  // One punch, one open request: a pending ADJUSTMENT of it blocks the confirm, and so does an earlier confirm.
+  const pend = (action) => ['R1', 'E1', 'Ann', '2026-11-05', 'ClockIn', '08:10', '', 'Pending', 's', action, '', ''];
+  refused([req()], inf, [pend('')], /already have a pending ClockIn adjustment for 2026-11-05/);
+  refused([req()], inf, [pend('confirm')], /already have a pending ClockIn adjustment/);
+  refused([req(), req({ action: 'set', time: '08:05', reason: 'x' })], inf, null, /Duplicate adjustment in this batch/);
+  // An ordinary adjustment that old still owes its reason.
+  refused([req({ action: 'set', time: '08:05' })], inf, null, /a reason is required/);
+});
+
+test('DS1: approving a confirm request writes ONE cell — column J, Inferred to Confirmed — and a PunchConfirm audit row; a time that has changed, or was never inferred, is refused and the request stays pending; one a manager already confirmed is simply done (driven)', () => {
+  const run = (dayRows, parRow, status) => {
+    const cells = {}; const audit = []; const mail = []; const parCells = {};
+    const tsSheet = { getMaxColumns: () => 10, insertColumnsAfter() {}, getRange: (r, col) => ({ getValue: () => 'Source', setValue: (v) => { cells[r + ':' + col] = v; } }) };
+    const ctx = vm.createContext({ String, Object, Array, JSON, Math, console: { warn() {} },
+      getEmployeeInfo_: () => ({ isManager: true, email: 'mgr@x' }),
+      LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+      PUNCH_ADJUST_BULK_MAX: 25, PAR: dsPar_, CONFIG: { ADJUST_WINDOW_DAYS: 30 },
+      getOrCreatePunchAdjustSheet_: () => ({ getDataRange: () => ({ getValues: () => [['h'], parRow] }), getRange: (r, col) => ({ setValue: (v) => { parCells[r + ':' + col] = v; } }) }),
+      normalizeDate_: (v) => v, normalizeTime_: (v) => v, sheetSafe_: (v) => v,
+      buildAdjustPunchIndex_: () => ({ sheet: tsSheet, all: dayRows, idx: {} }),
+      lookupEmployeeById_: () => ({ id: 'E1', name: 'Ann', email: 'ann@x' }), empTz_: () => 'UTC', fmtDateTz_: () => '2026-11-19', daysBetween_: () => 14,
+      parEndTime_: () => '', breakIntentNote_: () => '',
+      resumeShiftForEmployee_: () => { throw new Error('a confirm is not a resume'); },
+      writeAdjustPunchForEmployee_: () => { throw new Error('THE REGRESSION: a confirm wrote a punch'); },
+      adjustShiftSpanError_: () => null, adjustIndexLastTime_: () => '',
+      writeAuditLog_: (emp, action, date, time, adj, back, notes, by) => audit.push({ action, date, time, notes, by }),
+      notifyEmployeeOfAdjustDecision_: (emp, date, type, time, reason, st, action) => mail.push([st, action, type, time]) });
+    ['const ADP = \\{[\\s\\S]*?\\};', "const ADP_INFERRED_MARK = '[^']*';", "const ADP_CONFIRMED_MARK = '[^']*';"]
+      .forEach((re) => vm.runInContext(new RegExp(re).exec(serverSource())[0].replace(/^const /, 'var '), ctx));
+    ['parAction_', 'confirmRequestTarget_', 'confirmRequestError_', 'adpSetSource_', 'confirmInferredForEmployee_', 'punchAdjustDecideAll_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+    return { res: JSON.parse(JSON.stringify(ctx.punchAdjustDecideAll_(['R1'], status || 'Approved'))), cells, audit, mail, parCells };
+  };
+  const par = (time, reason) => ['R1', 'E1', 'Ann', '2026-11-05', 'ClockIn', time || '07:56', reason || '', 'Pending', 's', 'confirm', '', ''];
+  const day = (inferred, confirmed, time) => ({ '2026-11-05|ClockIn': [{ rowIndex: 7, time: time || '07:56', inferred: inferred, confirmed: confirmed }] });
+  // Approved.
+  let r = run(day(true, false), par('07:56', 'that is when I started'));
+  assert.ok(r.res.success, JSON.stringify(r.res));
+  assert.deepStrictEqual(r.cells, { '7:10': 'Confirmed (app activity)' }, 'THE RULE: one Timesheet cell — the mark; no time, no type');
+  assert.deepStrictEqual(r.parCells, { '2:8': 'Approved' });
+  assert.strictEqual(r.audit.length, 1);
+  assert.deepStrictEqual([r.audit[0].action, r.audit[0].time, r.audit[0].by], ['PunchConfirm', '07:56', 'mgr@x']);
+  assert.match(r.audit[0].notes, /^ClockIn: 07:56 confirmed as is at the rep's request, approved by manager \(was inferred from app activity\) — that is when I started$/);
+  assert.deepStrictEqual(r.mail, [['Approved', 'confirm', 'ClockIn', '07:56']], 'the rep is told it was confirmed');
+  // The time changed while the request waited: refused, nothing written, still Pending.
+  r = run(day(false, false, '08:00'), par());
+  assert.ok(!r.res.success && /is now 08:00, not the 07:56 this request confirms\. Deny this request\./.test(r.res.results[0].error), JSON.stringify(r.res));
+  assert.deepStrictEqual([Object.keys(r.cells).length, Object.keys(r.parCells).length, r.audit.length, r.mail.length], [0, 0, 0, 0], 'nothing written anywhere — the row stays Pending');
+  // Never inferred: refused.
+  r = run(day(false, false), par());
+  assert.ok(/not marked as set from app activity/.test(r.res.results[0].error) && Object.keys(r.cells).length === 0);
+  // A manager confirmed it first (Day Edit): the request is done, with nothing left to write.
+  r = run(day(false, true), par());
+  assert.ok(r.res.success);
+  assert.deepStrictEqual([Object.keys(r.cells).length, r.parCells['2:8'], r.audit.length, r.mail[0][0]], [0, 'Approved', 0, 'Approved'], 'done: approved, no second mark and no second audit row');
+  // Denied: the mark stays, the audit says what was denied.
+  r = run(day(true, false), par(), 'Denied');
+  assert.deepStrictEqual([Object.keys(r.cells).length, r.parCells['2:8'], r.audit[0].action, r.audit[0].notes, r.mail[0].slice(0, 2).join()], [0, 'Denied', 'PunchAdjustStatusChange', 'confirm ClockIn 07:56 request denied', 'Denied,confirm']);
+  // The decision email says what a confirm means, both ways.
+  const mailFn = stripJsComments_(extractRawFunction('Code.js', 'notifyEmployeeOfAdjustDecision_'));
+  assert.ok(/confirm \? `The time stands as it is, and it is no longer marked as inferred from app activity\.`/.test(mailFn) && /`The time is still marked as inferred from app activity\./.test(mailFn)
+    && /`Your request to confirm your \$\{date\} \$\{punchType\} was \$\{verb\}`/.test(mailFn), 'approved: the time stands; denied: still inferred — never "the punch has been added"');
+});
+
+test('DS1: the rep\'s side — a Confirm button per inferred time on their OWN pay statement, inside the adjust window, none while a request for that punch is pending; every surface that lists a request names a confirm as one (driven)', () => {
+  const c = vm.createContext({ String, esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), dispTime: (t) => 'T' + t });
+  ['payStmtConfirmBtnsHtml_', 'payStmtAdjLine_'].forEach((f) => vm.runInContext(extractFunction('tc/script_timeoff.html', f), c));
+  const day = { date: '2026-11-05', clockIn: '07:56:23', clockOut: '17:06:00', infClockIn: true, infClockOut: true };
+  const both = c.payStmtConfirmBtnsHtml_(day, [], true);
+  assert.strictEqual((both.match(/<button type="button" class="pay-stmt-confirm no-print"/g) || []).length, 2);
+  assert.ok(/data-cf-date="2026-11-05" data-cf-type="ClockIn" data-cf-time="07:56"[^>]*>Confirm Clock In<\/button>/.test(both) && /data-cf-type="ClockOut" data-cf-time="17:06"[^>]*>Confirm Clock Out<\/button>/.test(both), both);
+  assert.ok(!/onclick/.test(both), 'data-* only — the handler is bound (g133)');
+  assert.strictEqual((c.payStmtConfirmBtnsHtml_({ date: 'd', clockIn: '07:56:00', clockOut: '17:00:00', infClockIn: true, infClockOut: false }, [], true).match(/<button/g) || []).length, 1, 'only an inferred time');
+  assert.strictEqual(c.payStmtConfirmBtnsHtml_(day, [], false), '', 'not on another rep\'s statement, nor outside the adjust window');
+  const pendIn = c.payStmtConfirmBtnsHtml_(day, [{ punchType: 'ClockIn', status: ' Pending ', action: 'confirm' }], true);
+  assert.ok(!/data-cf-type="ClockIn"/.test(pendIn) && /data-cf-type="ClockOut"/.test(pendIn), 'a pending request for the punch — its confirm or an adjustment — takes the button away');
+  assert.ok(/data-cf-type="ClockIn"/.test(c.payStmtConfirmBtnsHtml_(day, [{ punchType: 'ClockIn', status: 'Denied', action: 'confirm' }], true)), 'a decided one does not');
+  assert.strictEqual(c.payStmtConfirmBtnsHtml_({ date: 'd', clockIn: '', infClockIn: true }, [], true), '', 'no readable time, no button');
+  const line = c.payStmtAdjLine_({ action: 'confirm', punchType: 'ClockIn', time: '07:56', status: 'Pending', reason: '' });
+  assert.ok(/Adjustment: Confirm Clock in at T07:56:00 as it is · <b[^>]*>Pending<\/b>/.test(line), line);
+  // The other three surfaces, and the bound handler.
+  const to = fs.readFileSync(path.join(PA_WEB, 'tc/script_timeoff.html'), 'utf8');
+  assert.ok(/slot\.querySelectorAll\('\.pay-stmt-confirm'\)\.forEach/.test(to) && /payStmtConfirmBtnsHtml_\(x, adjByDate\[x\.date\], !d\.viewingOther && inWindow\)/.test(to), 'bound after render; own statement, in window');
+  assert.ok(/<div class="pay-stmt-confirm-row no-print">\$\{confirmBtns\}<\/div>/.test(to) && !/\$\{right\}\$\{fixBtn\}\$\{confirmBtns\}/.test(to), 'on its own line under the day — beside the hours it squeezed the times column to 44px on a phone (g72, measured)');
+  const send = stripJsComments_(extractFunction('tc/script_timeoff.html', 'payStmtConfirmInferred_'));
+  assert.ok(/\.submitPunchAdjustRequests\(\[\{ date: date, time: time, punchType: type, action: 'confirm', reason: '' \}\]\)/.test(send), 'the press FILES a request — the endpoint every adjustment uses');
+  assert.ok(/the time stays marked Inferred until they approve/.test(send), 'and says nothing has changed yet');
+  const clk = fs.readFileSync(path.join(PA_WEB, 'tc/script_clock.html'), 'utf8');
+  assert.ok(/if \(a\.action === 'confirm'\) return '<span class="aj-item">' \+ esc\('Confirm ' \+ label/.test(clk) && /esc\(\(r\.action === 'confirm' \? 'Confirm ' : ''\) \+ label\(r\.punchType\)\)/.test(clk), 'the Clock strip and the Adjust modal\'s pending list');
+  assert.ok(/r\.action === 'confirm'\s*\? 'Confirm ' \+ r\.punchType \+ ' · ' \+ r\.date \+ ' · ' \+ r\.time \+ ' \(set from app activity — approving keeps the time and clears the Inferred mark\)'/.test(fs.readFileSync(path.join(PA_WEB, 'tc/script_manager.html'), 'utf8')),
+    'the manager\'s queue says what approving does');
+  assert.ok(/\.pay-stmt-confirm \{/.test(fs.readFileSync(path.join(PA_WEB, 'styles.html'), 'utf8')), 'the button has a rule (g140)');
+});
+
+test('DS2: answered per CREDITED day — the days a rep took calls, a marked day as its share; no average under one credited day; the counts, rates and totals on the row are not touched (driven + source)', () => {
+  const c = vm.createContext({ Number, Math, isFinite });
+  ['metricsCreditedDays_', 'metricsPerCreditedDay_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), c));
+  const pd = (...cr) => cr.map((x, i) => ({ date: '2026-11-0' + (i + 1), credit: x }));
+  assert.deepStrictEqual([c.metricsCreditedDays_(5, []), c.metricsCreditedDays_(5, pd(0.5)), c.metricsCreditedDays_(5, pd(0.5, 0.25)), c.metricsCreditedDays_(5, pd(0)), c.metricsCreditedDays_(21, pd(0.5, 0.25))],
+    [5, 4.5, 3.75, 4, 19.75], 'the handoff\'s worked example: 21 days, marks of 0.5 and 0.25 → 19.75');
+  assert.deepStrictEqual([c.metricsCreditedDays_(1, pd(0, 0)), c.metricsCreditedDays_(0, []), c.metricsCreditedDays_(undefined, null)], [0, 0, 0], 'never below zero');
+  assert.deepStrictEqual([c.metricsCreditedDays_(5, pd(1)), c.metricsCreditedDays_(5, pd(1.5)), c.metricsCreditedDays_(5, pd(-0.5)), c.metricsCreditedDays_(5, [{ date: 'd', credit: null }, { date: 'd', credit: 'x' }, null])],
+    [5, 5, 5, 5], 'a credit of 1 or more, a negative, a blank and a word take nothing off');
+  assert.deepStrictEqual([c.metricsPerCreditedDay_(419, 19.75), c.metricsPerCreditedDay_(44, 4.5), c.metricsPerCreditedDay_(44, 5), c.metricsPerCreditedDay_(0, 3)], [21.2, 9.8, 8.8, 0]);
+  assert.deepStrictEqual([c.metricsPerCreditedDay_(12, 0.5), c.metricsPerCreditedDay_(12, 0.99), c.metricsPerCreditedDay_(12, 0), c.metricsPerCreditedDay_(null, 5), c.metricsPerCreditedDay_(undefined, 5), c.metricsPerCreditedDay_('x', 5)],
+    [null, null, null, null, null, null], 'THE RULE: under one credited day there is no average — a single half day would read as double its calls');
+  assert.strictEqual(c.metricsPerCreditedDay_(12, 1), 12);
+  const team = stripJsComments_(extractRawFunction('Code.js', 'getTeamMetrics'));
+  assert.ok(/rep\.daysActive = cdr \? \(cdr\.daysActive \|\| 0\) : 0;\s*rep\.creditedDays = metricsCreditedDays_\(rep\.daysActive, rep\.partialDays\);\s*rep\.answeredPerDay = metricsPerCreditedDay_\(cdr \? cdr\.totalAnswered : null, rep\.creditedDays\);/.test(team),
+    'each manager row: the days with calls, the credited days, and answered over them — null with no call data');
+  assert.ok(!/creditedDays|answeredPerDay/.test(team.replace(/rep\.(daysActive|creditedDays|answeredPerDay) = [^\n]*\n/g, '')), 'nothing else on the row or in the totals reads it — no count, rate or total moves');
+  assert.ok(/team_metrics_v8:/.test(team), 'a cached row without the figure is never served (INV-85)');
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/answeredPerDay: /.test(mock) && /creditedDays: /.test(mock) && /daysActive: /.test(mock), 'the fixture rows mirror the three fields (INV-185)');
+});
+
+test('DS2: the Team table\'s "Ans / day" — a range only, its basis on hover, "—" with its reason, sortable with no figure lowest, in the copied table with the credited days; the line under the table names the one figure that counts a partial day (driven)', () => {
+  const c = vm.createContext({ String, Number, Math, Date, isFinite, isNaN, esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), icon: () => '<i></i>' });
+  ['mPartialDaysText_', 'mTeamPartialText_', 'mTeamPartialHintHtml_', 'mTeamPerDayCell_', 'mSortReps_'].forEach((f) => vm.runInContext(extractFunction('metrics/script_metrics.html', f), c));
+  const jo = { repName: 'Jo', totalAnswered: 44, daysActive: 5, creditedDays: 4.5, answeredPerDay: 9.8, hasCdrData: true, partialDays: [{ date: '2026-11-10', credit: 0.5 }] };
+  const ana = { repName: 'Ana', totalAnswered: 30, daysActive: 3, creditedDays: 3, answeredPerDay: 10, hasCdrData: true, partialDays: [] };
+  const half = { repName: 'Cy', totalAnswered: 6, daysActive: 1, creditedDays: 0.5, answeredPerDay: null, hasCdrData: true, partialDays: [{ date: '2026-11-10', credit: 0.5 }] };
+  const none = { repName: 'Di', totalAnswered: 0, daysActive: 0, creditedDays: 0, answeredPerDay: null, hasCdrData: false, partialDays: [] };
+  assert.strictEqual(c.mTeamPerDayCell_(jo), '<span title="44 answered over 4.5 credited days (5 days with calls, 1 partial)">9.8</span>');
+  assert.strictEqual(c.mTeamPerDayCell_(ana), '<span title="30 answered over 3 days with calls">10.0</span>');
+  assert.match(c.mTeamPerDayCell_(Object.assign({}, ana, { daysActive: 1, creditedDays: 1, totalAnswered: 7, answeredPerDay: 7 })), /7 answered over 1 day with calls">7\.0</);
+  assert.match(c.mTeamPerDayCell_(half), /title="under one credited day in this range">—</);
+  assert.match(c.mTeamPerDayCell_(none), /title="no call data in this range">—</);
+  assert.match(c.mTeamPerDayCell_(null), />—</);
+  const order = (dir) => Array.from(c.mSortReps_([half, jo, none, ana], { key: 'answeredPerDay', dir: dir })).map((r) => r.repName).join();
+  assert.deepStrictEqual([order('desc').slice(0, 6), order('asc').slice(-6)], ['Ana,Jo', 'Jo,Ana'], 'sorted by the figure — reps with none at the low end (the column is sortable, so it has a case: g04)');
+  // The line under the table: on a range it names the figure; a failed read says the column is unadjusted.
+  assert.match(c.mTeamPartialHintHtml_({ reps: [jo] }, 8, true), /Jo: Nov 10 \(0\.5 day\)\. Ans \/ day counts each as its share; no count, rate or talk time is changed\.<\/div>$/);
+  assert.match(c.mTeamPartialHintHtml_({ reps: [jo] }, 8, false), /\. The figures in this table are not adjusted for them\.<\/div>$/, 'one day has no per-day column, so the older sentence stands');
+  assert.match(c.mTeamPartialHintHtml_({ reps: [jo], partialDaysUnavailable: true }, 8, true), /not shown here, and Ans \/ day counts every day as a whole one\. Refresh to try again\./);
+  assert.ok(!/Ans \/ day/.test(c.mTeamPartialHintHtml_({ reps: [jo], partialDaysUnavailable: true }, 8, false)));
+  const src = fs.readFileSync(path.join(PA_WEB, 'metrics/script_metrics.html'), 'utf8');
+  assert.ok(/\]\.concat\(multiDay \? \[\{ key: 'answeredPerDay', label: 'Ans \/ day', numeric: true, sortable: true, cell: mTeamPerDayCell_ \}\] : \[\]\)/.test(src), 'the column exists for a range only');
+  assert.ok(/if \(hasPerDay\) head\.push\('Ans \/ day', 'Credited days'\);/.test(src), 'and the copied table carries the figure with its divisor');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

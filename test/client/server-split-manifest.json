@@ -4731,6 +4731,34 @@
     "workedHoursByEmpForRange_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-19",
+   "why": "cycle 26 DS1-DS2: a rep's confirm request rides the punch-adjust queue (parAction_, confirmRequestTarget_, confirmInferredForEmployee_); answered per credited day on Team Metrics",
+   "added": [
+    "adjEntryText_",
+    "confirmInferredForEmployee_",
+    "confirmRequestError_",
+    "confirmRequestTarget_",
+    "metricsCreditedDays_",
+    "metricsPerCreditedDay_",
+    "parAction_"
+   ],
+   "removed": [],
+   "changed": [
+    "buildAdjustPunchIndex_",
+    "empPendingAdjustments_",
+    "getMyPunchAdjustRequests",
+    "getTeamMetrics",
+    "managerGetPendingAdjustments",
+    "notifyEmployeeOfAdjustDecision_",
+    "notifyManagersOfAdjustRequests_",
+    "payStmtAdjustments_",
+    "punchAdjustDecideAll_",
+    "submitPunchAdjustRequests",
+    "writeAdjustPunchForEmployee_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -8365,6 +8393,11 @@
    "kind": "function",
    "sha": "82c777e3a590ec1e"
   },
+  "adjEntryText_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "9d33a867c464e2eb"
+  },
   "adjustIndexAppend_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -8773,7 +8806,7 @@
   "buildAdjustPunchIndex_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "0ebe2af704c4f7a8"
+   "sha": "a9ae506c4d71a075"
   },
   "buildBrandedEmailHtml_": {
    "file": "10_core.js",
@@ -9549,6 +9582,21 @@
    "file": "61_forms.js",
    "kind": "function",
    "sha": "8aadff52d2b869f0"
+  },
+  "confirmInferredForEmployee_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "bf4ae5eb98b0979c"
+  },
+  "confirmRequestError_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "50141b24c6fc666a"
+  },
+  "confirmRequestTarget_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "303d673df51efc62"
   },
   "contiguousRowRunsDesc_": {
    "file": "10_core.js",
@@ -10343,7 +10391,7 @@
   "empPendingAdjustments_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "d0a5be553aacac1c"
+   "sha": "ccbc510745192915"
   },
   "empPtoAccrual_": {
    "file": "20_timeclock.js",
@@ -11173,7 +11221,7 @@
   "getMyPunchAdjustRequests": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "f467796a8c856436"
+   "sha": "41b73ff7f5561315"
   },
   "getMyQaReviewAudioChunk": {
    "file": "90_qa.js",
@@ -11578,7 +11626,7 @@
   "getTeamMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "aabc1cca2a5bd55c"
+   "sha": "a08a17820bf0b927"
   },
   "getTeammateStatus": {
    "file": "20_timeclock.js",
@@ -13108,7 +13156,7 @@
   "managerGetPendingAdjustments": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "e60a19622d87f787"
+   "sha": "175931fe3250f8b6"
   },
   "managerGetReviewCandidates": {
    "file": "30_callnotes.js",
@@ -13205,6 +13253,11 @@
    "kind": "function",
    "sha": "db631bd7687a856f"
   },
+  "metricsCreditedDays_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "b753d2902ed7e76d"
+  },
   "metricsKpiIsCount_": {
    "file": "40_metrics.js",
    "kind": "function",
@@ -13224,6 +13277,11 @@
    "file": "40_metrics.js",
    "kind": "function",
    "sha": "754fbb0d42ee5134"
+  },
+  "metricsPerCreditedDay_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "16b0b831e8dd2bd4"
   },
   "metricsTeamAvgSeries_": {
    "file": "40_metrics.js",
@@ -13318,7 +13376,7 @@
   "notifyEmployeeOfAdjustDecision_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "ffb2f27c926aa57e"
+   "sha": "8030fd8434b2a61b"
   },
   "notifyEmployeeOfDecision_": {
    "file": "20_timeclock.js",
@@ -13343,7 +13401,7 @@
   "notifyManagersOfAdjustRequests_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "bae060eb59e4d59c"
+   "sha": "c0375cccf88e1ba4"
   },
   "notifyRepOfCoachingNudge_": {
    "file": "82_coaching.js",
@@ -13540,6 +13598,11 @@
    "kind": "function",
    "sha": "19ad192348b8cec2"
   },
+  "parAction_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "5c74ccaee144b689"
+  },
   "parEndTime_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -13578,7 +13641,7 @@
   "payStmtAdjustments_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "decaf510e241fbda"
+   "sha": "c776b336c1663ac9"
   },
   "payWeekDateText_": {
    "file": "20_timeclock.js",
@@ -13738,7 +13801,7 @@
   "punchAdjustDecideAll_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "2b01246c62d4e137"
+   "sha": "f435454e82ef611c"
   },
   "punchDayAdd_": {
    "file": "20_timeclock.js",
@@ -15353,7 +15416,7 @@
   "submitPunchAdjustRequests": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "0be2345a804b6ab8"
+   "sha": "d5e8f90b97397871"
   },
   "submitQuizAttempt": {
    "file": "80_training.js",
@@ -15743,7 +15806,7 @@
   "writeAdjustPunchForEmployee_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "16982bc14b7bcff4"
+   "sha": "516444b249090e23"
   },
   "writeAuditLog_": {
    "file": "10_core.js",

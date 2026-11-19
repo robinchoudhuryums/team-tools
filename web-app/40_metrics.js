@@ -778,6 +778,26 @@ function metricsTeamPartialDays_(partial, name) {
     .map(function (d) { return { date: String(d[0]), credit: Number(d[1]) }; })
     .sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; });
 }
+/** PURE (Node-pinned) — cycle 26 DS2: a rep's CREDITED days in a window — the
+ *  days they took a call on, a marked day counted as its share (the Department
+ *  Dashboard's own rule). `partialDays` is metricsTeamPartialDays_'s list, which
+ *  holds only marked days that had a call. Two decimals, never below zero. */
+function metricsCreditedDays_(daysActive, partialDays) {
+  var n = Number(daysActive) || 0;
+  var un = 0;
+  (partialDays || []).forEach(function (d) {
+    var c = Number(d && d.credit);
+    if (d && d.credit != null && isFinite(c) && c >= 0 && c < 1) un += 1 - c;
+  });
+  return Math.max(0, Math.round((n - un) * 100) / 100);
+}
+/** PURE (Node-pinned) — DS2: a count per credited day, one decimal. Null with
+ *  no count, or under ONE credited day — an average over less than a day is
+ *  not one (a single half day would read as double its calls). */
+function metricsPerCreditedDay_(count, creditedDays) {
+  if (count == null || !isFinite(Number(count)) || !(Number(creditedDays) >= 1)) return null;
+  return Math.round((Number(count) / Number(creditedDays)) * 10) / 10;
+}
 function metricsOwnPartialDays_(credits, name) {
   return Object.keys(credits || {}).filter(function (d) { return credits[d] && credits[d][name] != null; })
     .sort().reverse().map(function (d) { return { date: d, credit: Number(credits[d][name]) }; });
@@ -2588,7 +2608,7 @@ function getTeamMetrics(dateOrFrom, to) {
     // test-override bypass as the getMyMetrics/getMyMetricsRange siblings
     // (L-1/INV-129); the WRITE below skips any degraded round, so a partial
     // aggregate is never pinned for the TTL.
-    var teamCacheKey = 'team_metrics_v7:' + from + ':' + toDate;   // v7 (cycle 26 DQ1): each rep's partial days   // v6 (cycle 26 FQ3/FQ7): the transfer state + the outbound name pairs   // v5 (cycle 26 F34/F35): the same-basis adjusted average + the call-data state   // v4 (M1): outbound + adjusted   // v3 (H2): rate formula + published standard (INV-85)
+    var teamCacheKey = 'team_metrics_v8:' + from + ':' + toDate;   // v8 (cycle 26 DS2): answered per credited day   // v7 (cycle 26 DQ1): each rep's partial days   // v6 (cycle 26 FQ3/FQ7): the transfer state + the outbound name pairs   // v5 (cycle 26 F34/F35): the same-basis adjusted average + the call-data state   // v4 (M1): outbound + adjusted   // v3 (H2): rate formula + published standard (INV-85)
     var teamMetricsCache = CacheService.getScriptCache();
     var useTeamCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
     if (useTeamCache) {
@@ -2760,6 +2780,12 @@ function getTeamMetrics(dateOrFrom, to) {
       // DQ1 (operator 2026-11-19): the rep's partial days, for the MANAGER's
       // row. `reps` never reaches a rep (teamMetricsRepView_ does not list it).
       rep.partialDays = metricsTeamPartialDays_(cdrResult.partial, name);
+      // DS2 (operator 2026-11-19): the ONE figure on this table a partial day
+      // belongs in — answered per day, over the days the rep took calls with a
+      // marked day as its share. No count, rate or talk time above is changed.
+      rep.daysActive = cdr ? (cdr.daysActive || 0) : 0;
+      rep.creditedDays = metricsCreditedDays_(rep.daysActive, rep.partialDays);
+      rep.answeredPerDay = metricsPerCreditedDay_(cdr ? cdr.totalAnswered : null, rep.creditedDays);
       rep.intakeTimed = intakeRes.unavailable ? null : { timed: intakeRes.timed || 0, seconds: intakeRes.seconds || 0 };
       rep.adjusted = metricsAdjusted_(cdr, rep.outbound, intakeRes.unavailable ? null : intakeRes);
       // Phase 2 — transfers + their per-queue split. INV-180: `queues` is a

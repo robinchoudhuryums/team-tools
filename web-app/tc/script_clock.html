@@ -2225,6 +2225,8 @@ function clkPendingAdjustHtml_(s) {
         (a.endTime ? ' · finished ' + a.endTime : ' · when you finish, add your finish time with Adjust')) + '</span>';
     }
     var label = (PUNCH_META[a.punchType] && PUNCH_META[a.punchType].label) || a.punchType || '';
+    // DS1 (cycle 26): a confirm asks that the time STAND — "Clock In 07:56" alone would read as a change.
+    if (a.action === 'confirm') return '<span class="aj-item">' + esc('Confirm ' + label + ' ' + (a.time || '') + ' as it is') + '</span>';
     return '<span class="aj-item">' + esc(label) + ' ' + esc(a.time || '') + esc(adjIntentText_(a.punchType, a.breakIntent)) + '</span>';
   }).join('<span aria-hidden="true">·</span>');
   return '<div class="clk-adj-pending" role="status">' +
@@ -3090,7 +3092,8 @@ function adjLoadPending_() {
     const label = function (t) { return (PUNCH_META[t] && PUNCH_META[t].label) || t; };
     h.innerHTML = '<div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:4px">Awaiting approval (' + pend.length + ')</div>' +
       pend.map(function (r) {
-        return '<div style="padding:2px 0">' + esc(r.date) + ' · ' + esc(label(r.punchType)) + ' · ' + esc(r.time) + esc(adjIntentText_(r.punchType, r.breakIntent)) + '</div>';
+        return '<div style="padding:2px 0">' + esc(r.date) + ' · ' + esc((r.action === 'confirm' ? 'Confirm ' : '') + label(r.punchType)) + ' · ' + esc(r.time) +
+          esc(r.action === 'confirm' ? ' as it is' : adjIntentText_(r.punchType, r.breakIntent)) + '</div>';   // DS1
       }).join('');
   }).withFailureHandler(function () {}).getMyPunchAdjustRequests();
 }

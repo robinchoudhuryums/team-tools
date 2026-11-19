@@ -935,7 +935,8 @@ function runRecAgo(msAgo, notes) {
           noteCount: notes, noteCoverage: cov, noteCountUnavailable: false, intakeNotes: Math.max(0, Math.round(notes / 9) - (rung % 2)), hasCdrData: true,
           transferred: transferred, transferPct: Math.round((transferred / ans) * 1000) / 10,
           queues: queues, queueTotal: qt, queueUnattributed: Math.max(0, transferred - qt),
-          hasTransferData: true, partialDays: [] };   // DQ1: a manager's row carries the rep's partial days
+          hasTransferData: true, partialDays: [],   // DQ1: a manager's row carries the rep's partial days
+          daysActive: 5, creditedDays: 5, answeredPerDay: Math.round((ans / 5) * 10) / 10 };   // DS2: answered per credited day
       };
       var reps = [
         mk('E-1042', 'Avery Blake', 46, 41, 5, '0:04:41', 35, 85, 14, { A_Q_Sales: 6, A_Q_PAP: 3 }, { placed: 6, connected: 4, talkSec: 1325 }, { timed: 3, seconds: 3240 }),
@@ -950,9 +951,11 @@ function runRecAgo(msAgo, notes) {
         pctAnswered: null, tttFormatted: '0:00:00', attFormatted: '0:00:00', tttSeconds: 0, attSeconds: 0,
         noteCount: 6, noteCoverage: null, noteCountUnavailable: false, intakeNotes: 0, hasCdrData: false,
         transferred: 0, transferPct: null, queues: {}, queueTotal: 0, queueUnattributed: 0, hasTransferData: false,
-        outbound: { placed: 0, connected: 0, talkSec: 0 }, intakeTimed: { timed: 0, seconds: 0 }, adjusted: null, partialDays: [] });
+        outbound: { placed: 0, connected: 0, talkSec: 0 }, intakeTimed: { timed: 0, seconds: 0 }, adjusted: null, partialDays: [],
+        daysActive: 0, creditedDays: 0, answeredPerDay: null });
       // DQ1 (cycle 26): one rep with two partial days in the window — the chip beside the name and the line under the table.
       reps[2].partialDays = [{ date: daysAgo(2), credit: 0.5 }, { date: daysAgo(4), credit: 0 }];
+      reps[2].creditedDays = 3.5; reps[2].answeredPerDay = Math.round((reps[2].totalAnswered / 3.5) * 10) / 10;   // DS2: 5 days with calls, 1.5 not credited
       var tq = {};
       reps.forEach(function (r) {
         Object.keys(r.queues).forEach(function (q) {
@@ -1853,7 +1856,10 @@ function runRecAgo(msAgo, notes) {
         // 25post B4 — a day's adjustment requests with the rep's reason and status.
         adjustments: (function () { var o = {}; o[range.start.substring(0, 8) + '05'] = [
           { punchType: 'ClockOut', time: '17:05', endTime: '', action: 'set', reason: 'Forgot to clock out after the last call', status: 'Approved', submittedAt: '' },
-          { punchType: 'LunchIn', time: '13:00', endTime: '', action: 'set', reason: 'Break ran over — callback', status: 'Pending', submittedAt: '' }]; return o; })(),
+          { punchType: 'LunchIn', time: '13:00', endTime: '', action: 'set', reason: 'Break ran over — callback', status: 'Pending', submittedAt: '' }];
+          // DS1 (cycle 26): the 28th's inferred Clock In has a confirm request waiting — no button there, its line under the day.
+          o[range.start.substring(0, 8) + '28'] = [{ punchType: 'ClockIn', time: '08:02', endTime: '', action: 'confirm', reason: '', status: 'Pending', submittedAt: '' }];
+          return o; })(),
         adjError: '',
         maxOffset: 6,
         viewingOther: rid ? { id: rid, name: 'Priya Raman' } : null,

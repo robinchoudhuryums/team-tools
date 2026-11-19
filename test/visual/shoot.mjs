@@ -244,6 +244,10 @@ const SCENARIOS = [
   ['clock-coverage-error-light-wide', { tool: 'timeClock', tab: 'clock' }, WIDE, 'light', '?failrpc=getMyMetrics'],
   ['timeoff-light-wide',    { tool: 'timeClock', tab: 'timeoff' },    WIDE, 'light', ''],
   ['timeoff-dark-wide',     { tool: 'timeClock', tab: 'timeoff' },    WIDE, 'dark',  ''],
+  // DS1 (cycle 26): the rep's pay statement for the PREVIOUS period — inferred Clock Ins with the
+  // "Confirm Clock In" request button (inside the adjust window), text-only older ones, and one already pending.
+  ['paystmt-confirm-light-wide',  { tool: 'timeClock', tab: 'timeoff' }, WIDE,   'light', '', "openPayStatement_(1, '', '')"],
+  ['paystmt-confirm-dark-mobile', { tool: 'timeClock', tab: 'timeoff' }, MOBILE, 'dark',  '', "openPayStatement_(1, '', '')"],
   ['manage-light-wide',     { tool: 'manage',    tab: 'manage' },     WIDE, 'light', ''],
   ['manage-dark-wide',      { tool: 'manage',    tab: 'manage' },     WIDE, 'dark',  ''],
   // G1 + F19 (cycle 25 E2): the pay-period close checklist sits in the

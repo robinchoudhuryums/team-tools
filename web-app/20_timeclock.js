@@ -2117,12 +2117,13 @@ function payStmtAdjustments_(rows, empId, start, end) {
     if (String(r[PAR.EMP_ID]).trim() !== empId) continue;
     const date = normalizeDate_(r[PAR.DATE]);
     if (!date || date < start || date > end) continue;
-    const resume = String(r[PAR.ACTION] || '').trim().toLowerCase() === 'resume';
+    const action = parAction_(r[PAR.ACTION]);
+    const resume = action === 'resume';
     (out[date] = out[date] || []).push({
       punchType: String(r[PAR.PUNCH_TYPE] || '').trim(),
       time: normalizeTime_(r[PAR.REQ_TIME]).trim().substring(0, 5),
       endTime: resume ? normalizeTime_(r[PAR.END_TIME]).trim().substring(0, 5) : '',
-      action: resume ? 'resume' : 'set',
+      action: action,
       reason: String(r[PAR.REASON] || '').slice(0, 500),
       status: String(r[PAR.STATUS] || '').trim(),
       submittedAt: normalizeAuditTs_(r[PAR.SUBMITTED_AT]),
@@ -7322,7 +7323,7 @@ function empPendingAdjustments_(empId, dateIso) {
         // B3: additive. A pending RESUME must not read as "Clock Out 19:30" —
         // that is the punch it converts, not the one it adds. An older client
         // ignores the field and renders as before.
-        action: String(rows[i][PAR.ACTION] || '').trim().toLowerCase() === 'resume' ? 'resume' : 'set',
+        action: parAction_(rows[i][PAR.ACTION]),
         endTime: parEndTime_(rows[i]),   // T3
         breakIntent: breakIntentNorm_(rows[i][PAR.BREAK_TARGET]),   // TC-02 — what a break request means
       });
@@ -8729,6 +8730,43 @@ function getOrCreatePunchAdjustSheet_() {
  *  recordPunch's adjustment path: date/time shape, known punch type, future
  *  reject, adjust window, reason beyond OLD_ADJUST_ALERT_DAYS). Caller-scoped,
  *  locked. */
+/** PURE (Node-pinned) — a request's ACTION cell, read in ONE place: 'resume'
+ *  (B3), 'confirm' (cycle 26 DS1 — the rep asks that a clock time set from app
+ *  activity be confirmed as it stands) or the ordinary 'set'. A blank legacy
+ *  cell, and anything else, is 'set'. */
+function parAction_(v) {
+  const a = String(v == null ? '' : v).trim().toLowerCase();
+  return a === 'resume' ? 'resume' : a === 'confirm' ? 'confirm' : 'set';
+}
+/** PURE (Node-pinned) — DS1: what a CONFIRM request finds on its day. `matches`
+ *  is the day's rows of that clock type in sheet order ({rowIndex, time 'HH:mm',
+ *  inferred, confirmed}); the SHOWN row is the last. → {code}: 'ok' (still
+ *  inferred at the requested time — with rowIndex), 'done' (already confirmed
+ *  at that time), 'none' (no such punch), 'changed' (another time now stands),
+ *  'plain' (that time, but never marked — nothing to confirm). */
+function confirmRequestTarget_(matches, reqTime) {
+  const list = matches || [];
+  const cur = list[list.length - 1];
+  if (!cur) return { code: 'none' };
+  if (String(cur.time || '') !== String(reqTime || '')) return { code: 'changed', time: cur.time };
+  if (cur.inferred === true) return { code: 'ok', rowIndex: cur.rowIndex, time: cur.time };
+  if (cur.confirmed === true) return { code: 'done', time: cur.time };
+  return { code: 'plain', time: cur.time };
+}
+/** PURE (Node-pinned) — DS1: why a confirm request cannot go ahead ('' for
+ *  'ok' and 'done'). The request is refused, never bent to fit (g163). */
+function confirmRequestError_(t, punchType, date, reqTime) {
+  const label = punchType === 'ClockOut' ? 'Clock Out' : 'Clock In';
+  if (!t || t.code === 'none') return 'There is no ' + label + ' on ' + date + ' to confirm.';
+  if (t.code === 'changed') return 'The ' + label + ' on ' + date + ' is now ' + t.time + ', not the ' + reqTime + ' this request confirms.';
+  if (t.code === 'plain') return 'The ' + label + ' on ' + date + ' is not marked as set from app activity, so there is nothing to confirm.';
+  return '';
+}
+/** PURE (Node-pinned) — DS1: one request as the manager email names it. */
+function adjEntryText_(c) {
+  if (c && c.action === 'confirm') return 'Confirm ' + c.punchType + ' ' + c.time + ' (set from app activity)';
+  return c.punchType + ' ' + c.time;
+}
 function submitPunchAdjustRequests(requests) {
   const emp = getEmployeeInfo_();
   if (!emp) return { success: false, error: 'Employee not found.' };
@@ -8752,12 +8790,18 @@ function submitPunchAdjustRequests(requests) {
       // NOT a punch write — on approval the trailing ClockOut is CONVERTED to a
       // break and the requested time becomes the break's end, so the hours the
       // rep was away are unpaid. Any other value reads as the ordinary 'set'.
-      const action = String(r.action || '').trim().toLowerCase() === 'resume' ? 'resume' : 'set';
+      const action = parAction_(r.action);   // 'resume', 'confirm' (cycle 26 DS1) or the ordinary 'set'
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { success: false, error: label + ': invalid date.' };
       if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return { success: false, error: label + ': invalid time (expected HH:mm).' };
       if (PUNCH_LABELS_.indexOf(punchType) < 0) return { success: false, error: label + ': invalid punch type.' };
       if (action === 'resume' && punchType !== 'ClockOut') {
         return { success: false, error: label + ': a resume request converts the Clock Out — it cannot target ' + punchType + '.' };
+      }
+      // DS1 (cycle 26, operator 2026-11-19): a rep may ASK that a clock time a
+      // manager set from app activity be confirmed as it stands. It is a
+      // request like any other — nothing changes until a manager approves it.
+      if (action === 'confirm' && punchType !== 'ClockIn' && punchType !== 'ClockOut') {
+        return { success: false, error: label + ': only a Clock In or Clock Out can be confirmed.' };
       }
       if (date > todayStr) return { success: false, error: label + ': cannot request a future date.' };
       // F(L-2): same-day future-TIME reject — INV-106 claims parity with
@@ -8769,7 +8813,8 @@ function submitPunchAdjustRequests(requests) {
       }
       const daysBack = daysBetween_(date, todayStr);
       if (daysBack > CONFIG.ADJUST_WINDOW_DAYS) return { success: false, error: label + ': older than the ' + CONFIG.ADJUST_WINDOW_DAYS + '-day adjust window.' };
-      if (daysBack > CONFIG.OLD_ADJUST_ALERT_DAYS && !reason) return { success: false, error: label + ': a reason is required for dates more than ' + CONFIG.OLD_ADJUST_ALERT_DAYS + ' days back.' };
+      // A confirm changes no time, so it owes no reason for an older date.
+      if (daysBack > CONFIG.OLD_ADJUST_ALERT_DAYS && !reason && action !== 'confirm') return { success: false, error: label + ': a reason is required for dates more than ' + CONFIG.OLD_ADJUST_ALERT_DAYS + ' days back.' };
       clean.push({ date: date, time: time, punchType: punchType, reason: reason, action: action,
         breakIntent: (action === 'set' && BREAK_PUNCH_TYPES.indexOf(punchType) >= 0) ? breakIntentNorm_(r.breakIntent) : null });
     }
@@ -8779,13 +8824,25 @@ function submitPunchAdjustRequests(requests) {
     // a correction must name a punch the day actually has. Re-checked at
     // approval — the day can be edited while the request waits.
     // TC-05 (cycle 23): the same ONE read also serves the clock-span check.
-    const breakDates = {}, clockDates = {};
+    const breakDates = {}, clockDates = {}, confirmDates = {};
     clean.forEach(function (c) {
       if (c.breakIntent) breakDates[c.date] = true;
       if (c.action === 'set' && (c.punchType === 'ClockIn' || c.punchType === 'ClockOut')) clockDates[c.date] = true;
+      if (c.action === 'confirm') confirmDates[c.date] = true;
     });
-    const ixDates = Object.assign({}, breakDates, clockDates);
+    const ixDates = Object.assign({}, breakDates, clockDates, confirmDates);
     const bix = Object.keys(ixDates).length ? buildAdjustPunchIndex_(emp.id, ixDates) : null;
+    // DS1: a confirm names a time that must be standing, and still marked
+    // inferred, NOW — and it is re-checked at approval, because the day can be
+    // edited (or confirmed by a manager) while the request waits.
+    for (let i = 0; i < clean.length; i++) {
+      const c = clean[i];
+      if (c.action !== 'confirm') continue;
+      const t = confirmRequestTarget_(bix.all[c.date + '|' + c.punchType], c.time);
+      if (t.code === 'done') return { success: false, error: 'Adjustment #' + (i + 1) + ': that time has already been confirmed.' };
+      const cErr = confirmRequestError_(t, c.punchType, c.date, c.time);
+      if (cErr) return { success: false, error: 'Adjustment #' + (i + 1) + ': ' + cErr };
+    }
     if (Object.keys(breakDates).length) {
       for (let i = 0; i < clean.length; i++) {
         const c = clean[i];
@@ -8922,7 +8979,7 @@ function getMyPunchAdjustRequests() {
         punchType: String(rows[i][PAR.PUNCH_TYPE]).trim(),
         time: normalizeTime_(rows[i][PAR.REQ_TIME]).trim().substring(0, 5),
         reason: String(rows[i][PAR.REASON] || ''),
-        action: String(rows[i][PAR.ACTION] || '').trim().toLowerCase() === 'resume' ? 'resume' : 'set',
+        action: parAction_(rows[i][PAR.ACTION]),
         breakIntent: breakIntentNorm_(rows[i][PAR.BREAK_TARGET]),   // TC-02
         status: String(rows[i][PAR.STATUS]).trim(),
         submittedAt: normalizeAuditTs_(rows[i][PAR.SUBMITTED_AT]),
@@ -8974,7 +9031,7 @@ function managerGetPendingAdjustments() {
         // B3: the manager must see WHICH kind of request this is — a resume
         // converts an existing clock-out and leaves an unpaid gap, which is a
         // materially different decision from adding a missed punch.
-        action: String(rows[i][PAR.ACTION] || '').trim().toLowerCase() === 'resume' ? 'resume' : 'set',
+        action: parAction_(rows[i][PAR.ACTION]),
         // T3: a resume's filed finish ('' when none) — the manager sees whether
         // approving closes the day or leaves it for the rep to clock out.
         endTime: parEndTime_(rows[i]),
@@ -9054,7 +9111,7 @@ function punchAdjustDecideAll_(reqIds, newStatus) {
       const reqTime = normalizeTime_(rows[i][PAR.REQ_TIME]).trim().substring(0, 5);
       const reason = String(rows[i][PAR.REASON] || '');
       // B3: '' on a legacy row means the ordinary punch write.
-      const action = String(rows[i][PAR.ACTION] || '').trim().toLowerCase() === 'resume' ? 'resume' : 'set';
+      const action = parAction_(rows[i][PAR.ACTION]);
       if (newStatus === 'Approved') {
         const targetEmp = lookupEmployeeById_(empId);
         if (!targetEmp) { fail(id, 'Employee not found.'); return; }
@@ -9077,6 +9134,14 @@ function punchAdjustDecideAll_(reqIds, newStatus) {
           // finish written by the same writer), so this employee's index is
           // kept — the batch used to drop it and re-read the whole Timesheet
           // for the next request, inside the one project lock.
+        } else if (action === 'confirm') {
+          // DS1: the rep's confirm request. The time is NOT written — the
+          // row's mark moves from Inferred to Confirmed, as the manager's own
+          // Confirm as is does. Refused, with the reason, when the time no
+          // longer stands or was never inferred; a time a manager has already
+          // confirmed is simply done.
+          const cres = confirmInferredForEmployee_(targetEmp, date, punchType, reqTime, callerEmp.email, reason, ctxFor(empId), ageDays);
+          if (cres && cres.error) { fail(id, cres.error); return; }
         } else {
           // TC-02 (cycle 23): a break request carries what it means ('add' or
           // 'correct@HH:mm'); the writer refuses a target that is gone (the day
@@ -9108,7 +9173,7 @@ function punchAdjustDecideAll_(reqIds, newStatus) {
       } else {
         const targetForAudit = lookupEmployeeById_(empId) || { id: empId, name: empName, email: '' };
         writeAuditLog_(targetForAudit, 'PunchAdjustStatusChange', date, '', false, 0,
-          `${punchType} ${reqTime} request denied`, callerEmp.email);
+          `${action === 'confirm' ? 'confirm ' : ''}${punchType} ${reqTime} request denied`, callerEmp.email);
         const dnote = breakIntentNote_(punchType, rows[i][PAR.BREAK_TARGET]);
         notifyAfter = function () { notifyEmployeeOfAdjustDecision_(targetForAudit, date, punchType, reqTime, reason, 'Denied', action, '', dnote); };
         later.push(notifyAfter);
@@ -9126,6 +9191,27 @@ function punchAdjustDecideAll_(reqIds, newStatus) {
     later.forEach((fn) => { try { fn(); } catch (e) { console.warn('post-lock notify failed: ' + e.message); } });
   }
 }
+/** DS1 (cycle 26) — applies an APPROVED confirm request: the day's shown row of
+ *  that clock type, still inferred at the requested time, is marked Confirmed
+ *  and one PunchConfirm audit row names the approver. Inside the caller's
+ *  lock; `ctx` is buildAdjustPunchIndex_'s, kept current. → {success} |
+ *  {success, already} (a manager confirmed it first — nothing to write) |
+ *  {error} (the request no longer matches the day; nothing is written). */
+function confirmInferredForEmployee_(emp, date, punchType, reqTime, approverEmail, reason, ctx, daysBack) {
+  if (punchType !== 'ClockIn' && punchType !== 'ClockOut') return { error: 'Only a Clock In or Clock Out can be confirmed — deny this request.' };
+  const list = (ctx && ctx.all && ctx.all[date + '|' + punchType]) || [];
+  const t = confirmRequestTarget_(list, reqTime);
+  if (t.code === 'done') return { success: true, already: true };
+  const err = confirmRequestError_(t, punchType, date, reqTime);
+  if (err) return { error: err + ' Deny this request.' };
+  adpSetSource_(ctx.sheet, t.rowIndex, ADP_CONFIRMED_MARK);
+  const cur = list[list.length - 1];
+  cur.inferred = false; cur.confirmed = true;
+  const note = String(reason || '').trim();
+  writeAuditLog_(emp, 'PunchConfirm', date, reqTime, true, daysBack || 0,
+    `${punchType}: ${reqTime} confirmed as is at the rep's request, approved by manager (was inferred from app activity)${note ? ' — ' + note : ''}`, approverEmail);
+  return { success: true };
+}
 /** Tells the MANAGERS a rep has filed punch-adjustment request(s) (B2,
  *  2026-09-01). Until this shipped, `submitPunchAdjustRequests` wrote its
  *  Pending rows, audited, and told NOBODY — the queue lives inside the manager
@@ -9142,14 +9228,14 @@ function notifyManagersOfAdjustRequests_(emp, entries) {
     const n = entries.length;
     const subj = `${emp.name} requested ${n} punch adjustment${n === 1 ? '' : 's'}`;
     const lines = entries.map(function (c) {
-      return `  ${c.date}  ${c.punchType} ${c.time}` + breakIntentNote_(c.punchType, c.breakIntent) + (c.reason ? `  — ${c.reason}` : '');
+      return `  ${c.date}  ${adjEntryText_(c)}` + breakIntentNote_(c.punchType, c.breakIntent) + (c.reason ? `  — ${c.reason}` : '');
     }).join('\n');
     const body = `${emp.name} submitted ${n} punch adjustment request${n === 1 ? '' : 's'} ` +
       `for your approval:\n\n${lines}\n\n` +
       `Approve or deny from Manage \u2192 Manage Time. Nothing changes on their ` +
       `timesheet until you do.\n\n\u2014 UMS Time Clock (automated)\n`;
     const rows = entries.map(function (c) {
-      return [c.date, c.punchType + ' ' + c.time + breakIntentNote_(c.punchType, c.breakIntent) + (c.reason ? ' \u2014 ' + c.reason : '')];
+      return [c.date, adjEntryText_(c) + breakIntentNote_(c.punchType, c.breakIntent) + (c.reason ? ' \u2014 ' + c.reason : '')];
     });
     const html = buildBrandedEmailHtml_('Punch adjustment' + (n === 1 ? '' : 's') + ' awaiting approval',
       '<p style="margin:0 0 12px;"><b>' + esc_(emp.name) + '</b> submitted ' + n +
@@ -9177,10 +9263,12 @@ function notifyEmployeeOfAdjustDecision_(emp, date, punchType, reqTime, reason, 
     const approved = newStatus === 'Approved';
     const verb = approved ? 'approved' : 'denied';
     const resume = String(action || '') === 'resume';
+    const confirm = String(action || '') === 'confirm';   // DS1
     const label = resume ? 'Resume shift'
-      : (PUNCH_LABELS_.indexOf(punchType) >= 0 ? punchType : String(punchType || '')) + String(intentNote || '');   // TC-02
+      : (confirm ? 'Confirm ' : '') + (PUNCH_LABELS_.indexOf(punchType) >= 0 ? punchType : String(punchType || '')) + String(intentNote || '');   // TC-02
     const subj = resume
       ? `Your request to resume your ${date} shift was ${verb}`
+      : confirm ? `Your request to confirm your ${date} ${punchType} was ${verb}`
       : `Your punch adjustment for ${date} was ${verb}`;
     const hasReason = !!String(reason || '').trim();
     let body = `Hi ${emp.name},\n\n` +
@@ -9198,8 +9286,11 @@ function notifyEmployeeOfAdjustDecision_(emp, date, punchType, reqTime, reason, 
             `you were away is unpaid, and your ${endTime} finish is recorded as your clock-out.`
           : `Your shift is open again. Your earlier clock-out is now a break, so the time ` +
             `you were away is unpaid — clock out as usual when you finish.`)
+      : confirm ? `The time stands as it is, and it is no longer marked as inferred from app activity.`
       : `The punch has been added to your timesheet.`;
-    const deniedLine = `No change was made to your timesheet. Contact your manager if you still need this fixed.`;
+    const deniedLine = confirm
+      ? `The time is still marked as inferred from app activity. If it is wrong, request an adjustment; otherwise contact your manager.`
+      : `No change was made to your timesheet. Contact your manager if you still need this fixed.`;
     body += (approved ? approvedLine : deniedLine) + `\n\n`;
     body += `— UMS Time Clock (automated)\n`;
     const kv = [['Date', date], ['Punch', label], [resume ? 'Back at' : 'Time', reqTime]];
@@ -9366,7 +9457,7 @@ function writeAdjustPunchForEmployee_(targetEmp, date, punchType, time, actorEma
     adpSetInferred_(c.sheet, target.rowIndex, false);   // E2: an approved time replaces an inferred one
     // TC-05 (cycle 23): keep a caller's ctx current, so a later check in the
     // same run (a Clock Out approved after its Clock In) reads this time.
-    ((c.all || {})[key] || []).forEach(function (m) { if (m.rowIndex === target.rowIndex) m.time = time; });
+    ((c.all || {})[key] || []).forEach(function (m) { if (m.rowIndex === target.rowIndex) { m.time = time; m.inferred = false; m.confirmed = false; } });   // DS1: the mark was cleared just above
   } else {
     appendToAdpSheet_(targetEmp, date, timeFull, dir, commentLabel);
     if (c.all) adjustIndexAppend_(c, date, punchType, c.sheet.getLastRow(), time);
@@ -9416,7 +9507,8 @@ function buildAdjustPunchIndex_(empId, dateSet) {
     if (!dateSet[d]) continue;
     const key = d + '|' + normalizeType_(String(rows[i][ADP.COMMENTS]));
     idx[key] = i + 1;
-    (all[key] || (all[key] = [])).push({ rowIndex: i + 1, time: String(normalizeTime_(rows[i][ADP.TIME]) || '').substring(0, 5) });
+    (all[key] || (all[key] = [])).push({ rowIndex: i + 1, time: String(normalizeTime_(rows[i][ADP.TIME]) || '').substring(0, 5),
+      inferred: adpRowInferred_(rows[i]), confirmed: adpRowConfirmed_(rows[i]) });   // DS1: a confirm request reads the shown row's mark
   }
   return { sheet: sheet, idx: idx, all: all };
 }

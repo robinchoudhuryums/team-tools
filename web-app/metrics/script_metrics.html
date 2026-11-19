@@ -1115,11 +1115,12 @@ function mTeamPartialChipHtml_(r) {
  *  be read are said (a row with no chip would read as a full window — g53);
  *  otherwise each rep with partial days is named with them, and the line says
  *  the table's figures are not adjusted. '' for a window with none. */
-function mTeamPartialHintHtml_(data, cap) {
+function mTeamPartialHintHtml_(data, cap, multiDay) {
   if (!data || !data.reps) return '';
   if (data.partialDaysUnavailable === true) {
     return '<div class="m-hint" style="margin-top:var(--space-md);color:var(--warning-deep)">' + icon('warning', 14) +
-      ' Partial-day marks could not be read — a rep’s partial days are not shown here. Refresh to try again.</div>';
+      ' Partial-day marks could not be read — a rep’s partial days are not shown here' +
+      (multiDay ? ', and Ans / day counts every day as a whole one' : '') + '. Refresh to try again.</div>';
   }
   var marked = data.reps.filter(function (r) { return !!mTeamPartialText_(r, 1); });
   if (!marked.length) return '';
@@ -1127,7 +1128,25 @@ function mTeamPartialHintHtml_(data, cap) {
     esc(marked.length + ' rep' + (marked.length === 1 ? '' : 's') + ' with partial days in this window — ' +
       marked.slice(0, cap).map(function (r) { return r.repName + ': ' + mTeamPartialText_(r, 4); }).join('; ')) +
     (marked.length > cap ? ' <em>+' + (marked.length - cap) + ' more</em>' : '') +
-    '. The figures in this table are not adjusted for them.</div>';
+    // DS2: on a range the per-day column counts them; nothing else in the table moves.
+    (multiDay ? '. Ans / day counts each as its share; no count, rate or talk time is changed.</div>'
+      : '. The figures in this table are not adjusted for them.</div>');
+}
+/** PURE — DS2 (cycle 26): a rep's answered calls per CREDITED day on the
+ *  manager's Team table. The basis is in the title — "44 answered over 4.5
+ *  credited days (5 days with calls, 1 partial)". "—" when the server gives no
+ *  figure: no call data, or under one credited day. */
+function mTeamPerDayCell_(r) {
+  if (!r || r.answeredPerDay == null) {
+    var why = (r && r.hasCdrData !== false && r.creditedDays != null && r.creditedDays < 1) ? 'under one credited day in this range' : 'no call data in this range';
+    return '<span style="color:var(--muted)" title="' + esc(why) + '">—</span>';
+  }
+  var np = (r.partialDays || []).length;
+  var days = Number(r.daysActive) || 0;
+  var basis = r.totalAnswered + ' answered over ' + (np
+    ? r.creditedDays + ' credited day' + (r.creditedDays === 1 ? '' : 's') + ' (' + days + ' day' + (days === 1 ? '' : 's') + ' with calls, ' + np + ' partial)'
+    : days + ' day' + (days === 1 ? '' : 's') + ' with calls');
+  return '<span title="' + esc(basis) + '">' + esc(Number(r.answeredPerDay).toFixed(1)) + '</span>';
 }
 function mPartialNoteHtml_(series) {
   var pts = (series || []).filter(function (p) { return p && p.partial != null && isFinite(p.partial); });
@@ -1447,6 +1466,7 @@ function mSortReps_(reps, sort) {
       case 'repName': return String(r.repName || '').toLowerCase();
       case 'totalRung': return r.totalRung || 0;
       case 'totalAnswered': return r.totalAnswered || 0;
+      case 'answeredPerDay': return (r.answeredPerDay == null ? -1 : r.answeredPerDay);   // DS2: no figure sorts lowest
       case 'totalMissed': return r.totalMissed || 0;
       case 'pctAnswered': return (r.pctAnswered == null ? -1 : r.pctAnswered);   // M1: no rate sorts lowest, never as 0%
       case 'attSeconds': return r.attSeconds || 0;
@@ -1991,6 +2011,8 @@ function mRenderTeamMetrics_(data) {
         // Today, PTO, a non-phone day) has no call figures — "—", never a 0.
         { key: 'totalRung', label: 'Rung', numeric: true, sortable: true, cell: function (r) { return mNoCallData_(r) ? mNoCallCell_() : esc(r.totalRung); } },
         { key: 'totalAnswered', label: 'Answered', numeric: true, sortable: true, cell: function (r) { return mNoCallData_(r) ? mNoCallCell_() : esc(r.totalAnswered); } },
+        // DS2 (cycle 26): answered per credited day — a range only (one day has no average).
+        ].concat(multiDay ? [{ key: 'answeredPerDay', label: 'Ans / day', numeric: true, sortable: true, cell: mTeamPerDayCell_ }] : []).concat([
         { key: 'totalMissed', label: 'Missed', numeric: true, sortable: true, cell: function (r) { return mNoCallData_(r) ? mNoCallCell_() : (r.totalMissed > 0 ? '<span style="color:var(--warn)">' + esc(r.totalMissed) + '</span>' : '0'); } },
         { key: 'pctAnswered', label: '% Ans', numeric: true, sortable: true, cell: function (r) { return (r.pctAnswered == null) ? '<span style="color:var(--muted)">—</span>' : '<span class="' + mPctClass_(r.pctAnswered, thr, band) + '">' + esc(r.pctAnswered) + '%</span>'; } },
         { key: 'attSeconds', label: 'ATT', numeric: true, sortable: true, cell: function (r) { return mNoCallData_(r) ? mNoCallCell_() : esc(r.attFormatted); } },
@@ -2002,7 +2024,7 @@ function mRenderTeamMetrics_(data) {
         // CDR attribution does not exist in this data). Null read → em dash.
         { key: 'intakeNotes', label: 'Intake', numeric: true, sortable: true, cell: function (r) { return r.intakeNotes == null ? '<span style="color:var(--muted)" title="count unavailable">—</span>' : (r.intakeNotes > 0 ? esc(r.intakeNotes) : '<span style="color:var(--muted)">0</span>'); } },
         { key: 'noteCoverage', label: 'Coverage', numeric: true, sortable: true, cell: function (r) { return r.noteCoverage != null ? mCoverageBadge_(r.noteCoverage) : '<span style="color:var(--muted)">—</span>'; } },
-      ].concat(mTeamAdjColumns_(data)).concat(hasQueues ? [
+      ]).concat(mTeamAdjColumns_(data)).concat(hasQueues ? [
         // Phase 2 — the TRANSFERS column is the only one that can carry a
         // per-queue split (Phase 0). Total + segmented bar + a real disclosure
         // button (INV-173/174) whose aria-controls points at the detail row
@@ -2047,7 +2069,7 @@ function mRenderTeamMetrics_(data) {
       '. Fix with an Agent Alias Overrides row in the CDR Report.</div>';
   }
 
-  html += mTeamPartialHintHtml_(data, M_NAME_CAP);   // DQ1 — managers only: the rep view carries no `reps`
+  html += mTeamPartialHintHtml_(data, M_NAME_CAP, multiDay);   // DQ1 — managers only: the rep view carries no `reps`
 
   // FQ7 (cycle 26): the same pairing for the Outbound Calls tab — a rep whose
   // outbound calls sit under another spelling had no line anywhere.
@@ -2191,6 +2213,8 @@ function mTeamTableTsv_(data, scope, sort) {
     if (hasAdjAtt) head.push('ATT excl. intake');
     if (hasTr) head.push('Transfers');
     var hasPd = (data.reps || []).some(function (r) { return !!mTeamPartialText_(r, 1); });   // DQ1
+    var hasPerDay = !!(data.from && data.to && data.from !== data.to);   // DS2 — a range only
+    if (hasPerDay) head.push('Ans / day', 'Credited days');
     if (hasPd) head.push('Partial days');
     out.push(tsvRow_(head));
     var reps = mSortReps_(data.reps || [], sort || { key: 'pctAnswered', dir: 'desc' });
@@ -2208,6 +2232,7 @@ function mTeamTableTsv_(data, scope, sort) {
         r.adjusted ? r.adjusted.handled : (noCalls ? '' : r.totalAnswered));
       if (hasAdjAtt) row.push(r.adjusted && r.adjusted.attExIntakeFormatted ? r.adjusted.attExIntakeFormatted : '');
       if (hasTr) row.push(r.transferred);
+      if (hasPerDay) row.push(r.answeredPerDay == null ? '' : Number(r.answeredPerDay).toFixed(1), noCalls || r.creditedDays == null ? '' : r.creditedDays);
       if (hasPd) row.push(mTeamPartialText_(r, 99));
       out.push(tsvRow_(row));
     });

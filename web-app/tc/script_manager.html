@@ -678,6 +678,10 @@ function renderAdjustQueueCard_(requests) {
       ? 'Resume shift · ' + r.date + ' · back at ' + r.time +
         (r.endTime ? ' · finished ' + r.endTime : ' · no finish filed yet') +
         ' (clock-out becomes a break — the gap is unpaid)'
+      // DS1 (cycle 26): the rep vouches for a time set from app activity. Say
+      // what approving does — it writes no time.
+      : r.action === 'confirm'
+      ? 'Confirm ' + r.punchType + ' · ' + r.date + ' · ' + r.time + ' (set from app activity — approving keeps the time and clears the Inferred mark)'
       : r.punchType + ' · ' + r.date + ' · ' + r.time + mgrAdjIntentText_(r);
     return '<div class="mgr-adj-row" data-req-row="' + esc(r.reqId) + '">' +
       (multi ? '<input type="checkbox" class="mgr-adj-chk" data-req-id="' + esc(r.reqId) + '" data-emp-name="' + esc(r.empName) + '" data-date="' + esc(r.date) + '" aria-label="Select the request from ' + esc(r.empName) + '" onchange="adjBulkSync_()">' : '') +
