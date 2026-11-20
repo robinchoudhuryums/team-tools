@@ -3738,7 +3738,9 @@ function sendRepEmail_(emp, opts) {
   if (emp && emp.email) {
     const self = String(emp.email);
     const bcc = String(merged.bcc || '');
-    if (bcc.toLowerCase().indexOf(self.toLowerCase()) < 0) {
+    // F43 (cycle 26): whole addresses. A substring test skipped the copy for
+    // ann@x.com whenever the list already held maryann@x.com.
+    if (!mailListHasAddress_(bcc, self)) {
       merged.bcc = bcc ? bcc + ',' + self : self;
     }
   }
@@ -3960,6 +3962,12 @@ function mailHeaderAddrs_(headers) {
     });
   });
   return out;
+}
+/** PURE (Node-pinned) — F43 (cycle 26): is this WHOLE address in a bcc / cc /
+ *  to list? By address, never by substring. */
+function mailListHasAddress_(list, addr) {
+  const want = String(addr == null ? '' : addr).trim().toLowerCase();
+  return !!want && mailHeaderAddrs_(list).indexOf(want) >= 0;
 }
 /** Everyone a reply-all to this Gmail message can reach: its From, Reply-To,
  *  To and Cc. Deliberately the WIDEST reading (Gmail answers Reply-To when
@@ -5693,6 +5701,11 @@ function getWhatsNew() {
       for (let i = 0; i < ids.length; i++) {
         if (String(ids[i][0]) !== id) continue;
         const row = sheet.getRange(i + 2, 1, 1, KB_HEADERS.length).getValues()[0];
+        // F43 (cycle 26, g164): the row is fetched by INDEX after an unlocked
+        // id scan — an article deleted between the two reads puts ANOTHER
+        // article under that index, and its title and body would open for
+        // every rep as "What's new". The fetched row must still carry the id.
+        if (String(row[KB.ID]) !== id) break;
         // A DRAFT stays invisible to EVERYONE here (INV-140/147 — this is a
         // broadcast surface; an admin previews drafts in Reference, not here),
         // and only native articles render (an embed has no body for kbMd_).

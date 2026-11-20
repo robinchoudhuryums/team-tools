@@ -257,18 +257,24 @@ function drResolveCtaHtml_(resolveUrl) {
  *  a clicker the app cannot place stays 'email'; a clicker it CAN place as not
  *  the department is 'copy' (untimed):
  *   - the sender → 'self';
- *   - an address the email was sent TO → 'email' (the department's address);
+ *   - an address the department map holds for a receiving department →
+ *     'email' (`deptAddrs`, from drDeptAddrsFor_). F41 (cycle 26): this rule
+ *     read the row's ToEmail cell, which stores only the recipient DOMAINS
+ *     ("ums.com") — a full address can never equal one, so it never fired,
+ *     and a department mailbox that is also on the roster (without that
+ *     department in column N) or on the CC / BCC-all list was recorded as an
+ *     untimed 'copy';
  *   - a roster member (`clickerDepts` is their department list; null = not on
  *     the roster) → 'email' when they belong to a receiving department, else
  *     'copy' — a manager or rep reading a copy is not the department;
  *   - an address in `copyAddrs` (the CC + BCC-all lists) → 'copy';
  *   - anyone else → 'email'. */
-function drEmailClickVia_(clicker, row, copyAddrs, clickerDepts) {
+function drEmailClickVia_(clicker, row, copyAddrs, clickerDepts, deptAddrs) {
   const lc = function (x) { return String(x == null ? '' : x).trim().toLowerCase(); };
   const c = lc(clicker);
   if (!c || !row) return 'email';
   if (c === lc(row[DR.BY_EMAIL])) return 'self';
-  if (String(row[DR.TO_EMAIL] || '').split(/[,;\s]+/).map(lc).indexOf(c) >= 0) return 'email';
+  if ((deptAddrs || []).map(lc).indexOf(c) >= 0) return 'email';
   if (Array.isArray(clickerDepts)) {
     const toLc = lc(row[DR.TO_DEPT]);
     const parts = {};
@@ -277,9 +283,25 @@ function drEmailClickVia_(clicker, row, copyAddrs, clickerDepts) {
   }
   return (copyAddrs || []).map(lc).indexOf(c) >= 0 ? 'copy' : 'email';
 }
+/** PURE (Node-pinned) — F41 (cycle 26): the addresses the department map
+ *  holds TODAY for the department(s) a request was sent to, lowercased. A
+ *  multi-department send ("Billing, Shipping") gives every component's; a
+ *  map value may itself be a list. [] with no map or no such department. */
+function drDeptAddrsFor_(toDept, deptMap) {
+  const lc = function (x) { return String(x == null ? '' : x).trim().toLowerCase(); };
+  const want = {};
+  want[lc(toDept)] = true;
+  drSplitDepts_(String(toDept || '')).forEach(function (d) { want[lc(d)] = true; });
+  const out = {};
+  Object.keys(deptMap || {}).forEach(function (k) {
+    if (!want[lc(k)]) return;
+    String(deptMap[k] == null ? '' : deptMap[k]).split(/[,;\s]+/).forEach(function (a) { if (lc(a)) out[lc(a)] = true; });
+  });
+  return Object.keys(out);
+}
 /** Mark a request resolved (the receiver clicked the email link). Idempotent.
- *  `clickCtx` (F55, the email path only): `{ copyAddrs, clickerDepts }` for
- *  drEmailClickVia_; without it only the sender rule applies. */
+ *  `clickCtx` (F55, the email path only): `{ copyAddrs, clickerDepts, deptMap }`
+ *  for drEmailClickVia_; without it only the sender rule applies. */
 function markDeptRequestResolved_(token, byEmail, via, clickCtx) {
   // `via` (operator 2026-09-10): 'email' from the department email's resolve
   // link, 'app' from the tracker's Mark-resolved button. The two paths share
@@ -290,7 +312,16 @@ function markDeptRequestResolved_(token, byEmail, via, clickCtx) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const sh = getOrCreateDeptRequestsSheet_();
+    return drResolveRowLocked_(getOrCreateDeptRequestsSheet_(), token, byEmail, viaClean, clickCtx);
+  } finally { lock.releaseLock(); }
+}
+/** The resolve write itself — the CALLER holds the ScriptLock. Split out of
+ *  markDeptRequestResolved_ (F41, cycle 26) so answerDeptReplyLook can resolve
+ *  and log its answer under ONE lock: it logged the answer, released, and then
+ *  waited for the lock again to resolve — a timeout there left "resolved" on
+ *  the review report for a request that was still open. */
+function drResolveRowLocked_(sh, token, byEmail, viaClean, clickCtx) {
+  {
     // Q5 (Batch Q, 2026-09-11) — the bounded RequestId-column lookup the
     // detail read already used; this path read the WHOLE tab (every
     // PatientTrx cell included) on every resolve click and every email link.
@@ -303,7 +334,8 @@ function markDeptRequestResolved_(token, byEmail, via, clickCtx) {
     // F55 (cycle 25): nor is a CC, BCC-all or other non-department copy's click
     // — 'copy', untimed (drEmailClickVia_).
     if (viaClean === 'email') {
-      viaClean = drEmailClickVia_(byEmail, row, clickCtx ? clickCtx.copyAddrs : [], clickCtx ? clickCtx.clickerDepts : null);
+      viaClean = drEmailClickVia_(byEmail, row, clickCtx ? clickCtx.copyAddrs : [], clickCtx ? clickCtx.clickerDepts : null,
+        drDeptAddrsFor_(row[DR.TO_DEPT], clickCtx ? clickCtx.deptMap : null));
     }
     if (drStatus_(row) === 'resolved') {
       return { found: true, already: true, dept: row[DR.TO_DEPT],
@@ -323,7 +355,7 @@ function markDeptRequestResolved_(token, byEmail, via, clickCtx) {
     return { found: true, already: false, dept: row[DR.TO_DEPT], self: viaClean === 'self', copy: viaClean === 'copy',
              reqId: String(row[DR.REQ_ID]), via: viaClean, threadIds: String(row[DR.THREAD_ID] || ''),
              label: String(row[DR.LABEL] || ''), byId: String(row[DR.BY_ID] || ''), byName: String(row[DR.BY_NAME] || '') };
-  } finally { lock.releaseLock(); }
+  }
 }
 /** In-app resolve (the manual path that complements the email link): the
  *  request's CREATOR or any manager can mark it resolved from the Metrics tab —
@@ -928,7 +960,8 @@ function answerDeptReplyLook(requestId, answer) {
     if (!drCanAct_(emp, first.row))
       return { success: false, error: 'Only the sender, a member of the receiving department, or a manager can answer this.' };
     const id = String(first.row[DR.REQ_ID]);
-    let reason = '';
+    const who = emp.email || getActiveUserEmail_() || '';
+    let reason = '', res = null;
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
     try {
@@ -939,17 +972,18 @@ function answerDeptReplyLook(requestId, answer) {
       if (ans === 'open') {
         hit.row[DR.REPLY_VERDICT] = 'kept-open';
         sh.getRange(hit.rowIndex, DR.REPLY_VERDICT + 1).setValue(sheetSafe_('kept-open'));
+      } else {
+        // F41 (cycle 26): the resolve FIRST, under this same lock — the answer
+        // row below is written only for a request that is now resolved. (The
+        // shared writer: Status, ResolvedAt/By, via 'app'.)
+        res = drResolveRowLocked_(sh, id, who, 'app', null);
+        if (!res.found) return { success: false, error: 'Request not found.' };
       }
       appendRowsSafe_(getOrCreateDeptReplyReviewsSheet_(), sheetSafeRows_([[drNowTs_(), id, reason, ans, emp.email || '']]));
       drBumpCacheGen_();
     } finally { lock.releaseLock(); }
     let reply = null;
-    if (ans === 'resolved') {
-      // The shared resolve writer (its own lock): Status, ResolvedAt/By, via 'app'.
-      const res = markDeptRequestResolved_(id, emp.email || getActiveUserEmail_() || '', 'app');
-      if (!res.found) return { success: false, error: 'Request not found.' };
-      reply = drSendResolvedReply_(res, drResolverLabel_(emp.name, emp.email || getActiveUserEmail_() || ''));   // DR1
-    }
+    if (res) reply = drSendResolvedReply_(res, drResolverLabel_(emp.name, who));   // DR1 — after the lock (g34)
     pendingTasksBust_(String(first.row[DR.BY_ID] || ''));
     pendingTasksBust_(emp.id);
     try { writeAuditLog_(emp, 'DeptReplyLookAnswered', '', '', false, 0, 'reqId=' + id + '; reason=' + (reason || 'unrecorded') + '; answer=' + ans); } catch (e) {}

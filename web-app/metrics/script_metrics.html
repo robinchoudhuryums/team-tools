@@ -2509,6 +2509,27 @@ function enterSpanishInboxView(area) {
   spanishLoad_();
 }
 
+/** F41 (cycle 26) — a change made here to the pending list: a request gone
+ *  (resolved), or its claim set / cleared. Numbered, so a list read can tell
+ *  which changes came after it was asked for. The newest 200 are kept. */
+function spanishNoteLocal_(change) {
+  SPANISH_STATE.changeSeq = (SPANISH_STATE.changeSeq || 0) + 1;
+  change.n = SPANISH_STATE.changeSeq;
+  SPANISH_STATE.localChanges = (SPANISH_STATE.localChanges || []).concat([change]).slice(-200);
+}
+/** PURE (Node-pinned) — a pending answer with the changes made here AFTER it
+ *  was asked for (`sinceSeq`) applied, in order: a request marked gone leaves
+ *  the list, a claim is the one set here. Earlier changes are already in the
+ *  answer and are not applied again. */
+function spanishReapplyLocal_(res, changes, sinceSeq) {
+  if (!res || !Array.isArray(res.pending)) return res;
+  (changes || []).forEach(function (c) {
+    if (!c || !(Number(c.n) > Number(sinceSeq || 0))) return;
+    if (c.gone) res.pending = res.pending.filter(function (t) { return t.threadId !== c.tid; });
+    else res.pending.forEach(function (t) { if (t.threadId === c.tid) t.claim = c.claim; });
+  });
+  return res;
+}
 /** FR4 (cycle 26): a background refresh that failed kept the painted round
  *  and said nothing — a server {error} on the stats, or either list half, left
  *  a manager reading a pending list that might be an hour old as current. One
@@ -2788,6 +2809,7 @@ function spanishAutoAssign_(btn) {
         }
         var pd = SPANISH_STATE.pendingRes;
         (r.assigned || []).forEach(function (a) {
+          spanishNoteLocal_({ tid: a.threadId, claim: a.claim });   // F41
           if (!pd || !Array.isArray(pd.pending)) return;
           for (var i = 0; i < pd.pending.length; i++) {
             if (pd.pending[i].threadId === a.threadId) pd.pending[i].claim = a.claim;
@@ -2860,6 +2882,7 @@ function spanishLoadList_(opts) {
   var days = SPANISH_STATE.days;
   SPANISH_STATE.listSeq = (SPANISH_STATE.listSeq || 0) + 1;
   var seq = SPANISH_STATE.listSeq;
+  var changeAsked = SPANISH_STATE.changeSeq || 0;   // F41: what this read cannot know about
   if (opts.background) {
     // SWR: the seeded (cached) lists paint NOW; the refetch swaps them
     // silently when it lands. State is NOT nulled — it is the painted content.
@@ -2886,7 +2909,15 @@ function spanishLoadList_(opts) {
         // A background refresh failing keeps the painted last-good half.
         if (!opts.background) SPANISH_STATE.pendingErr = (d && d.error) || 'Could not load pending';
         else spanishRefreshFailed_();   // FR4
-      } else { SPANISH_STATE.pendingRes = d; SPANISH_STATE.pendingErr = null; cacheHalf('pending', d); }
+      } else {
+        // F41 (cycle 26): the painted cards are live while this Gmail scan
+        // runs. A resolve, claim, release or auto-assign made meanwhile is not
+        // in this answer — it was computed first — and it replaced the list
+        // and the session cache, so the resolved card came back (and could be
+        // resolved, and replied to, a second time) and a claim pill vanished.
+        d = spanishReapplyLocal_(d, SPANISH_STATE.localChanges, changeAsked);
+        SPANISH_STATE.pendingRes = d; SPANISH_STATE.pendingErr = null; cacheHalf('pending', d);
+      }
       done();
     })
     .withFailureHandler(function (e) {
@@ -3273,7 +3304,8 @@ function spanishResolveSelected_() {
   var ids = spanishSelIds_();
   if (!ids.length || SPANISH_STATE.bulkBusy) return;
   var requestedView = currentView;
-  spanishResolveAsk_(ids.length).then(function (ans) {   // SP1: how they ended, and a note for the replies
+  var askKey = spanishResolveKey_(ids);
+  spanishResolveAsk_(ids.length, askKey).then(function (ans) {   // SP1: how they ended, and a note for the replies
     if (!ans) return;
     SPANISH_STATE.bulkBusy = true;
     spanishSelSync_();
@@ -3285,6 +3317,11 @@ function spanishResolveSelected_() {
           return;
         }
         var gone = (r.resolved || []).concat(r.already || []);
+        // F41: requests that could not be resolved stay selected — and so does
+        // the answer, under the key of what is STILL selected.
+        var stillIds = (r.failed || []).map(function (f) { return f && f.threadId; }).filter(Boolean);
+        if (stillIds.length && SP_RESOLVE_ASK.last && SP_RESOLVE_ASK.last.key === askKey) SP_RESOLVE_ASK.last.key = spanishResolveKey_(stillIds);
+        else spanishResolveSettled_(askKey, !(r.failed || []).length);
         gone.forEach(function (tid) { delete SPANISH_STATE.selected[tid]; spanishRemovePendingLocal_(tid); });
         if (gone.length && typeof clkNeedsYouInvalidate_ === 'function') clkNeedsYouInvalidate_();   // 22post C-8
         if (typeof spAssignPollSoon_ === 'function') spAssignPollSoon_();   // the badge follows
@@ -3318,10 +3355,28 @@ function spanishResolveChoices_(res) {
   if (!o || typeof o !== 'object') return [];
   return Object.keys(o).map(function (k) { return { key: k, label: String(o[k]) }; });
 }
-var SP_RESOLVE_ASK = { resolve: null };
-/** Ask how the request(s) ended. Resolves { outcome, note } or null. */
-function spanishResolveAsk_(count) {
+// F41 (cycle 26): `last` is the answer of an attempt that did NOT go through —
+// {key, outcome, note} — so the dialog can give it back. The dialog closes
+// before the server answers; a "Resolve failed: Lock timeout…" used to leave
+// the member with a toast and up to 500 typed characters gone. It is kept for
+// the SAME request(s) only (`key`): a note written about one request is never
+// offered on another.
+var SP_RESOLVE_ASK = { resolve: null, last: null, key: '' };
+/** PURE (Node-pinned) — the key a kept answer belongs to: the request, or the
+ *  selection (order does not matter). */
+function spanishResolveKey_(ids) {
+  return (Array.isArray(ids) ? ids : [ids]).map(function (x) { return String(x == null ? '' : x); }).filter(Boolean).sort().join('|');
+}
+/** PURE (Node-pinned) — the kept answer to prefill for `key`, or null. */
+function spanishResolveKept_(last, key) {
+  return (last && key && last.key === key && (last.note || last.outcome)) ? { outcome: String(last.outcome || ''), note: String(last.note || '') } : null;
+}
+/** Ask how the request(s) ended. Resolves { outcome, note } or null. `key`
+ *  (spanishResolveKey_) names what is being resolved. */
+function spanishResolveAsk_(count, key) {
   return new Promise(function (resolveP) {
+    SP_RESOLVE_ASK.key = String(key || '');
+    var kept = spanishResolveKept_(SP_RESOLVE_ASK.last, SP_RESOLVE_ASK.key);
     var choices = spanishResolveChoices_(SPANISH_STATE.pendingRes);
     var noteMax = Number((SPANISH_STATE.pendingRes && SPANISH_STATE.pendingRes.resolveNoteMax) || 500);
     var finish = function (val) {
@@ -3344,6 +3399,7 @@ function spanishResolveAsk_(count) {
           : '') +
         '<label class="sp-res-note-lbl" for="sp-res-note">Note <span class="sp-res-opt-hint">(optional)</span></label>' +
         '<textarea id="sp-res-note" class="sp-res-note" rows="3" maxlength="' + noteMax + '"></textarea>' +
+        (kept ? '<p class="sp-res-hint" id="sp-res-kept" role="status">The last attempt did not go through — what you entered is filled in again.</p>' : '') +
         '<p class="sp-res-hint">' + esc((many ? 'Each request gets its own reply' : 'A reply') +
           ' with the outcome and your note goes to everyone on the request’s email — the requester and anyone copied. ' +
           'A voicemail request has no email, so it gets none; neither does an email that includes an address outside the company. ' +
@@ -3354,7 +3410,20 @@ function spanishResolveAsk_(count) {
         '<button type="button" class="btn-modal-ok" id="sp-res-go"' + (choices.length ? ' disabled' : '') + ' onclick="spanishResolveConfirm_()">' +
           esc(many ? 'Resolve ' + count : 'Mark resolved') + '</button>' +
       '</div></div>';
+    if (kept) {
+      // Assigned, never interpolated; a prefill is not "typed work" (g166).
+      var noteEl = document.getElementById('sp-res-note');
+      if (noteEl) noteEl.value = kept.note.slice(0, noteMax);
+      var radios = ov.querySelectorAll('input[name="sp-res-outcome"]');
+      for (var i = 0; i < radios.length; i++) { if (radios[i].value === kept.outcome) radios[i].checked = true; }
+      spanishResolveSync_();
+    }
   });
+}
+/** F41 — an attempt ended: a clean one forgets the kept answer, a failed one
+ *  keeps it for the same request(s). */
+function spanishResolveSettled_(key, ok) {
+  if (ok && SP_RESOLVE_ASK.last && SP_RESOLVE_ASK.last.key === key) SP_RESOLVE_ASK.last = null;
 }
 /** The Resolve button follows the outcome: off until one is picked. */
 function spanishResolveSync_() {
@@ -3371,6 +3440,7 @@ function spanishResolveConfirm_() {
   if (ov.querySelector('input[name="sp-res-outcome"]') && !picked) { spanishResolveSync_(); return; }
   var note = document.getElementById('sp-res-note');
   var val = { outcome: picked ? picked.value : '', note: note ? String(note.value || '').trim() : '' };
+  SP_RESOLVE_ASK.last = { key: SP_RESOLVE_ASK.key, outcome: val.outcome, note: val.note };   // F41: until the server says it went through
   var r = SP_RESOLVE_ASK.resolve; SP_RESOLVE_ASK.resolve = null;
   closeOverlay(ov, { discard: true });   // the hook removes it and focus goes back to the button (g100)
   r(val);
@@ -3608,7 +3678,11 @@ function spanishClaimRpc_(el, tid, assignee) {
       showToast(r.already ? 'Already claimed' :
         (assignee ? 'Assigned to ' + assignee.split('@')[0] + spanishNotifiedNote_(r) : 'Claimed — teammates will see you have it'), 'success');
     })
-    .withFailureHandler(function (e) { el.disabled = false; showToast((e && e.message) || 'Claim failed', 'error'); })
+    .withFailureHandler(function (e) {
+      el.disabled = false;
+      showToast((e && e.message) || 'Claim failed', 'error');
+      spanishRenderList_();   // F41 (cycle 26): the Assign select kept showing the name nothing was assigned to
+    })
     .claimSpanishThread(tid, assignee);
 }
 /** 22post C-8 — say whether the assignee was emailed (the server reports how
@@ -3637,6 +3711,7 @@ function spanishRelease_(btn) {
  *  the SAME object reference (cacheHalf), so mutating pendingRes keeps the
  *  cached copy in step too. */
 function spanishSetClaimLocal_(tid, claim) {
+  spanishNoteLocal_({ tid: tid, claim: claim });   // F41
   var pd = SPANISH_STATE.pendingRes;
   if (pd && Array.isArray(pd.pending)) {
     for (var i = 0; i < pd.pending.length; i++) {
@@ -3712,6 +3787,7 @@ function spanishTaskCard_(t) {
  *  that, because the card has to finish leaving first (SP2). The count IS
  *  refreshed here, synchronously, so it can never be waiting on an animation. */
 function spanishRemovePendingLocal_(tid) {
+  spanishNoteLocal_({ tid: tid, gone: true });   // F41
   var pd = SPANISH_STATE.pendingRes;
   if (pd && Array.isArray(pd.pending)) {
     for (var i = pd.pending.length - 1; i >= 0; i--) {
@@ -3753,7 +3829,8 @@ function spanishResolve_(btn) {
   var tid = btn.getAttribute('data-thread');
   var card = btn.closest('.sp-task');
   if (!tid || !card) return;
-  spanishResolveAsk_(1).then(function (ans) {   // SP1: how it ended, and a note for the reply
+  var askKey = spanishResolveKey_(tid);
+  spanishResolveAsk_(1, askKey).then(function (ans) {   // SP1: how it ended, and a note for the reply
     if (!ans) return;
     btn.disabled = true;
     // SP2 — the in-flight signal. `.sp-task.is-busy` and its keyframe were
@@ -3770,6 +3847,7 @@ function spanishResolve_(btn) {
           showToast((r && r.error) || 'Could not mark resolved', 'error');
           return;
         }
+        spanishResolveSettled_(askKey, true);   // F41: it went through — nothing is kept
         // The toast fires BEFORE the animation: it is the outcome, and a
         // reduced-motion user must not depend on a fade to learn anything.
         // F11 (cycle 26): "already" is also a request a member answered by email — nothing was marked.

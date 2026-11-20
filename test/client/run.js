@@ -11793,7 +11793,7 @@ test('load-time sweep: DR result cache + SWR enters, timeoff rides calNavTo_ (op
   // unchanged and still asserted: a successful resolve BUSTS the SWR stamp,
   // so the next enter refetches and can never serve the request as open.
   const drClick = nc(extractFunction('metrics/script_deptrequests.html', 'drResolveClick_'));
-  assert.ok(/DR_STATE\.entry = null;/.test(drClick), 'a successful resolve busts the SWR stamp');
+  assert.ok(/drLocalChange_\(\);/.test(drClick) && /DR_STATE\.entry = null;/.test(nc(extractFunction('metrics/script_deptrequests.html', 'drLocalChange_'))), 'a successful resolve busts the SWR stamp (F41: through drLocalChange_, which also numbers the change)');
   assert.ok(!/enterDeptRequestsView\(/.test(drClick), 'resolve patches in place — it must NOT re-enter the whole view');
   // Timeoff: the enter routes through calNavTo_ (the month SWR that already
   // existed but was never consulted on enter).
@@ -12999,7 +12999,7 @@ test('F5: the DeptRequests Status cell has ONE reader (INV-183, fifth column)', 
   assert.strictEqual(reads, 1,
     'exactly one [DR.STATUS] read remains — the one inside drStatus_');
   // And each of the three former raw comparators now delegates.
-  ['drFindOpenRequest_', 'markDeptRequestResolved_', 'deptRequestsOverdueOpen_', 'getDeptRequests']
+  ['drFindOpenRequest_', 'drResolveRowLocked_', 'deptRequestsOverdueOpen_', 'getDeptRequests']
     .forEach((fn) => {
       const body = extractRawFunction('Code.js', fn);
       assert.ok(/drStatus_\(/.test(body), fn + ' routes through drStatus_');
@@ -13482,7 +13482,7 @@ console.log('\nround-1 pilot — review comment / call direction / sender identi
       _mailBccAllCache: null,
     };
     vm.createContext(ctx);
-    ['repSenderOpts_', 'repSenderFrom_', 'mailBccAll_', 'mailMergeBcc_', 'sendRepEmail_'].forEach((fn) => {
+    ['repSenderOpts_', 'repSenderFrom_', 'mailBccAll_', 'mailMergeBcc_', 'mailHeaderAddrs_', 'mailListHasAddress_', 'sendRepEmail_'].forEach((fn) => {
       vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn });
     });
     return ctx;
@@ -13918,13 +13918,16 @@ console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comme
     assert.strictEqual(binds, 2, 'bound on the PPD form AND the acct forms');
   });
 
-  test('R3 #5: scratchpad server — USER lock, cap-refuse-before-write, @-format, ms NUMBER, enrollment gate', () => {
+  test('R3 #5: scratchpad server — the rep\'s own LEASE (F42: never the user lock, which is one lock for every rep), cap-refuse-before-write, @-format, ms NUMBER, enrollment gate', () => {
     const save = strip(extractRawFunction('Code.js', 'saveMyScratchpad'));
-    // USER lock, not the script lock (the kbRecordView / INV-01 documented-
-    // exception posture): a debounced autosave must never queue punch writes.
-    assert.ok(/LockService\.getUserLock\(\)/.test(save), 'user lock');
-    assert.ok(!/getScriptLock/.test(save), 'never the global script lock');
-    assert.ok(/finally \{ lock\.releaseLock\(\); \}/.test(save), 'finally-released (INV-01 structure)');
+    const pageOp = strip(extractRawFunction('Code.js', 'scratchpadPageOp'));
+    [['saveMyScratchpad', save], ['scratchpadPageOp', pageOp]].forEach(([n, b]) => {
+      assert.ok(/lease = cnAcquireRepLease_\(emp, CN_SCRATCH_LEASE_PREFIX, SCRATCHPAD_LEASE_TIMEOUT_MSG\);/.test(b), n + ': the Scratchpad lease, per rep');
+      assert.ok(!/getUserLock|getScriptLock|waitLock/.test(b), n + ': THE REGRESSION (F42) — the "user lock" is shared by every rep (the app runs as the deployer); and never the project lock for a whole save');
+      assert.ok(/finally \{ cnReleaseRepLease_\(lease\); \}/.test(b), n + ': released in finally');
+      assert.ok(b.indexOf('getEmployeeInfo_()') >= 0 && b.indexOf('getEmployeeInfo_()') < b.indexOf('cnAcquireRepLease_('), n + ': the caller is checked before anything is waited for');
+      assert.ok(b.indexOf('try {') < b.indexOf('cnAcquireRepLease_('), n + ': a wait that times out is an {error} the pad shows, not a thrown transport failure');
+    });
     // Over-cap REFUSES before any sheet is touched (order: the error return
     // precedes the provision call).
     assert.ok(save.indexOf('SCRATCHPAD_MAX_CHARS') < save.indexOf('scratchpadSheet_(emp, true)'),
@@ -21733,7 +21736,7 @@ test('F4: every completing flow drops the rep cached Needs-you list', () => {
   // Dept requests: BOTH resolve paths route through the writer, which clears
   // the SENDER's list; the in-app path also clears the RESOLVER's (the one
   // case where the acting rep is not the owner).
-  const mark = nc(extractRawFunction('Code.js', 'markDeptRequestResolved_'));
+  const mark = nc(drWriterSrc_());
   assert.ok(/pendingTasksBust_\(row\[DR\.BY_ID\]\)/.test(mark),
     'resolving clears the SENDER list — by emp id, never an email');
   assertBefore(mark, 'drBumpCacheGen_()', 'pendingTasksBust_(row[DR.BY_ID])',
@@ -24616,7 +24619,7 @@ test('N3-DR: an in-app "Mark resolved" is recorded (ResolvedVia) and leaves ever
   assert.strictEqual(outside, 0, 'ZERO bracketed reads outside the reader (the drStatus_ / INV-183 shape)');
   // (c) The writer records HOW, validated against the same list, and BOTH
   //     callers name their path — the email link is the only timed one.
-  const w = nc(extractRawFunction('Code.js', 'markDeptRequestResolved_'));
+  const w = nc(drWriterSrc_());
   assert.ok(/function markDeptRequestResolved_\(token, byEmail, via, clickCtx\)/.test(w), 'the writer takes the path (and, F55, who clicked)');
   assert.ok(/DR_RESOLVED_VIA_VALUES\.indexOf\(String\(via \|\| ''\)\.trim\(\)\.toLowerCase\(\)\) >= 0/.test(w),
     'the path is validated against the shared list before the write');
@@ -26315,7 +26318,7 @@ test('Q-3: Storage Health reports the Script Property store — read-only, unkno
 });
 
 test('Q-5: both DeptRequests resolve paths use the bounded RequestId lookup — no whole-tab read of a PHI-bearing store per click', () => {
-  const mark = stripJsComments_(extractRawFunction('Code.js', 'markDeptRequestResolved_'));
+  const mark = stripJsComments_(drWriterSrc_());
   const inApp = stripJsComments_(extractRawFunction('Code.js', 'resolveDeptRequest'));
   [['markDeptRequestResolved_', mark], ['resolveDeptRequest', inApp]].forEach(([name, body]) => {
     assert.ok(/drFindRowByReqId_\(/.test(body), name + ': locates the row through the bounded reader');
@@ -30548,10 +30551,11 @@ test('Batch S (operator 2026-11-02): Scratchpad PAGES — row 1 is the legacy pa
     appendRow: (r) => { rows.push(r.slice()); },
     deleteRow: (r) => { rows.splice(r - 1, 1); },
   };
-  let locks = 0;
+  let locks = 0, held = 0;
   const ctx = vm.createContext({ String, Number, Math, Date, isFinite, Error, RegExp, JSON,
     SCRATCHPAD_MAX_CHARS: 40000, SCRATCHPAD_MAX_PAGES: 3, SCRATCHPAD_PAGE_NAME_MAX: 40, SCRATCHPAD_MAIN_PAGE: 'main',
-    LockService: { getUserLock: () => ({ waitLock() { locks++; }, releaseLock() {} }) },
+    cnAcquireRepLease_: (emp, prefix) => { locks++; held++; return { key: prefix + emp.callNotesSheetId, token: 't' }; }, cnReleaseRepLease_: (l) => { if (l) held--; },
+    CN_SCRATCH_LEASE_PREFIX: 'CN_SCRATCH_LEASE_', SCRATCHPAD_LEASE_TIMEOUT_MSG: 'busy',
     getEmployeeInfo_: () => ({ id: 'E1', callNotesSheetId: 'S' }),
     scratchpadSheet_: () => sheet, scratchpadSanitizeHtml_: (h) => String(h),
     sheetText_: (v) => v, sheetSafe_: (v) => v, sheetSafeRow_: (r) => r });
@@ -30595,7 +30599,7 @@ test('Batch S (operator 2026-11-02): Scratchpad PAGES — row 1 is the legacy pa
   assert.ok(missing.missing && missing.pageId === add.pageId, 'a load of a deleted page says so and sends the first');
   ctx.scratchpadPageOp('delete', del.pages[1].id);
   assert.ok(/at least one page/.test(J(ctx.scratchpadPageOp('delete', add.pageId)).error), 'the last page is never deleted');
-  assert.ok(locks >= 8, 'every save and page action takes the user lock');
+  assert.ok(locks >= 8 && held === 0, 'every save and page action takes the rep\'s Scratchpad lease (F42) and gives it back — refusals included (' + locks + ' taken, ' + held + ' still held)');
   // A fresh tab: an add makes the legacy page first.
   rows.length = 0;
   const fresh = J(ctx.scratchpadPageOp('add', '', 'First extra'));
@@ -30881,7 +30885,7 @@ test('D-1: the tracked send records its thread (a Gmail draft send), adds the ma
         sendEmail: (to, s, b, o) => calls.push(['gmail', o]),
         createDraft: (to, s, b, o) => { calls.push(['draft', o]); return { send: () => { if (opts && opts.fail) throw new Error('quota'); return { getThread: () => ({ getId: () => 'T-42' }) }; }, deleteDraft: () => calls.push(['deleted']) }; },
       } });
-    ['addrListMerge_', 'sendRepEmail_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+    ['addrListMerge_', 'mailHeaderAddrs_', 'mailListHasAddress_', 'sendRepEmail_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
     return ctx;
   };
   let c = mk();
@@ -34281,7 +34285,7 @@ test('RES-1 (cycle 23): the resolve link changes nothing on GET — it shows a c
   const mctx = vm.createContext({ String, Number, Object, DR: DR_D_ENUM, DR_HEADERS: new Array(18).fill('h'), DR_RESOLVED_VIA_VALUES: ['email', 'app', 'reply', 'self', 'copy'],
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) }, getOrCreateDeptRequestsSheet_: () => sh,
     sheetSafe_: (x) => x, drNowTs_: () => 'now', drBumpCacheGen_: () => {}, pendingTasksBust_: () => {}, writeAuditLog_: () => {}, formTokenIsoString_: (x) => String(x) });
-  ['drStatus_', 'drFindRowByReqId_', 'drSplitDepts_', 'drEmailClickVia_', 'markDeptRequestResolved_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), mctx));
+  ['drStatus_', 'drFindRowByReqId_', 'drSplitDepts_', 'drEmailClickVia_', 'drDeptAddrsFor_', 'drResolveRowLocked_', 'markDeptRequestResolved_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), mctx));
   assert.strictEqual(JSON.parse(JSON.stringify(mctx.markDeptRequestResolved_('R1', 'ana@ums.com', 'email'))).self, true);
   assert.strictEqual(sh.grid.filter((x) => x[0] === 'R1')[0][DR_D_ENUM.RESOLVED_VIA], 'self', 'THE REGRESSION: the sender\'s own copy closed it as a timed department response');
   mctx.markDeptRequestResolved_('R2', 'dana@ums.com', 'email');
@@ -34326,10 +34330,24 @@ test('RES-1 (cycle 23): the resolve link changes nothing on GET — it shows a c
 
 test('F55 (cycle 25): a resolve-link click by a COPY recipient — the CC mailbox, a BCC-all address, a roster member outside the department — is "copy", untimed and counted manual; the department\'s click stays a response (driven)', () => {
   const ctx = vm.createContext({ String, Array, DR: DR_D_ENUM });
-  ['drSplitDepts_', 'drEmailClickVia_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
-  const row = drDRow_({ REQ_ID: 'R1', BY_EMAIL: 'Ana@ums.com', TO_DEPT: 'Billing, Shipping', TO_EMAIL: 'billing@ums.com, ship@ums.com', STATUS: 'open' });
-  const copy = ['ops@ums.com', 'audit@ums.com'];
-  const via = (who, depts) => ctx.drEmailClickVia_(who, row, copy, depts);
+  ctx.intakeEmailDomain_ = (a) => { const m = /@([^@\s>]+)/.exec(String(a || '')); return m ? m[1].toLowerCase() : '(none)'; };
+  ['drSplitDepts_', 'drEmailClickVia_', 'drDeptAddrsFor_', 'drRecipientDomains_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  // F41 (cycle 26): the row as PRODUCTION writes it — ToEmail holds the recipient
+  // DOMAINS (drRecipientDomains_), never an address. This pin's fixture carried
+  // full addresses there, so it passed on a rule that could not fire.
+  const stored = ctx.drRecipientDomains_('billing@ums.com, ship@ums.com');
+  assert.strictEqual(stored, 'ums.com', 'what the writer stores');
+  const row = drDRow_({ REQ_ID: 'R1', BY_EMAIL: 'Ana@ums.com', TO_DEPT: 'Billing, Shipping', TO_EMAIL: stored, STATUS: 'open' });
+  const copy = ['ops@ums.com', 'audit@ums.com', 'ship@ums.com'];
+  const deptMap = { Billing: 'billing@ums.com', shipping: 'Ship@ums.com; dock@ums.com', Intake: 'intake@ums.com' };
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.drDeptAddrsFor_(row[DR_D_ENUM.TO_DEPT], deptMap))), ['billing@ums.com', 'ship@ums.com', 'dock@ums.com'],
+    'the addresses of every receiving department — any case, a list in one value');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify([ctx.drDeptAddrsFor_('Billing', null), ctx.drDeptAddrsFor_('', deptMap), ctx.drDeptAddrsFor_('Other', deptMap)])), [[], [], []]);
+  const via = (who, depts) => ctx.drEmailClickVia_(who, row, copy, depts, ctx.drDeptAddrsFor_(row[DR_D_ENUM.TO_DEPT], deptMap));
+  assert.strictEqual(ctx.drEmailClickVia_('ship@ums.com', row, copy, []), 'copy', 'THE REGRESSION (F41), as it stood: with only the stored domains to go on, the department\'s own mailbox was a copy');
+  assert.strictEqual(via('ship@ums.com', null), 'email', 'a department address that is ALSO on the copy list is still the department');
+  assert.strictEqual(via('dock@ums.com', []), 'email');
+  assert.strictEqual(via('intake@ums.com', []), 'copy', 'another department\'s address is not this request\'s department');
   assert.strictEqual(via('ana@ums.com', null), 'self', 'RES-1: the sender');
   assert.strictEqual(via('OPS@ums.com', null), 'copy', 'THE REGRESSION: the CC mailbox\'s click was a timed department response');
   assert.strictEqual(via('audit@ums.com', null), 'copy', 'a BCC-all address');
@@ -34345,26 +34363,37 @@ test('F55 (cycle 25): a resolve-link click by a COPY recipient — the CC mailbo
   const mctx = vm.createContext({ String, Number, Object, Array, DR: DR_D_ENUM, DR_HEADERS: new Array(18).fill('h'), DR_RESOLVED_VIA_VALUES: ['email', 'app', 'reply', 'self', 'copy'],
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) }, getOrCreateDeptRequestsSheet_: () => sh,
     sheetSafe_: (x) => x, drNowTs_: () => 'now', drBumpCacheGen_: () => {}, pendingTasksBust_: () => {}, writeAuditLog_: () => {}, formTokenIsoString_: (x) => String(x) });
-  ['drStatus_', 'drFindRowByReqId_', 'drSplitDepts_', 'drEmailClickVia_', 'markDeptRequestResolved_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), mctx));
+  ['drStatus_', 'drFindRowByReqId_', 'drSplitDepts_', 'drEmailClickVia_', 'drDeptAddrsFor_', 'drResolveRowLocked_', 'markDeptRequestResolved_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), mctx));
   const r1 = JSON.parse(JSON.stringify(mctx.markDeptRequestResolved_('R1', 'ops@ums.com', 'email', { copyAddrs: copy, clickerDepts: null })));
   assert.strictEqual(r1.copy, true);
+  // F41: the writer resolves the department's addresses from the map it is handed.
+  const sh3 = drDSheet_([drDRow_({ REQ_ID: 'R3', BY_ID: 'E1', BY_EMAIL: 'ana@ums.com', TO_DEPT: 'Billing', TO_EMAIL: 'ums.com', STATUS: 'open', LABEL: 'L' })]);
+  mctx.getOrCreateDeptRequestsSheet_ = () => sh3;
+  const r3 = JSON.parse(JSON.stringify(mctx.markDeptRequestResolved_('R3', 'billing@ums.com', 'email', { copyAddrs: ['billing@ums.com'], clickerDepts: [], deptMap: { Billing: 'billing@ums.com' } })));
+  assert.deepStrictEqual([r3.via, r3.copy], ['email', false], 'the department mailbox\'s click is a timed response — on the roster and on the copy list or not');
+  mctx.getOrCreateDeptRequestsSheet_ = () => sh;
   assert.strictEqual(sh.grid.filter((x) => x[0] === 'R1')[0][DR_D_ENUM.RESOLVED_VIA], 'copy');
   mctx.markDeptRequestResolved_('R2', 'ops@ums.com', 'app', { copyAddrs: copy, clickerDepts: null });
   assert.strictEqual(sh.grid.filter((x) => x[0] === 'R2')[0][DR_D_ENUM.RESOLVED_VIA], 'app', 'the in-app button is never reclassified');
   // The endpoint hands the writer who clicked: the CC + BCC-all lists and the clicker's departments.
-  let seen = null;
+  let seen = null, mapFails = false;
   const conf = (emp) => {
     const c = vm.createContext({ String, Array, getActiveUserEmail_: () => 'ops@ums.com', CONFIG: { CALL_NOTES: { CC_EMAIL: 'ops@ums.com' } }, mailBccAll_: () => ['audit@ums.com'],
-      getEmployeeInfo_: () => emp, empDepartments_: (e) => e.depts, drSendResolvedReply_: () => null, drResolvedReplyNote_: () => '', drResolverLabel_: (n, e) => n || e,
+      getEmployeeInfo_: () => emp, empDepartments_: (e) => e.depts, getDepartmentEmails_: () => { if (mapFails) throw new Error('props'); return { Billing: 'billing@ums.com' }; }, drSendResolvedReply_: () => null, drResolvedReplyNote_: () => '', drResolverLabel_: (n, e) => n || e,
       markDeptRequestResolved_: (t, by, v, cc) => { seen = JSON.parse(JSON.stringify(cc)); return { found: true, already: false, dept: 'Billing', copy: true }; } });
     vm.runInContext(extractRawFunction('Code.js', 'confirmDeptRequestResolve'), c);
     return JSON.parse(JSON.stringify(c.confirmDeptRequestResolve('R9')));
   };
   const msg = conf({ depts: ['Intake'] });
-  assert.deepStrictEqual(seen, { copyAddrs: ['ops@ums.com', 'audit@ums.com'], clickerDepts: ['Intake'] });
+  assert.deepStrictEqual(seen, { copyAddrs: ['ops@ums.com', 'audit@ums.com'], clickerDepts: ['Intake'], deptMap: { Billing: 'billing@ums.com' } },
+    'and (F41) the department map, read before the lock');
   assert.ok(/a clear from a copy of the email, not the department/.test(msg.message), 'the page says why it is not timed');
   conf(null);
   assert.strictEqual(seen.clickerDepts, null, 'off the roster: unplaced, not "no departments"');
+  mapFails = true;
+  conf(null);
+  assert.strictEqual(seen.deptMap, null, 'a department map that cannot be read leaves that rule out — the click is recorded either way');
+  mapFails = false;
   // Untimed and counted manual on every surface.
   const sctx = vm.createContext({ Object, Array, Math, String, Number, getDeptRequestSla_: () => 2 });
   ['drSplitDepts_', 'medianWhole_', 'drDeptStats_', 'drTeamKpis_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), sctx));
@@ -39664,7 +39693,9 @@ test('E4 (cycle 25): answerDeptReplyLook — the resolve rule decides who, the a
   let canAct = true;
   const sh = drDSheet_([e4Row_({ REQ_ID: 'A', BY_ID: 'E1', STATUS: 'open', REPLY_VERDICT: 'needs-look', REPLY_REASON: 'question', PATIENT_TRX: 'Pat Doe TRX 1' }),
     e4Row_({ REQ_ID: 'B', BY_ID: 'E1', STATUS: 'open', REPLY_VERDICT: 'needs-look', REPLY_REASON: 'not-done' }),
-    e4Row_({ REQ_ID: 'C', BY_ID: 'E1', STATUS: 'open', REPLY_VERDICT: '' })]);
+    e4Row_({ REQ_ID: 'C', BY_ID: 'E1', STATUS: 'open', REPLY_VERDICT: '' }),
+    e4Row_({ REQ_ID: 'D', BY_ID: 'E1', STATUS: 'open', REPLY_VERDICT: 'needs-look', REPLY_REASON: 'promise' })]);
+  let failResolve = false;
   const ctx = vm.createContext({ String, Number, Object, Math, JSON, Date, console,
     DR: E4_DR, DR_HEADERS: new Array(19).fill('h'),
     getEmployeeInfo_: () => ({ id: 'E2', email: 'bo@ums.com' }), getOrCreateDeptRequestsSheet_: () => sh,
@@ -39672,7 +39703,7 @@ test('E4 (cycle 25): answerDeptReplyLook — the resolve rule decides who, the a
     sheetSafe_: (x) => x, sheetSafeRows_: (x) => x, drNowTs_: () => '2026-10-15T10:00:00',
     getOrCreateDeptReplyReviewsSheet_: () => 'REVIEWS', appendRowsSafe_: (s, rows) => reviews.push([s].concat(rows[0])),
     drBumpCacheGen_() {}, pendingTasksBust_() {}, getActiveUserEmail_: () => '',
-    markDeptRequestResolved_: (id, by, via) => { resolves.push([id, by, via]); return { found: true }; },
+    drResolveRowLocked_: (shx, id, by, via) => { if (failResolve) throw new Error('Lock timeout'); resolves.push([id, by, via, reviews.length]); return { found: true }; },
     writeAuditLog_: (e, a, d, t, adj, h, n) => audits.push(a + ' ' + n), drSendResolvedReply_: () => null, drResolvedReplyNote_: () => '', drResolverLabel_: (n, e) => n || e, });
   vm.runInContext(['DR_REPLY_REASONS', 'DR_REVIEW_ANSWERS'].map((k) => extractConstDecl_(k).replace(/^const /, 'var ')).join('\n'), ctx);
   ['drStatus_', 'drFindRowByReqId_', 'drReplyReasonOf_', 'answerDeptReplyLook'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
@@ -39688,9 +39719,19 @@ test('E4 (cycle 25): answerDeptReplyLook — the resolve rule decides who, the a
   assert.strictEqual(resolves.length, 0);
   assert.strictEqual(J(ctx.answerDeptReplyLook('A', 'resolved')).stale, true, 'a second answer to the same reply is refused');
   ctx.answerDeptReplyLook('B', 'resolved');
-  assert.deepStrictEqual(J(resolves), [['B', 'bo@ums.com', 'app']], 'Resolved: the shared resolve writer, in-app (untimed)');
+  assert.deepStrictEqual(J(resolves), [['B', 'bo@ums.com', 'app', 1]], 'Resolved: the shared resolve writer, in-app (untimed) — and BEFORE its answer row (one row stood when it ran: the earlier Still open)');
   assert.deepStrictEqual(reviews[1].slice(2, 5), ['B', 'not-done', 'resolved']);
-  assert.ok(audits.every((a) => /^DeptReplyLookAnswered reqId=[AB]; reason=[a-z-]+; answer=(open|resolved)$/.test(a)) && !audits.join('').includes('Pat'), 'audited by id, rule and answer');
+  // F41 (cycle 26): a resolve that does not land writes NO answer row. The row
+  // was appended first, under a lock that was then released — and a timeout on
+  // the resolve's own lock left "resolved" on the review report for a request
+  // still open, counted again when the person tried a second time.
+  failResolve = true;
+  const rD = J(ctx.answerDeptReplyLook('D', 'resolved'));
+  assert.deepStrictEqual([rD.success, /Lock timeout/.test(rD.error), reviews.length, audits.length], [false, true, 2, 2], 'THE REGRESSION: an answer logged for a resolve that never happened');
+  failResolve = false;
+  assert.strictEqual(J(ctx.answerDeptReplyLook('D', 'resolved')).success, true, 'the retry answers it — once');
+  assert.deepStrictEqual(reviews.map((r) => r[2] + ':' + r[4]), ['A:open', 'B:resolved', 'D:resolved']);
+  assert.ok(audits.every((a) => /^DeptReplyLookAnswered reqId=[ABD]; reason=[a-z-]+; answer=(open|resolved)$/.test(a)) && !audits.join('').includes('Pat'), 'audited by id, rule and answer');
 });
 
 test('E4 (cycle 25): the review report — per rule, waiting / answered Resolved / answered Still open and the override share; no answers is "no answers yet", never 0%; a reason from before the column is its own row; answers outside the window are not counted; and the endpoint is admin-gated before any read (driven)', () => {
@@ -40477,6 +40518,7 @@ function p25LeaseCtx_(opts) {
   const ctx = vm.createContext({ String, Number, Object, JSON, isFinite, console: { warn() {} },
     Date: { now: () => clock.now },
     CN_REP_LEASE_PREFIX: 'CN_REP_LEASE_', CN_REP_LEASE_MS: 60000, CN_REP_LEASE_WAIT_MS: 15000, CN_REP_LEASE_POLL_MS: 200,
+    CN_REP_LEASE_HOLDER_WAIT_MS: b12Const('CN_REP_LEASE_HOLDER_WAIT_MS'), CN_SCRATCH_LEASE_PREFIX: b12Const('CN_SCRATCH_LEASE_PREFIX'),
     Utilities: { getUuid: () => 'tok-' + (log.length + 1), sleep: (ms) => { clock.now += ms; if (o.onSleep) o.onSleep(clock, props); } },
     LockService: { getScriptLock: () => ({ waitLock: (ms) => { held = true; log.push('lock ' + ms); }, releaseLock: () => { held = false; log.push('unlock'); } }) },
     PropertiesService: { getScriptProperties: () => ({
@@ -40484,8 +40526,14 @@ function p25LeaseCtx_(opts) {
       deleteProperty: (k) => { log.push('delete ' + k); delete props[k]; } }) },
     propSetBounded_: (k, v) => { log.push('set ' + k + (held ? ' (under lock)' : ' (NO LOCK)')); props[k] = v; },
     getCallNotesSheet_: (emp) => ({ sheetOf: emp.callNotesSheetId }) });
-  ['cnRepLeaseFree_', 'cnAcquireRepLease_', 'cnReleaseRepLease_', 'getCallNotesSheetForWrite_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  ['cnRepLeaseFree_', 'cnAcquireRepLease_', 'cnReleaseRepLease_', 'cnLeaseWaitOver_', 'getCallNotesSheetForWrite_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   return { ctx, clock, props, log };
+}
+/** A numeric or string CONFIG-file constant, read from the server source. */
+function b12Const(name) {
+  const m = new RegExp('const ' + name + " = (\\d+|'[^']*');").exec(serverSource());
+  assert.ok(m, name + ' is declared');
+  return m[1].charAt(0) === "'" ? m[1].slice(1, -1) : Number(m[1]);
 }
 
 test('25post: cnRepLeaseFree_ — absent, unreadable or expired is free; a lease whose `until` is ahead is held (driven)', () => {
@@ -40537,8 +40585,13 @@ test('25post: cnReleaseRepLease_ deletes only its OWN lease, takes no ScriptLock
   e.ctx.getCallNotesSheetForWrite_({ callNotesSheetId: 'S1' });
   assert.strictEqual(e.clock.now, 1000000, 'an expired lease (a killed save) does not hold anyone up');
   const k = p25LeaseCtx_({ props: { CN_REP_LEASE_S1: JSON.stringify({ token: 'x', until: 9e15 }) } });
-  k.ctx.getCallNotesSheetForWrite_({ callNotesSheetId: 'S1' });
-  assert.ok(k.clock.now - 1000000 >= 61000 && k.clock.now - 1000000 < 61500, 'and the wait is bounded by the lease length');
+  // F42 (cycle 26): a lease that is never given back. The holder of the project
+  // lock used to sleep the lease's whole life plus a second — 61 s — and then
+  // write anyway; it now refuses by name after CN_REP_LEASE_HOLDER_WAIT_MS.
+  assert.throws(() => k.ctx.getCallNotesSheetForWrite_({ callNotesSheetId: 'S1' }), /^Error: Lock timeout: a save to these call notes has not finished/);
+  const cap = b12Const('CN_REP_LEASE_HOLDER_WAIT_MS');
+  assert.ok(k.clock.now - 1000000 >= cap && k.clock.now - 1000000 < cap + 500, 'THE REGRESSION: it slept ' + (k.clock.now - 1000000) + ' ms with the project lock held (the cap is ' + cap + ')');
+  assert.ok(cap < 15000 && cap >= 5000, 'the cap is under the 15 s every other waiter gives the ScriptLock, and past a healthy save');
 });
 
 test('25post: every writer of a rep\'s call-notes Sheet is serialised — the note actions hold the rep lease (no ScriptLock, released in finally), and every ScriptLock holder that writes a rep Sheet opens it through getCallNotesSheetForWrite_ (derived over the server)', () => {
@@ -40551,7 +40604,10 @@ test('25post: every writer of a rep\'s call-notes Sheet is serialised — the no
     fns.push({ name: m[1], body: stripJsComments_(src.slice(s0, k + 1)) });
   }
   const WRITES = /\.(setValues?|appendRow|deleteRows?|setNumberFormat|insertSheet|clearContent)\(|appendRowsTextSafe_\(|appendRowsSafe_\(/;
-  const leased = fns.filter((f) => /cnAcquireRepLease_\(/.test(f.body) && f.name !== 'cnAcquireRepLease_').map((f) => f.name).sort();
+  const leased = fns.filter((f) => /cnAcquireRepLease_\(emp\);/.test(f.body) && f.name !== 'cnAcquireRepLease_').map((f) => f.name).sort();
+  // F42 (cycle 26): the Scratchpad's two writers hold the same kind of lease under their OWN key — never the note lease.
+  assert.deepStrictEqual(fns.filter((f) => /cnAcquireRepLease_\(emp, CN_SCRATCH_LEASE_PREFIX,/.test(f.body)).map((f) => f.name).sort(), ['saveMyScratchpad', 'scratchpadPageOp']);
+  assert.strictEqual(fns.filter((f) => /cnAcquireRepLease_\(/.test(f.body) && f.name !== 'cnAcquireRepLease_').length, 8, 'and nothing else takes a lease');
   assert.deepStrictEqual(leased, ['deleteCallNote', 'setCallNoteFlag', 'setCallNotePinned', 'setCallNoteResolved', 'submitCallNote', 'updateCallNote'],
     'the six note actions a rep makes all day hold the lease');
   fns.filter((f) => leased.indexOf(f.name) >= 0).forEach((f) => {
@@ -43041,7 +43097,7 @@ console.log('\nOperator round 2026-11-02 — Batch D (open requests for one TRX 
 test('Batch D: the TRX key and the fold — what follows "TRX", else the ONE long digit run; no number never folds; only OPEN requests to the SAME department fold, at the first one\'s place, newest first; a follow-up is unanswered only when no earlier request had a reply before it was sent (driven)', () => {
   const dr = fs.readFileSync(path.join(PA_WEB, 'metrics/script_deptrequests.html'), 'utf8');
   const ctx = vm.createContext({ String, Infinity });
-  ['drTrxKey_', 'drFoldKey_', 'drFoldList_'].forEach((n) => vm.runInContext(extractFnFrom(dr, n), ctx));
+  ['drTrxKey_', 'drFoldKey_', 'drFoldStats_', 'drFoldList_'].forEach((n) => vm.runInContext(extractFnFrom(dr, n), ctx));
   const K = (s) => ctx.drTrxKey_(s);
   assert.strictEqual(K('J. Rivera · TRX 47790'), '47790');
   assert.strictEqual(K('j rivera trx#47790'), '47790', 'case and a # do not matter');
@@ -44560,14 +44616,14 @@ test('DR1: every person-made resolve replies AFTER the resolve writer has releas
   const conf = nc(extractRawFunction('Code.js', 'confirmDeptRequestResolve'));
   assert.ok(/if \(res\.already\)[\s\S]*drResolvedReplyNote_\(drSendResolvedReply_\(res, drResolverLabel_\(clickerName, by\)\)\)/.test(conf), 'the confirm page: after an already-check');
   const look = nc(extractRawFunction('Code.js', 'answerDeptReplyLook'));
-  assert.ok(/lock\.releaseLock\(\); \}[\s\S]*markDeptRequestResolved_[\s\S]*drSendResolvedReply_\(res,/.test(look), 'the look answer: outside its own lock');
-  const mark = nc(extractRawFunction('Code.js', 'markDeptRequestResolved_'));
+  assert.ok(/drResolveRowLocked_\(sh, id, who, 'app', null\)[\s\S]*lock\.releaseLock\(\); \}[\s\S]*drSendResolvedReply_\(res,/.test(look), 'the look answer: the resolve inside its lock (F41), the reply after it');
+  const mark = nc(drWriterSrc_());
   assert.ok(!/drSendResolvedReply_|GmailApp/.test(mark), 'never inside the writer (g34)');
   // Driven: the writer's fresh-resolve answer carries what the reply needs.
   const sh = drDSheet_([dr1Row_({ REQ_ID: 'R1', BY_ID: 'E1', BY_NAME: 'Nina', BY_EMAIL: 'nina@x.com', TO_DEPT: 'Billing', STATUS: 'open', LABEL: 'Close Order', THREAD_ID: 'T1 T2' })]);
   const c = dr1Ctx_({ LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) }, getOrCreateDeptRequestsSheet_: () => sh,
     sheetSafe_: (x) => x, drNowTs_: () => '2026-11-09T10:00:00', drBumpCacheGen_() {}, pendingTasksBust_() {}, writeAuditLog_() {}, formTokenIsoString_: (x) => String(x) },
-  ['drStatus_', 'drFindRowByReqId_', 'drSplitDepts_', 'drEmailClickVia_', 'markDeptRequestResolved_']);
+  ['drStatus_', 'drFindRowByReqId_', 'drSplitDepts_', 'drEmailClickVia_', 'drDeptAddrsFor_', 'drResolveRowLocked_', 'markDeptRequestResolved_']);
   const r = hJ(c.markDeptRequestResolved_('R1', 'bo@x.com', 'app'));
   assert.deepStrictEqual([r.found, r.already, r.reqId, r.via, r.threadIds, r.label, r.byId, r.byName], [true, false, 'R1', 'app', 'T1 T2', 'Close Order', 'E1', 'Nina']);
   assert.ok(!('threadIds' in hJ(c.markDeptRequestResolved_('R1', 'bo@x.com', 'app'))), 'an already-resolved answer carries nothing to reply with');
@@ -51081,6 +51137,13 @@ const b11Fn = (partial, names, extra) => {
   return c;
 };
 const b11J = (v) => JSON.parse(JSON.stringify(v));
+/** F41 (cycle 26): the Dept Request resolve writer is two functions — the
+ *  lock wrapper and the write a caller that already holds the lock shares. A
+ *  pin about "the writer" reads both. (A function declaration: hoisted, so the
+ *  pins far above can call it.) */
+function drWriterSrc_() {
+  return extractRawFunction('Code.js', 'markDeptRequestResolved_') + '\n' + extractRawFunction('Code.js', 'drResolveRowLocked_');
+}
 /** FT1 — the held-text key prefix, read from the source (never restated). */
 const ftHeldPrefix = () => {
   const m = /var CN_SCRATCH_HELD_PREFIX = '([^']+)';/.exec(fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8'));

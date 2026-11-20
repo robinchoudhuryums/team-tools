@@ -1219,6 +1219,17 @@ const CN_REP_LEASE_PREFIX = 'CN_REP_LEASE_';
 const CN_REP_LEASE_MS = 60000;
 const CN_REP_LEASE_WAIT_MS = 15000;
 const CN_REP_LEASE_POLL_MS = 200;
+// F42 (cycle 26): how long a writer that HOLDS the ScriptLock waits for a
+// rep's note-save lease before it refuses by name (getCallNotesSheetForWrite_).
+// Under the 15 s every other waiter gives the ScriptLock — so they outlast the
+// wait — and far past a healthy save (a second or two).
+const CN_REP_LEASE_HOLDER_WAIT_MS = 8000;
+// F42: the Scratchpad's own lease — `CN_SCRATCH_LEASE_<sheetId>`, the same
+// {token, until} shape, present only while a Scratchpad save or page change
+// runs. It replaced the USER lock, which is one lock for every rep (the web
+// app runs as the deployer).
+const CN_SCRATCH_LEASE_PREFIX = 'CN_SCRATCH_LEASE_';
+const SCRATCHPAD_LEASE_TIMEOUT_MSG = 'Your scratchpad is still saving from another window — try again in a moment.';
 // 25post — Admin → System's daily email-quota line warns at or below this many
 // recipients left (MailApp.getRemainingDailyQuota; ~1,500 a day on Workspace).
 const MAIL_QUOTA_WARN_REMAINING = 300;

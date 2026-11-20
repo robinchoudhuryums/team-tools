@@ -1353,7 +1353,12 @@ function confirmDeptRequestResolve(token) {
     let clickerDepts = null, clickerName = '';
     try { const ce = getEmployeeInfo_(); if (ce) { clickerDepts = empDepartments_(ce); clickerName = ce.name || ''; } } catch (e) {}
     const copyAddrs = [].concat(String(CONFIG.CALL_NOTES.CC_EMAIL || '').split(','), mailBccAll_());
-    const res = markDeptRequestResolved_(tok, by, 'email', { copyAddrs: copyAddrs, clickerDepts: clickerDepts });
+    // F41 (cycle 26): the department map, so the department's OWN address is
+    // known as the department (drDeptAddrsFor_). Read outside the lock; a
+    // failed read leaves that rule out, as it was.
+    let deptMap = null;
+    try { deptMap = getDepartmentEmails_(); } catch (e) { deptMap = null; }
+    const res = markDeptRequestResolved_(tok, by, 'email', { copyAddrs: copyAddrs, clickerDepts: clickerDepts, deptMap: deptMap });
     if (!res.found) return { heading: 'Request not found', message: 'This link is invalid or the request was removed.' };
     if (res.already) return { heading: 'Already resolved', message: 'This was already marked resolved' + (res.resolvedBy ? ' by ' + res.resolvedBy : '') + (res.resolvedAt ? ' on ' + res.resolvedAt : '') + '.' };
     // DR1: the system reply on the request's thread — markDeptRequestResolved_

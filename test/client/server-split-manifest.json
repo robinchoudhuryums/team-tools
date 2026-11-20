@@ -4808,6 +4808,51 @@
     "getTeamMetrics"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-20",
+   "why": "Batch 12 (F41-F43): the resolve write split for one lock, the department-address click rule, the Scratchpad lease, the capped lease wait, whole-address self-BCC, the What's-new key re-check",
+   "added": [
+    "CN_REP_LEASE_HOLDER_WAIT_MS",
+    "CN_SCRATCH_LEASE_PREFIX",
+    "cnAcquireLease_",
+    "cnAcquireScratchLease_",
+    "cnLeaseWaitOver_",
+    "drDeptAddrsFor_",
+    "drResolveRowLocked_",
+    "mailListHasAddress_"
+   ],
+   "removed": [],
+   "changed": [
+    "answerDeptReplyLook",
+    "cnAcquireRepLease_",
+    "confirmDeptRequestResolve",
+    "drEmailClickVia_",
+    "getCallNotesSheetForWrite_",
+    "getWhatsNew",
+    "markDeptRequestResolved_",
+    "saveMyScratchpad",
+    "scratchpadPageOp",
+    "sendRepEmail_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-20",
+   "why": "Batch 12 (F41-F43): the resolve write split for one lock, the department-address click rule, the Scratchpad lease, the capped lease wait, whole-address self-BCC, the What's-new key re-check",
+   "added": [
+    "SCRATCHPAD_LEASE_TIMEOUT_MSG"
+   ],
+   "removed": [
+    "cnAcquireLease_",
+    "cnAcquireScratchLease_"
+   ],
+   "changed": [
+    "cnAcquireRepLease_",
+    "saveMyScratchpad",
+    "scratchpadPageOp"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -5322,6 +5367,11 @@
    "kind": "const",
    "sha": "bc625fbaf36ca33f"
   },
+  "CN_REP_LEASE_HOLDER_WAIT_MS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f770a21a8992c63f"
+  },
   "CN_REP_LEASE_MS": {
    "file": "00_config.js",
    "kind": "const",
@@ -5341,6 +5391,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "58d1c04b6b39fcec"
+  },
+  "CN_SCRATCH_LEASE_PREFIX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "c6495b03b518f43c"
   },
   "CN_SUBFORM_MAX_CHARS": {
    "file": "00_config.js",
@@ -7652,6 +7707,11 @@
    "kind": "const",
    "sha": "1a99d04fe5c42015"
   },
+  "SCRATCHPAD_LEASE_TIMEOUT_MSG": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a4e0f056fc481931"
+  },
   "SCRATCHPAD_MAIN_PAGE": {
    "file": "00_config.js",
    "kind": "const",
@@ -8585,7 +8645,7 @@
   "answerDeptReplyLook": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "8edc27ea36e21ad2"
+   "sha": "2f1349b0ae7ddb15"
   },
   "appReplyAll_": {
    "file": "10_core.js",
@@ -9280,7 +9340,7 @@
   "cnAcquireRepLease_": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "5f39f63db1144f2f"
+   "sha": "8a85c216d5fb65a2"
   },
   "cnAppendBounded_": {
    "file": "30_callnotes.js",
@@ -9371,6 +9431,11 @@
    "file": "30_callnotes.js",
    "kind": "function",
    "sha": "1d96885605ea6f09"
+  },
+  "cnLeaseWaitOver_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "a1f3d6656424d6ad"
   },
   "cnNlBr_": {
    "file": "30_callnotes.js",
@@ -9655,7 +9720,7 @@
   "confirmDeptRequestResolve": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "8aadff52d2b869f0"
+   "sha": "3f2e77dc19122447"
   },
   "confirmInferredForEmployee_": {
    "file": "20_timeclock.js",
@@ -9962,6 +10027,11 @@
    "kind": "function",
    "sha": "d9943a3979dff2a6"
   },
+  "drDeptAddrsFor_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "485bd720c01faf97"
+  },
   "drDeptStats_": {
    "file": "50_deptrequests.js",
    "kind": "function",
@@ -9970,7 +10040,7 @@
   "drEmailClickVia_": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "f928a980d0018a88"
+   "sha": "bb928bddcbea15db"
   },
   "drFindOpenRequest_": {
    "file": "50_deptrequests.js",
@@ -10086,6 +10156,11 @@
    "file": "50_deptrequests.js",
    "kind": "function",
    "sha": "ae76c94ddde876a3"
+  },
+  "drResolveRowLocked_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "80971af4b6ed92bc"
   },
   "drResolvedReplyNote_": {
    "file": "50_deptrequests.js",
@@ -10810,7 +10885,7 @@
   "getCallNotesSheetForWrite_": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "33d9076ebeaf3022"
+   "sha": "98cf9e54f5b75e78"
   },
   "getCallNotesSheet_": {
    "file": "30_callnotes.js",
@@ -11755,7 +11830,7 @@
   "getWhatsNew": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "405fedcb20107857"
+   "sha": "dd48c8bddabcce1b"
   },
   "groupQueueRows_": {
    "file": "40_metrics.js",
@@ -13162,6 +13237,11 @@
    "kind": "function",
    "sha": "e9d0e84cd90a5fe7"
   },
+  "mailListHasAddress_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "699ee6dad19b5983"
+  },
   "mailMergeBcc_": {
    "file": "10_core.js",
    "kind": "function",
@@ -13295,7 +13375,7 @@
   "markDeptRequestResolved_": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "e0ebb43f1c0d7a8f"
+   "sha": "f524e13c745dd388"
   },
   "markTrainingComplete": {
    "file": "80_training.js",
@@ -14740,7 +14820,7 @@
   "saveMyScratchpad": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "21d44b03097e675d"
+   "sha": "fa1dac6516483880"
   },
   "saveQaMembers": {
    "file": "90_qa.js",
@@ -14825,7 +14905,7 @@
   "scratchpadPageOp": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "abe4ae73068f8ded"
+   "sha": "b768c693f9b818d0"
   },
   "scratchpadPagesFromRows_": {
    "file": "30_callnotes.js",
@@ -14970,7 +15050,7 @@
   "sendRepEmail_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "7ffaae34596c66e5"
+   "sha": "99dd14d1da8b7826"
   },
   "sendSpanishEscalationDigest": {
    "file": "51_spanish.js",
