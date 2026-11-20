@@ -11,6 +11,28 @@ keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
 
+## 2026-11-20 — Cycle 26 follow-ons after Batch 14 (FX1–FX8)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version) AND the
+handbook app (`npm run handbook:push` + New version) — its copied page shell
+changed with FX4.
+
+- **A blocked copy is always on top (FX4).** When the browser blocks a copy,
+  the "Copy it by hand" dialog now opens over the Reference drawer and the
+  Scratchpad. Opened from the drawer it used to sit under it.
+- **Search says when there are more (FX5).** A rep's Call Notes search that
+  matches more than 200 notes says it is showing the newest 200 and to
+  narrow by date range. It used to read "200 results".
+- **The pay-period tile (FX6).** If the timesheet archive cannot be read,
+  the tile on Time / PTO says hours from earlier in the period may be
+  missing — the calendar beside it already did.
+- **Reminders (FX8).** No visible change; the Mark done and Cancel buttons
+  are wired differently.
+- **After a stopped test run (FX1).** `cleanupTestData`'s log now says, for
+  each setting it restored, how long ago the run stopped and — if the value
+  it replaced was not the original — what that value was. If you had changed
+  that setting yourself in between, that is your change: set it again.
+
 ## 2026-11-20 — Cycle 26 Batch 14: Docs and tooling (F68–F71, F73) with follow-ons (FW1–FW6)
 
 **Nothing to set, and nothing a rep or manager will see.** Team Tools'

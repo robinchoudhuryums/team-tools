@@ -4546,3 +4546,22 @@ F53, F54, F57.**
   refused itself — a stale row made the harness red, and it would not write
   while the harness was red.
 - **Bite-checks: 24 mutations (all pure — this batch added no DOM test), 24 bit, each on its first run. One pin was strengthened before the run: the deploy pin read a subsystem's name anywhere in the section, so a mention in passing on another line would have satisfied it; it reads each line's head now.**
+
+## Cycle 26 follow-ons after Batch 14 — FX1–FX8 (2026-11-20)
+
+- **Pure harness: two pins.** The stash's date and the restore's line,
+  driven on a moved clock through a killed run, three hours and an admin's
+  own change. The copy dialog's layer (the four z-indexes read from the
+  rules; no caller passes the old option) with the pay-period tile's note.
+- **DOM harness: three drives.** The copy dialog's class with no option; the
+  search count line cut, whole, and from a payload without the field; the
+  reminders list with an id holding an apostrophe, a quote and an angle
+  bracket.
+- **A drive that could not have failed, fixed before the bite-checks:** "a
+  waiting button does not send twice" pressed the disabled button with
+  `click()`, which jsdom ignores — the guard was never reached. The press is
+  dispatched on the button's icon now, where a pointer lands, and removing
+  the guard fails it.
+- **Older pins updated:** the FT1 layer pin (the class is unconditional),
+  PR4-4's retraction line, the F18 side-rail sandbox, the F73 stash sandbox.
+- **Bite-checks: 17 mutations (10 pure, 7 DOM), 17 bit, each on its first run. One drive was corrected before the run: it pressed a disabled button with click(), which jsdom ignores, so the guard it named was never reached.**

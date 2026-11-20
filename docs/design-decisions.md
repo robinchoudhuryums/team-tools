@@ -7697,6 +7697,31 @@ pick them up without re-deriving the context.
     not showing its 200 cap; `archiveError` shipped and not drawn); a local
     command equal to CI and a cycle-open script (the scan's ST1); the
     handbook app's build stamp (ST2's other half).
+- <a id="c26-fx-follow-ons"></a>**The follow-ons after Batch 14 — a restore says what it replaced, the blocked-copy dialog above every panel, a cut search and an unread archive said, reminder ids as data (cycle 26 FX1–FX8).**
+  - **Report, do not refuse (FX1).** The backstop could decline to restore
+    an old stash and ask. But the value sitting in the property after a
+    killed run is usually a TEST's — one test address in `ADMIN_EMAILS`,
+    every toggle at its default — and leaving that in place until someone
+    reads a log is the worse outcome. So it restores, and puts the value it
+    replaced in the log when that value was not the original. "The last
+    value the suite wrote" would have made an exact check possible; it is
+    not knowable, because some tests change a property through an endpoint.
+  - **The layer is the dialog's, not the caller's (FX4).** An option every
+    caller must remember is how the drawer's copy buttons came to open the
+    dialog under the drawer. There is no case where "nothing was copied"
+    should sit beneath a panel, so the option went.
+  - **Team Training's narrow top cards were left (FX2).** The summary strip
+    and the assign form are capped at 860px by their own rules — a form kept
+    at a readable width above full-width tables. Not a defect; only the
+    fixture's names were aligned with the roster fixture's.
+  - **A condition that could not be false was removed, not pinned (FX7).**
+    `voidCoaching` returns early for an item already void, so its later
+    `status !== 'void'` guarded nothing. There is no behaviour to pin; the
+    existing retraction pin follows the line.
+  - **Left:** an undo for a card join, Day Edit not drawing `archiveError`
+    (its date range never reaches the archive), a local command equal to CI
+    (the scan's ST1), and everything that needs a ruling — F36, F39, F51 and
+    the leading apostrophe.
 - <a id="c26-one-verdict-for-employee-docs"></a>**One verdict for Verify, the certificate and the copy; the copy email is capped and reaches only today's managers; pdf.js is checksum-checked (cycle 26 Batch 6: F13, F14, F15, F44, F56, F64).**
   - **`verified` is its own field, not "not tampered" (F13).** A check has
     three outcomes and the old flag recorded one of them. `empDocVerdict_`

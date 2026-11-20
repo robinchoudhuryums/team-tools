@@ -2761,7 +2761,11 @@ entry says which it is.
   the test puts the value back. **If a run is stopped or times out, run
   `cleanupTestData` (or start another run): it restores every stashed value
   and names them in the log. Do not delete a `TEST_STASH_…` property by hand
-  — after a killed run it is the only copy of the real setting.**)* Every runner
+  — after a killed run it is the only copy of the real setting.** Since FX1
+  the restore's log line says how long ago the run stopped and, when the
+  value it replaced was not the original, WHAT it replaced — if you had set
+  that property by hand after the run stopped, that is your value: set it
+  again.)* Every runner
   (`runAllTests`, `runAllTestsPartA`/`PartB`, `runSmokeTests`,
   `runSingleTest`), `setupTestEnvironment`, `cleanupTestData` and every
   `test_*` refuses unless the caller IS the script owner:
