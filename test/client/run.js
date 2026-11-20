@@ -51257,6 +51257,7 @@ test('FT1: held Scratchpad text — a key no page has, never a save\'s next page
   const pages = (n) => Array.from({ length: n }, (_, i) => ({ id: 'p' + i }));
   assert.deepStrictEqual([c.cnScratchPadFull_(pages(10), 10), c.cnScratchPadFull_(pages(9), 10), c.cnScratchPadFull_(pages(11), 10), c.cnScratchPadFull_(null, 10), c.cnScratchPadFull_(pages(10), null), c.cnScratchPadFull_(pages(3), 3)],
     [true, false, true, false, true, true], 'an unread page list is not "full" — the add is worth trying');
+  assert.deepStrictEqual([c.cnScratchPadFull_(pages(3), null), c.cnScratchPadFull_(pages(3), 0), c.cnScratchPadFull_(pages(3), undefined)], [false, false, false], 'with no limit told, the limit is ten — three pages are not a full pad');
   // The prefix names no page the server can mint: ids are the main page's or 'p' + …
   const srv = serverSource();
   const mainId = /(?:const|var) SCRATCHPAD_MAIN_PAGE = '([^']+)';/.exec(srv);
@@ -51278,7 +51279,8 @@ test('FT1: the held row and the layer above the pad have their rules, the recove
   assert.ok(core.indexOf('overlay-above-panels') === core.lastIndexOf('overlay-above-panels'), 'one writer');
   const rec = stripJsComments_(extractFunction('cn/script_callnotes.html', 'cnScratchRecover_'));
   assert.ok(/if \(CN_SCRATCH\.recovering\[lostPage\]\) return;/.test(rec), 'one add per text');
-  assert.ok(rec.indexOf('CN_SCRATCH.unchecked[lostPage] = true') < rec.indexOf("cnScratchPageOp_('add'"), 'unsendable BEFORE the add is asked');
+  const marks = rec.indexOf('CN_SCRATCH.unchecked[lostPage] = true'), asks = rec.indexOf("cnScratchPageOp_('add'");
+  assert.ok(marks >= 0 && asks >= 0 && marks < asks, 'unsendable BEFORE the add is asked (' + marks + ' / ' + asks + ')');
 });
 
 test('FT3: the tour\'s "still loading" reads BOTH shared loaders inside the view area — and the views that draw the inline one are the ones it was missing (source)', () => {
