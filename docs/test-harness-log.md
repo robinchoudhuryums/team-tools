@@ -4466,3 +4466,28 @@ F53, F54, F57.**
   `getUserLock`; the mirror pin's read shape gained `mine`; two sandboxes
   that run a leased function gained a stand-in for the check.
 - **Bite-checks: 17 mutations (12 pure, 5 DOM), 17 bit, each on its first run.**
+
+## Cycle 26 Batch 13 — Intake remainder: F21, F22, F23, F67 (2026-11-20)
+
+- **Pure harness: six pins.** Two for the lookbehind (every script block of
+  every client partial in both apps is tokenized with acorn — the scan is
+  first shown a literal it must flag, and a string and a division it must
+  not; the compiled patterns, and a stand-in `RegExp` that throws on a
+  lookbehind). Two for the grouping (all pairs of the fixture's sixteen real
+  reads; the rules one at a time). One driving the feedback endpoint with
+  each kind of caller. One for the Storage Health row, with a derived half:
+  no function that opens the Intake store removes a row.
+- **The tokenizing pin needs acorn**, a dev dependency, so it is registered
+  with `testNeedsDeps`: skipped by name on CI's dependency-free first run and
+  required by the run after `npm ci`. It was first written as a plain `test`,
+  which was green here and red in CI on the commit that added it — read from
+  the pushed commit's run, before anything was reported.
+- **DOM harness: two drives.** Two cards as two suggestions through to both
+  fields, a suggestion replaced and a form redrawn while "Replace?" is open;
+  a browser whose patterns did not compile.
+- **Visual matrix: two scenarios** — two cards, light wide and dark mobile.
+- **Older pins updated:** the card pins' sandbox loads the pattern sources
+  and the new helpers; the F58 driven half gives the feedback endpoint an
+  unidentified caller; the feedback-loop pin reads the new gate and audit
+  line.
+- **Bite-checks: 31 mutations (21 pure, 10 DOM), 31 bit, each on its first run. One planned mutation was left out as equivalent: a failed compile that is not kept returns false on the next call as well.**

@@ -51626,7 +51626,9 @@ const b13Partials_ = () => {
   return walk(PA_WEB).concat(walk(path.join(PA_WEB, '..', 'handbook-app')));
 };
 
-test('F67 (cycle 26): no client partial holds a regex LITERAL with a lookbehind — one the browser cannot parse is an early error for its whole script, and Intake vanished on Safari older than 16.4 (derived over every partial, tokenized)', () => {
+// This pin tokenizes with acorn, a dev dependency: on CI's dependency-free floor
+// it is a visible SKIPPED, and the run after `npm ci` (REQUIRE_DEPS) must run it.
+testNeedsDeps(['acorn'], 'F67 (cycle 26): no client partial holds a regex LITERAL with a lookbehind — one the browser cannot parse is an early error for its whole script, and Intake vanished on Safari older than 16.4 (derived over every partial, tokenized)', () => {
   const tmp = path.join(require('os').tmpdir(), 'b13-lookbehind-' + process.pid + '.html');
   fs.writeFileSync(tmp, '<script>var a = /(?<![a-z])bin/i, b = /x(?<=y)z/, c = "/(?<!not a literal)/", d = 4 / 2 / 1, e = <?!= JSON.stringify(x) ?>;</scr' + 'ipt>');
   let probe;

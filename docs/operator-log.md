@@ -11,6 +11,30 @@ keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
 
+## 2026-11-20 — Cycle 26 Batch 13: Intake remainder (F21, F22, F23, F67)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The
+handbook app is not affected.
+
+- **Two insurance cards (F21):** attaching more than one card and pressing
+  "Read the insurance details" now gives one suggestion per card — "Card 1",
+  "Card 2" — each with its own line and its own Use as primary / secondary.
+  Before, every image was merged into one line, which could put one card's
+  ID beside another card's group, and a plan card removed the Medicare ID
+  read from a Medicare card.
+- **Feedback from Sales and PAP (F22):** the "Send feedback on this
+  recommendation" button in an intake email now works for anyone signed in to
+  a company account. It used to answer "Not authorized." to recipients who
+  are not on the Employees sheet — which is the Sales and PAP teams. Their
+  rows in the `IntakeFeedback` tab carry the address and a blank name.
+- **The Intake store is kept (F23):** Storage Health said "Optional purge"
+  for the Intake spreadsheet. There is no purge: submissions and feedback
+  stay until deleted by hand. The row now reads "Kept — no purge exists" and
+  names the `IntakeFeedback` tab. Nothing about what is stored changed.
+- **Older Safari (F67):** on Safari and iOS before 16.4 the Intake tool did
+  not load at all. It loads now; only the card reader is unavailable there,
+  and says so.
+
 ## 2026-11-20 — Cycle 26 follow-ons after Batch 12 (FU1–FU3)
 
 **Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The

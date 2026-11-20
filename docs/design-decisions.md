@@ -7584,6 +7584,38 @@ pick them up without re-deriving the context.
     reply scan's by-domain rule, a fold's "resolve all", the kept resolve
     answer across a reload, parked drafts between two live windows, the
     "Handled / day" divisor — each a design choice.
+- <a id="c26-batch-13-intake-remainder"></a>**Batch 13 — attached images are grouped into cards, one suggestion each; intake feedback from any org sign-in; the Intake store is kept, and says so; no regex lookbehind in a literal (cycle 26 F21–F23, F67).**
+  - **Group, then merge (F21).** The alternative was to keep one suggestion
+    and refuse to merge values that disagree. But two cards are two answers —
+    primary and secondary — and the form has a field for each, so each card
+    gets its own boxes, line and buttons, and using one leaves the other
+    offered. What makes two reads one card is a value they share; a read with
+    nothing to compare goes with the image before it, which is how a rep
+    attaches a front and its back.
+  - **The doubt goes toward withholding (F21).** An Advantage read that
+    carries no payer, ID or group of its own could be the back of the Medicare
+    Advantage card before it or a stray image. It is taken as the back, and
+    that card's Medicare ID is not offered — a rep types a number that was
+    withheld; nobody notices one that was offered wrongly.
+  - **An org sign-in, not the recipient list (F22).** The endpoint could have
+    required that the caller be the address the submission was sent to. An
+    intake email is forwarded inside the team, and the person with something
+    to say about the recommendation is often not the first recipient. An org
+    account plus a submission id that exists is the bar; the row names who.
+  - **Say "kept"; do not build the purge here (F23).** A purge for the Intake
+    store is the scan's G1, an expansion item with its own decisions (what
+    age, which tabs, opt-in). This batch corrects the label and pins it to the
+    fact, so the day a purge exists the label has to change with it.
+  - **Compile in a try; do not rewrite the patterns (F67).** The lookbehinds
+    could have been rewritten as a captured prefix. Seven patterns tuned
+    against real card reads would each change shape for a browser the team
+    may not use; keeping the sources byte-for-byte and moving only WHERE they
+    are compiled costs nothing in a current browser, and an old one loses the
+    card reader alone.
+  - **Left:** the opt-in Intake purge (G1); a limit on feedback rows per
+    sender; the reader's toasts and "Replace?" dialog are English on the
+    Spanish form (as before); other syntax newer than old Safari is not
+    scanned for.
 - <a id="c26-one-verdict-for-employee-docs"></a>**One verdict for Verify, the certificate and the copy; the copy email is capped and reaches only today's managers; pdf.js is checksum-checked (cycle 26 Batch 6: F13, F14, F15, F44, F56, F64).**
   - **`verified` is its own field, not "not tampered" (F13).** A check has
     three outcomes and the old flag recorded one of them. `empDocVerdict_`

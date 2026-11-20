@@ -3550,6 +3550,21 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   department email addresses. The CN client calls this after employee
   state loads, so the auth is always present.
 
+  **AMENDED (cycle 26 F22): a gate narrower than the people its link is sent
+  to.** The intake email carries a "Send feedback on this recommendation"
+  button for every recipient at an org address (`isOrgEmail_(recipient)`).
+  The page it opens collects text; `submitIntakeFeedback` then required a
+  roster employee. That held while recipients were resolved from the roster —
+  and stopped holding with 25post B6, which reads the Sales and PAP teams
+  from the CDR roster: the button's usual readers are not on this app's
+  Employees sheet, and each got "Not authorized." after typing their
+  feedback. The endpoint now takes a roster employee or anyone signed in to
+  an org account (`intakeFeedbackCaller_`), records the address, and marks
+  the audit line "sender not on the roster". An account it cannot identify
+  is told so — a different answer from an outside account's refusal (g128).
+  The forged-id rule is unchanged: the submission must exist. Verify: the
+  `F22` pin (driven, with the refusals before the lock).
+
 <a id="g97-call-notes-ambient-polling-stops-on-tool"></a>
 
 - **Call Notes ambient polling stops on tool switch.** `showView()`
@@ -4723,6 +4738,24 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   wrong — and the wrong one was in the pin written to guard against pins that
   cannot see what they claim to (g116). **Anchor an ordering compare on the
   executable line, never on a mention of it.**
+
+  **AMENDED (cycle 26 F67): a syntax the browser cannot parse.** A
+  ReferenceError at least waits for its line to run. A regex LITERAL the
+  engine cannot parse is an early error: the whole `<script>` is rejected and
+  none of its functions exist. The card reader's seven label patterns began
+  `(?<![a-z])` — "not after a letter" — and Safari and iOS before 16.4 have no
+  lookbehind, so on those browsers `script_intake.html` defined nothing: PPD,
+  PMD, PAP, Sent and Catalog were all gone, for a feature that is optional.
+  Node and Chromium parse it, so every harness and every screenshot was green.
+
+  The patterns are now SOURCE strings compiled with `new RegExp` inside a try
+  (`intakeCardRx_`); where that fails the card reader says it cannot read in
+  this browser — before it downloads anything, and without "Try again" — and
+  the rest of Intake works. A pin tokenizes every script block of every client
+  partial in both apps (the served pages' scriptlets read as values) and
+  refuses a lookbehind in a regex literal. It checks that one construct, not
+  browser support in general: the same class exists for any syntax newer than
+  the oldest browser the team uses. Verify: the two `F67` pins + `F67 DOM`.
 
 <a id="g119-a-store-override-that-is-read"></a>
 - **A store override that is READ but never ASSIGNED is not isolation — it is a
@@ -6204,6 +6237,18 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   the reason from its caller now; the failed save says the note was not
   saved and to log it again.
 
+  **AMENDED (cycle 26 F23): a label that names a setting nobody has.**
+  Storage Health's Intake row and CLAUDE.md's storage map both read
+  "Optional purge". There is no purge of the Intake spreadsheet — every PPD,
+  PMD and PAP submission, and every feedback row written about one, is kept
+  until someone deletes it by hand. An operator weighing PHI at rest reads
+  "optional" as a switch that is off by choice. Neither place named the
+  `IntakeFeedback` tab, whose text may name a patient. The row now reads
+  "Kept — no purge exists" and names the tab; the pin holds the label true by
+  deriving that no function which opens the store removes a row, so building
+  a purge turns it red until the label is changed with it. Verify: the `F23`
+  pin.
+
 <a id="g143-a-leading-underscore-is-not-private"></a>
 
 - **A LEADING underscore is not private — `google.script.run` reaches every
@@ -7605,3 +7650,25 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   a path that fills a form from somewhere else. Verify: the F1 derived net (the
   callers, the order in the amend flow, ONE place that empties images) + the
   F1 and F19 DOM drives.
+
+  **AMENDED (cycle 26 F21): the card reader merged every image as one card.**
+  The same shape one step along: not state that outlived its patient, but
+  values that belong to DIFFERENT cards read as one. `intakeCardRead_` folded
+  every attached image through `intakeCardMerge_`, whose rule — the first
+  value found for a field wins — is right for a front and its back and wrong
+  for anything else. A Humana card and an Aetna card gave "Humana · ID H123 ·
+  Group 555": Humana's ID beside Aetna's group, a line that names no card
+  anyone holds, offered to Sales as the patient's insurance. And because an
+  Advantage read voids the MBI, attaching the plan card beside the red, white
+  and blue card took the Medicare ID away. The design notes only ever
+  described "front and back".
+
+  Images are now grouped first (`intakeCardGroup_`, on `intakeCardRel_`): a
+  read joins a card it shares an ID, group or payer with; one with nothing to
+  tell it by goes with the image before it; a different ID, group or payer —
+  or a plan card against a Medicare card — starts another. Each card is its
+  own suggestion with its own line and buttons, and using one leaves the
+  others offered. One doubt is resolved the old way on purpose: an Advantage
+  read with no value of its own is taken as the back of the card before it,
+  and that card's MBI is withheld. Verify: the two `F21` pins (one over the
+  sixteen real reads in the fixture — every pair) and `F21 DOM`.
