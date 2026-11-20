@@ -7619,6 +7619,36 @@ pick them up without re-deriving the context.
     sender; the reader's toasts and "Replace?" dialog are English on the
     Spanish form (as before); other syntax newer than old Safari is not
     scanned for.
+- <a id="c26-fv-follow-ons"></a>**The follow-ons after Batch 13 — a split card is joined by the rep, feedback calls are limited per sender, client scripts are held to ES2015 (cycle 26 FV1–FV3).**
+  - **The rep joins; the reader does not guess (FV1).** The grouping could
+    have been loosened instead — treat two IDs one character apart as the
+    same card. That is the F21 defect coming back by another door: two
+    people on one plan can hold IDs one character apart, and the reader
+    cannot tell that from a misread. So the rule stays strict and the person
+    holding the cards says when it was wrong.
+  - **Mark the disagreement, keep the upper value (FV1).** Showing both
+    values side by side would need a new control; the box already exists,
+    and "Check this one" already means "compare this with the card".
+  - **Never across a Medicare ID (FV1).** The merge withholds an MBI beside
+    an Advantage read. A join that would do that is not offered, so the
+    button cannot undo what F21 fixed.
+  - **Every identified call counts (FV2).** Counting only successful rows
+    would leave id-guessing unlimited; counting before identification would
+    let an outsider spend a real sender's allowance. The count is per
+    address, taken once the address is known.
+  - **Pin the level the code already keeps (FV3).** Choosing which browsers
+    to support is the operator's decision and was not made here. What could
+    be done without it: measure the level every script already parses at,
+    and hold it, so the question is asked the day someone needs newer
+    syntax rather than the day an old browser shows a blank tool.
+  - **NOT taken — the reader's toast and "Replace?" in Spanish.** It was in
+    this pass's estimate. On reading the module, every Intake toast and
+    dialog is English on the Spanish form — the Spanish is for the questions
+    read to the patient — so translating these two would have made them the
+    exception.
+  - **Left:** the Intake purge (G1); a server-side check that the feedback
+    sender was a recipient (deliberate); an undo for a join (Dismiss and read
+    again); APIs a browser may lack, which a syntax level cannot see.
 - <a id="c26-one-verdict-for-employee-docs"></a>**One verdict for Verify, the certificate and the copy; the copy email is capped and reaches only today's managers; pdf.js is checksum-checked (cycle 26 Batch 6: F13, F14, F15, F44, F56, F64).**
   - **`verified` is its own field, not "not tampered" (F13).** A check has
     three outcomes and the old flag recorded one of them. `empDocVerdict_`
@@ -8060,7 +8090,11 @@ pick them up without re-deriving the context.
     letters and digits) is below `INTAKE_CARD_SURE`, 0.8. Measured on the
     spike's reads: every true misread sat under 0.35, and 2 of 80 correctly
     read values are marked. Editing the box clears the mark; the mark travels
-    with its value through the front/back merge.
+    with its value through the front/back merge. (Since cycle 26 F21 that
+    merge runs only WITHIN a card: the attached images are grouped into cards
+    first, each its own suggestion, and since FV1 the rep can join two the
+    grouping split — see [Batch 13](#c26-batch-13-intake-remainder) and
+    [its follow-ons](#c26-fv-follow-ons).)
   - **"Not found" and "could not read" are different answers (g128, g142).**
     An empty box says "Not found on the card — type it"; each image is read on
     its own, so a broken one is named ("Could not read image 2 — what is shown

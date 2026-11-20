@@ -11,6 +11,25 @@ keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
 
+## 2026-11-20 — Cycle 26 follow-ons after Batch 13 (FV1–FV3)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The
+handbook app is not affected.
+
+- **"Same card as Card 1" (FV1):** when the card reader offers one card as
+  two suggestions — a second photo read slightly differently — the rep can
+  join them. The joined suggestion marks the values the two photos
+  disagreed on. A Medicare card and a plan card are never offered the
+  button.
+- **A limit on intake feedback (FV2):** one person can send twelve pieces of
+  feedback from intake emails in an hour. Past that they read "That is a lot
+  of feedback in one hour — nothing more was sent", and the AuditLog gets one
+  `IntakeFeedbackLimited` row for that hour. The number is
+  `INTAKE_FEEDBACK_MAX_PER_HOUR` in `00_config.js`.
+- **Older browsers (FV3):** nothing changes in the app. The test suite now
+  holds every page script to the 2015 level of JavaScript the code already
+  uses, so newer syntax cannot slip in and blank a tool on an old browser.
+
 ## 2026-11-20 — Cycle 26 Batch 13: Intake remainder (F21, F22, F23, F67)
 
 **Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The

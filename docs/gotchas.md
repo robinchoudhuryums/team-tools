@@ -4757,6 +4757,22 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   browser support in general: the same class exists for any syntax newer than
   the oldest browser the team uses. Verify: the two `F67` pins + `F67 DOM`.
 
+  **AMENDED (cycle 26 FV3): the level, not the construct.** The F67 pin
+  looks for one thing, a lookbehind in a regex literal. The class is wider:
+  any syntax newer than the oldest browser someone opens the app in is the
+  same early error — optional chaining, `??`, an object spread, `async`, a
+  `catch` with no binding. Measured after F67, every script block in every
+  client partial of both apps parses as ES2015 and several do not parse as
+  ES5, so ES2015 is the floor the code already keeps. A pin now parses each
+  block at that level (acorn checks regex syntax by level too, so it covers
+  F67's case) and fails on anything newer; it first shows that the parser
+  refuses seven newer constructs at the floor, and that the level is not a
+  stale number. This is SYNTAX only — an API a browser lacks (`fetch`,
+  `crypto.subtle`, `Array.prototype.includes`) parses fine and is not seen.
+  Which browsers the app must support is still written nowhere; raising the
+  level in the pin is where that decision now has to be made. Verify: the
+  `FV3` pin.
+
 <a id="g119-a-store-override-that-is-read"></a>
 - **A store override that is READ but never ASSIGNED is not isolation — it is a
   resolver that LOOKS isolated while every test writes to production
@@ -7498,6 +7514,20 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   row (`ACTIVITY_LOG_FAILS`): that record puts a caution on every rep's day,
   and this is one person's page.
 
+  **AMENDED (cycle 26 FV2): the feedback endpoint's callers.** F22 opened
+  `submitIntakeFeedback` to any org sign-in, which is everyone in the domain,
+  and nothing bounded what one caller could do with it: add rows to the
+  Intake PHI store without end, or try submission ids (the endpoint answers
+  "Submission not found" for one that does not exist). It takes the activity
+  log's guard (FS3) — a cache counter per sender per hour, lock-free, a guard
+  and not an accounting. Every IDENTIFIED call counts, refused ones too, so
+  guessing ids spends the same allowance as writing rows. Past
+  `INTAKE_FEEDBACK_MAX_PER_HOUR` the call is refused before the lock; the
+  first refusal of an hour writes one AuditLog row (`IntakeFeedbackLimited`:
+  the sender and the limit, nothing typed). A cache that cannot be read
+  allows the call — the limit must never be why a recipient's feedback is
+  lost. Verify: the `FV2` pin (driven).
+
 <a id="g168-an-important-on-root-loses-to-a-declaration-on-body"></a>
 
 - **An `!important` custom property on `:root` LOSES to a plain declaration on
@@ -7672,3 +7702,20 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   read with no value of its own is taken as the back of the card before it,
   and that card's MBI is withheld. Verify: the two `F21` pins (one over the
   sixteen real reads in the fixture — every pair) and `F21 DOM`.
+
+  **AMENDED (cycle 26 FV1): putting a split card back.** Grouping has the
+  opposite failure to merging: a second photo of the same card whose ID is
+  misread by one character, or a payer the reader's list does not know
+  printed differently on front and back, is a `conflict`, and one card comes
+  out as two near-identical suggestions. That was recorded against F21 as its
+  new failure mode, with no way for the rep to say "these are one". Every
+  card after the first now carries "Same card as Card N" (the one above it).
+  `intakeCardJoinFields_` keeps the upper card's value for each field, fills
+  a blank from the lower, and marks every field the two DISAGREED on "Check
+  this one" — which read was right is the rep's call, and the box is where
+  they make it. The joined card keeps both cards' image numbers; nothing
+  reaches the form. The button is not offered where the join would drop a
+  Medicare ID one of the two holds (`intakeCardCanJoin_`, derived from the
+  merge itself): a Medicare card and a plan card are two cards, and one press
+  must not lose the number F21 was written to keep. Verify: the `FV1` pin
+  (over a real read with one character changed) and `FV1 DOM`.

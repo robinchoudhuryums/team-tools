@@ -4491,3 +4491,25 @@ F53, F54, F57.**
   unidentified caller; the feedback-loop pin reads the new gate and audit
   line.
 - **Bite-checks: 31 mutations (21 pure, 10 DOM), 31 bit, each on its first run. One planned mutation was left out as equivalent: a failed compile that is not kept returns false on the next call as well.**
+
+## Cycle 26 follow-ons after Batch 13 — FV1–FV3 (2026-11-20)
+
+- **Pure harness: three pins.** The join's fields and when it is offered,
+  including a real read from the fixture with one character of its ID
+  changed (the grouping splits it; the join puts it back, marked). The
+  feedback limit, driven through the endpoint on a moved clock with a
+  stand-in cache: the limit, the one audit row, another sender, the next
+  hour, guessed ids, a cache that throws. The syntax level: every script
+  block of both apps parsed at ES2015 — registered with `testNeedsDeps`
+  (acorn), after seven newer constructs are shown to fail at that level and
+  ES2015 itself to pass, and with a check that some blocks do not parse as
+  ES5.
+- **DOM harness: one drive.** Three images of two cards, the second photo
+  of one misread: joined, focus, marks, nothing on the form; a Medicare
+  card beside a plan card.
+- **Visual matrix:** the mobile two-card scenario now shows two plan cards,
+  so the join button is on camera; the wide one keeps the Medicare card and
+  a plan card, where it is absent.
+- **Older pins updated:** the F22 pin stands the limit in (it has its own
+  pin).
+- **Bite-checks: 20 mutations (12 pure, 8 DOM), 20 bit, each on its first run.**
