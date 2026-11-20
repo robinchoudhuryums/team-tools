@@ -7,7 +7,7 @@ Apps Script project under its own directory, synced via `clasp`.
 
 Batches D1 and D2 (2026-09-14) split this file. It had grown to 12,661 lines,
 which is long enough that a reader stops reading and a `/sync-docs` pass starts
-guessing where an update belongs; it is ~830 now. Nothing was rewritten — every
+guessing where an update belongs; a pin caps its length now. Nothing was rewritten — every
 entry moved VERBATIM and this file keeps an INDEX into each, so the thing you
 need is one link away and the thing you are scanning past is one line.
 
@@ -117,7 +117,7 @@ setup + operating procedure (incl. the `INSTANCE_LABEL` / `INSTANCE_IS_PROD`
 Script Properties and the `DevTools.js` roster scrubber) is in
 `docs/deployment.md`.
 
-For Apps Script tests (`Tests.js` in each project), run them from the
+For Apps Script tests (`web-app/Tests.js`; the handbook app has none), run them from the
 editor: pick a `runSmokeTests` / `runAllTests` function and click ▶.
 **The runbook is smoke on prod, full on dev nightly (Batch S, 2026-09-11):**
 `runNightlySelfTest` runs the full suite on the DEV instance every night, and

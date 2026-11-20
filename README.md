@@ -40,7 +40,11 @@ ONE project (`web-app/`); the second project is the handbook app
     Me / Team switch, from the CDR Report's DQE Historical Data: the
     previous workday's KPIs, a 30-day workday % Answered trend and
     note-to-call coverage (CDR data is never same-day); the team aggregate
-    is for everyone, the per-rep table and diagnostics manager-only. The
+    is for everyone, the per-rep table and diagnostics manager-only. Adjusted
+    figures sit beside the actual ones (outbound calls from the CDR Report,
+    intake calls by their timed form; % Answered is never adjusted), and a
+    day the Department Dashboard marks as partly worked counts as its share
+    in the day-based figures — no count, total or rate changes. The
     **Spanish Inbox** tracks bilingual-assistance requests with a
     per-member resolution-share chart, a manager auto-assign of unclaimed
     requests (the assignee is emailed, sees a count on the tab and a toast
@@ -51,7 +55,9 @@ ONE project (`web-app/`); the second project is the handbook app
     `SPANISH_VM_MIN_SECONDS` is a hang-up and is suppressed, with the hidden
     count reported so the filter can never fail silently. App activity is
     kept as one summary row per rep per day (raw pings 14 days), which Day
-    Edit draws as the day's activity strip.
+    Edit draws as the day's activity strip. A punch time inferred from app
+    activity is marked as inferred; a rep can ask to have it confirmed as
+    is, and a manager approves.
   - **Call Notes** — rolling-note panel for CSR call logging. Each
     rep writes to their own per-rep Google Sheet; Ctrl/⌘+Shift+C saves
     and auto-copies a CRM-friendly serialization. Department emails
@@ -81,7 +87,11 @@ ONE project (`web-app/`); the second project is the handbook app
     the previewed and emailed form is always English, and each
     renders a branded email (two-stage, bodyHash-guarded) and persists a
     PHI backup row to the Intake spreadsheet; the shared AuditLog row
-    stays PHI-free.
+    stays PHI-free. A form can be parked as a named draft in the browser
+    for 24 hours (never with the SSN), and the insurance cards attached to
+    a PMD or PAP form can be read in the browser — one suggestion per
+    card, offered for the rep to confirm. A recipient's feedback on a
+    recommendation is accepted from any company sign-in.
   - **Reference** — in-app knowledge base: a per-department tree +
     section-aware full-text search + reader for training/policy docs.
     Markdown articles (rendered with HTML-escape-first) and embedded
@@ -231,9 +241,16 @@ deploy changes. After `clasp push`, cut a new deployment version in
 the Apps Script editor (Deploy → Manage deployments → Edit → Version:
 New version) so users see the change on next load.
 
+The handbook app is pushed from the repo root with `npm run handbook:push`
+(it checks that the copies are current first), then gets a New version in
+its own editor. Its page shell, reader and server readers are copies of
+Team Tools' (`npm run handbook:sync`), so a change to one of those is two
+deploys.
+
 A first-load onboarding tour (hand-rolled coach-marks in
 `script_tour.html`) walks new reps through the shell and the core tools;
-it auto-starts once and is replayable from the Call Notes **?** menu.
+it auto-starts once and is replayable from Settings (the gear) and the
+Call Notes **?** menu.
 
 The Apps Script test suite (`web-app/Tests.js`) runs from the editor
 (`runSmokeTests()` / `runAllTests()`; `runAllTestsPartA()` + `PartB()` split a
@@ -254,9 +271,11 @@ matrix is manual / on-demand, and since cycle 25 E5 a fixed subset runs in CI
 page past its content, squeezed text, a missing fixture, an uncaught error. (For how many scenarios — and for every other
 figure these docs used to carry in prose — run `node scripts/counts.mjs`, or
 read the **Running totals** block in `CLAUDE.md`. A hand-carried number here
-had drifted before; CI now fails on drift.) Four small companion harnesses live beside it and
+had drifted before; CI now fails on drift.) Small companion harnesses live beside it and
 answer questions a screenshot cannot: `print-check.mjs`, `a11y-names.mjs`,
-`a13-measure.mjs` and `fold-measure.mjs`. A GitHub Action
+`a13-measure.mjs`, `fold-measure.mjs`, `map-check.mjs` and
+`settings-check.mjs` are run by hand; `tour-check.mjs` and
+`contrast-check.mjs` run in CI. A GitHub Action
 (`.github/workflows/client-tests.yml`) runs a `node --check` of every server file /
 `Tests.js` / `DevTools.js` and the dependency-free pure harness FIRST, then
 `npm ci`, the server identifier lint, the pure harness AGAIN with

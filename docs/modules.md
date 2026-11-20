@@ -615,6 +615,13 @@ short lease; a rep's autosave waits only for another save of the same pad.
 The server allowlist and the client sanitizer were widened together. A link
 keeps only an http(s) href.
 
+**Cycle 26 follow-ons after Batch 14 (2026-11-20):** a rep's Search that
+matches more than 200 notes says it is showing the newest 200 and to narrow
+by date range; it used to read "200 results" (FX5). The "copy it by hand"
+dialog a blocked copy opens is above the Reference drawer and the Scratchpad
+whichever of them opened it (FX4). The reminders list's Mark done and Cancel
+are wired through one listener; nothing visible changed (FX8).
+
 **Batch E (operator 2026-11-02):** Dept Requests is a Call Notes tab (it was
 under Metrics), between Sent Forms and Team Notes.
 
@@ -675,6 +682,18 @@ replaces a form that holds another call's answers or card images, and the amende
 carries none of them. A card read that outlives a Clear or a switch of form offers nothing;
 a reader that fails says whether it was the network, a file that failed its check, or the
 browser.
+
+**Cycle 26 Batch 13 and its follow-ons (2026-11-20):** attached images are grouped into
+cards before anything is offered — "Card 1", "Card 2", each with its own line and its own
+Use as primary / secondary; the reader no longer merges every image into one suggestion
+(F21). When one card comes back as two suggestions, **Same card as Card N** joins them and
+marks the values the two photos disagreed on; a Medicare card and a plan card are never
+offered it (FV1). On Safari and iOS before 16.4 the Intake tool loads and only the card
+reader is unavailable, and says so (F67). The intake email's "Send feedback on this
+recommendation" button works for any company sign-in, not only people on the Employees
+sheet — a Sales or PAP sender's row carries the address and a blank name (F22) — and one
+person may send twelve in an hour (FV2). Storage Health reads "Kept — no purge exists" for
+the Intake store: there never was a purge of it (F23).
 
 **P1 (operator 2026-11-05):** on each employee's pay week a **Check your
 timesheet** item appears in Needs you (Review opens Time / PTO; Done hides it
@@ -766,6 +785,10 @@ said, not drawn (F27). A row the activity log could not write is counted
 (`ACTIVITY_LOG_FAILS`), reported on Admin → System for 48 hours and named on
 the day's panel (F30). A day is condensed once it ended more than six hours
 ago, so counts that arrive late are in its summary.
+
+**Cycle 26 follow-ons after Batch 14 (FX6):** the pay-period tile on Time /
+PTO says when the timesheet archive could not be read — hours from earlier in
+the period may be missing — as the calendar beside it already did.
 
 **Batch B (operator 2026-11-02):** a department email's send tags its note:
 - Close Order `close-<reason>`, through `CLOSE_REASON_TAGS`.
