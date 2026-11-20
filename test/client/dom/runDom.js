@@ -16818,3 +16818,73 @@ test('FV1 DOM (cycle 26): a card the reader split in two — a second photo with
   assert.strictEqual(secs().length, 2, 'and a direct call refuses too');
   delete h.window.INTAKE_OCR_ENGINE;
 });
+
+section('DOM harness — cycle 26 follow-ons after Batch 14 (FX4, FX5, FX8)');
+
+test('FX4 DOM (cycle 26): a blocked copy opened from anywhere — no option given — is drawn on the layer above the Reference drawer and the Scratchpad', () => {
+  const h = bootLog();
+  h.read('manualCopyModal_')('https://example.test/article', 'Link');
+  const ov = h.$('#manual-copy-overlay');
+  assert.ok(ov && ov.classList.contains('open'), 'the dialog opened');
+  assert.ok(ov.classList.contains('overlay-above-panels'), 'THE REGRESSION: opened by the drawer\'s copy button it was an ordinary overlay, under the drawer');
+  assert.strictEqual(ov.querySelector('#manual-copy-val').value, 'https://example.test/article');
+  h.read('closeOverlay')(ov);
+  h.read('manualCopyModal_')('line one\nline two', 'The unsaved call note', { why: 'The note did not save.' });
+  assert.ok(h.$('#manual-copy-overlay').classList.contains('overlay-above-panels'), 'and for a caller that passes other options too');
+});
+
+test('FX5 DOM (cycle 26): the rep\'s Search says when the server cut the list to its newest matches — and stops saying it for the next search that was not cut (driven)', () => {
+  const h = bootLog();
+  h.window.showView('callNotesSearch');
+  h.read("CN_STATE.searchQuery = 'ortiz'");
+  h.window.cnFireSearch_();
+  const three = [noteFixture({ noteId: 's1', caller: 'A Ortiz' }), noteFixture({ noteId: 's2', caller: 'B Ortiz' }), noteFixture({ noteId: 's3', caller: 'C Ortiz' })];
+  h.run.flushSuccess({ results: three, truncated: true }, 'searchMyCallNotes');
+  const count = () => h.$('#cn-search-results .cn-result-count');
+  assert.ok(/Showing the newest 3 results for .ortiz. — there are more\. Narrow by date range to see older ones\./.test(count().textContent.replace(/\s+/g, ' ')),
+    'THE REGRESSION: a cut list read "3 results" — the older calls were simply not there: ' + count().textContent);
+  assert.strictEqual(count().getAttribute('role'), 'status');
+  assert.strictEqual(h.$('#cn-search-results').querySelectorAll('.cn-result-count').length, 1);
+  // The next search is whole: the note goes.
+  h.read("CN_STATE.searchQuery = 'ortiz b'");
+  h.window.cnFireSearch_();
+  h.run.flushSuccess({ results: [three[1]], truncated: false }, 'searchMyCallNotes');
+  assert.strictEqual(count().textContent.replace(/\s+/g, ' ').trim().replace(/[“”]/g, '"'), '1 result for "ortiz b"', 'a whole list is counted, as before');
+  // A payload from before the field existed is a whole list.
+  h.read("CN_STATE.searchQuery = 'ortiz c'");
+  h.window.cnFireSearch_();
+  h.run.flushSuccess({ results: [three[2], three[0]] }, 'searchMyCallNotes');
+  assert.ok(/^2 results for/.test(count().textContent.trim()));
+});
+
+test('FX8 DOM (cycle 26): a reminder\'s Mark done and Cancel carry its id as DATA — an id with an apostrophe reaches the server whole, the buttons have no inline handler, and one listener serves a redrawn list (driven)', () => {
+  const h = bootLog();
+  h.run.pending('getMyScheduledCalls').forEach(() => h.run.flushSuccess({ calls: null }, 'getMyScheduledCalls'));
+  h.read('cnOpenSchedModal_')();
+  const ID = "sc-o'brien \"x\" <1>";
+  h.run.flushSuccess({ calls: [{ id: ID, whenMs: Date.now() + 3600000, label: 'Call Mr. O\'Brien back', status: 'active' },
+    { id: 'sc-2', whenMs: Date.now() + 7200000, label: 'Second', status: 'active' }] }, 'getMyScheduledCalls');
+  const host = h.$('#cn-sched-list');
+  const btns = () => Array.from(host.querySelectorAll('[data-sched-status]'));
+  assert.strictEqual(btns().length, 4, 'two buttons a row');
+  assert.ok(btns().every((b) => !b.hasAttribute('onclick')), 'THE REGRESSION: the id rode inside an onclick literal, where an apostrophe ends the string early');
+  assert.ok(!/cnSchedStatus_\(this/.test(host.innerHTML));
+  assert.strictEqual(btns()[0].getAttribute('data-sched-id'), ID, 'the attribute holds the id, decoded');
+  const calls = () => h.run.calls.filter((c) => c.method === 'setScheduledCallStatus');
+  btns()[0].click();
+  assert.deepStrictEqual(calls().map((c) => c.args), [[ID, 'done']], 'the server is given the id whole');
+  assert.strictEqual(btns()[0].disabled, true, 'and the button waits');
+  // A press that lands on the icon INSIDE the waiting button still bubbles to the list (jsdom's click() on a
+  // disabled button is a no-op, so the press is dispatched on its child — which is where a pointer lands).
+  const inner = btns()[0].firstElementChild || btns()[0];
+  inner.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true }));
+  assert.strictEqual(calls().length, 1, 'a waiting button does not send twice');
+  h.run.flushSuccess({ success: true }, 'setScheduledCallStatus');
+  assert.strictEqual(btns().length, 2, 'the list is redrawn without that reminder');
+  // The redrawn list answers too — the listener is the host's, not the old buttons'.
+  btns()[1].click();
+  assert.deepStrictEqual(calls()[1].args, ['sc-2', 'cancelled']);
+  // A click that is not on a button does nothing.
+  host.querySelector('.cn-sched-lbl').click();
+  assert.strictEqual(calls().length, 2);
+});

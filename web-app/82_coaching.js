@@ -462,7 +462,9 @@ function voidCoaching(coachId, reason) {
     writeAuditLog_(callerEmp, 'CoachingVoid', '', '', false, 0,
       'coachId=' + found.item.coachId, callerEmp.email);
     pendingTasksBust_(found.item.empId);   // T10 (cycle 22): nothing left to acknowledge
-    if (found.item.severity === 'critical' && found.item.status !== 'void') {
+    // (FX7, cycle 26: this also read `&& found.item.status !== 'void'` — always
+    // true since F45's early return above, so it guarded nothing.)
+    if (found.item.severity === 'critical') {
       const item = found.item;
       notifyAfter = function () { notifyRepOfCoachingRetraction_(item, callerEmp); };   // M-7: post-lock
     }

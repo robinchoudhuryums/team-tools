@@ -315,6 +315,14 @@ function _withFeatureFlags_(overrides, fn) {
 // over it.
 const TEST_STASH_VALUE_PREFIX = 'TEST_STASH_VALUE_';     // the property held this value
 const TEST_STASH_ABSENT_PREFIX = 'TEST_STASH_ABSENT_';   // the property did not exist
+const TEST_STASH_AT_PREFIX = 'TEST_STASH_AT_';           // when it was stashed (ms) — FX1
+// FX1 (cycle 26): a restore puts back the value from BEFORE the run. If the
+// run was killed and a person then changed that setting by hand, the restore
+// replaces their change too — it cannot tell their edit from a test's. So the
+// stash is dated, and a restore that replaces a DIFFERENT value says how old
+// the stash was and writes the value it replaced to the log, where the owner
+// can read it back. Past this age it also says so in capitals.
+const TEST_STASH_OLD_MS = 2 * 3600000;
 
 /** PURE over a properties object — { found, value } for `key`'s stash; value
  *  is null when the property did not exist before the suite touched it. */
@@ -332,7 +340,22 @@ function _stashProp_(key) {
   const cur = props.getProperty(key);
   if (cur === null) props.setProperty(TEST_STASH_ABSENT_PREFIX + key, '1');
   else props.setProperty(TEST_STASH_VALUE_PREFIX + key, cur);
+  props.setProperty(TEST_STASH_AT_PREFIX + key, String(Date.now()));
   return cur;
+}
+/** PURE (Node-pinned) — FX1: one line for a property the backstop restored.
+ *  `replaced` is what the property held when the backstop ran, `original`
+ *  what it was restored to (null = absent). The replaced value is printed
+ *  only when it DIFFERED: that is the one case where something is lost. */
+function _stashRestoreLine_(key, atMs, nowMs, replaced, original) {
+  const at = Number(atMs), age = (isFinite(at) && at > 0 && nowMs >= at) ? nowMs - at : -1;
+  const mins = Math.round(age / 60000);
+  const when = age < 0 ? 'stashed at an unknown time' : ('stashed ' + (mins < 60 ? mins + ' min' : (Math.floor(mins / 60) + ' h ' + (mins % 60) + ' min')) + ' ago');
+  if (replaced === original) return key + ' — ' + when + '; it already held its original value.';
+  const old = age < 0 || age > TEST_STASH_OLD_MS;
+  const shown = replaced === null ? '(not set)' : JSON.stringify(String(replaced).length > 300 ? String(replaced).slice(0, 300) + '…' : String(replaced));
+  return key + ' — ' + when + '; restored to its value from before the run. It REPLACED ' + shown + '.' +
+    (old ? ' THIS STASH WAS OLD: if you set ' + key + ' by hand after that run stopped, that value is the one just replaced — set it again.' : '');
 }
 /** Put `key` back as it was stashed, THEN drop the stash — in that order, so
  *  a kill between the two leaves the stash for the backstop. true when there
@@ -346,20 +369,29 @@ function _unstashProp_(key) {
   else props.setProperty(key, kept.value);
   props.deleteProperty(TEST_STASH_VALUE_PREFIX + key);
   props.deleteProperty(TEST_STASH_ABSENT_PREFIX + key);
+  props.deleteProperty(TEST_STASH_AT_PREFIX + key);
   return true;
 }
 /** The backstop: restore every property a killed run left stashed. Returns the
  *  keys it restored. Never throws. */
 function _restoreStashedProps_() {
-  const restored = [];
+  const restored = [], lines = [];
   try {
-    PropertiesService.getScriptProperties().getKeys().forEach(function (k) {
+    const props = PropertiesService.getScriptProperties();
+    const now = Date.now();
+    props.getKeys().forEach(function (k) {
       const key = k.indexOf(TEST_STASH_VALUE_PREFIX) === 0 ? k.slice(TEST_STASH_VALUE_PREFIX.length)
         : (k.indexOf(TEST_STASH_ABSENT_PREFIX) === 0 ? k.slice(TEST_STASH_ABSENT_PREFIX.length) : '');
-      if (key && restored.indexOf(key) < 0 && _unstashProp_(key)) restored.push(key);
+      if (!key || restored.indexOf(key) >= 0) return;
+      // FX1: read what is about to be replaced, and when the stash was taken, BEFORE the restore.
+      const replaced = props.getProperty(key), at = props.getProperty(TEST_STASH_AT_PREFIX + key), original = _stashRead_(props, key).value;
+      if (_unstashProp_(key)) { restored.push(key); lines.push(_stashRestoreLine_(key, at, now, replaced, original)); }
     });
   } catch (e) { Logger.log('_restoreStashedProps_ skipped: ' + e.message); }
-  if (restored.length) Logger.log('Restored ' + restored.length + ' Script Propert' + (restored.length === 1 ? 'y' : 'ies') + ' a killed run had left overwritten: ' + restored.join(', '));
+  if (restored.length) {
+    Logger.log('Restored ' + restored.length + ' Script Propert' + (restored.length === 1 ? 'y' : 'ies') + ' a killed run had left overwritten: ' + restored.join(', '));
+    lines.forEach(function (l) { Logger.log('  ' + l); });
+  }
   return restored;
 }
 
@@ -7500,6 +7532,7 @@ function test_suite_stashRestoresAnOverwrittenProperty() {
     props.setProperty(KEY, 'the real value');
     props.deleteProperty(GONE);
     _assertEq(_stashProp_(KEY), 'the real value', 'the stash returns what the property held');
+    _assertTrue(Number(props.getProperty(TEST_STASH_AT_PREFIX + KEY)) > 0, 'and is dated (FX1)');
     _assertEq(_stashProp_(GONE), null, 'and null for a property that did not exist');
     props.setProperty(KEY, 'a test value');
     props.setProperty(GONE, 'a test value');
@@ -7510,9 +7543,11 @@ function test_suite_stashRestoresAnOverwrittenProperty() {
     _assertEq(props.getProperty(KEY), 'the real value', 'the overwritten value is back');
     _assertEq(props.getProperty(GONE), null, 'a property that did not exist is gone again');
     _assertEq(_stashRead_(props, KEY).found, false, 'and no stash is left behind');
+    _assertEq(props.getProperty(TEST_STASH_AT_PREFIX + KEY), null, 'nor its date');
     _assertEq(_unstashProp_(KEY), false, 'nothing to restore twice');
   } finally {
-    [KEY, GONE, TEST_STASH_VALUE_PREFIX + KEY, TEST_STASH_ABSENT_PREFIX + KEY, TEST_STASH_VALUE_PREFIX + GONE, TEST_STASH_ABSENT_PREFIX + GONE]
+    [KEY, GONE, TEST_STASH_VALUE_PREFIX + KEY, TEST_STASH_ABSENT_PREFIX + KEY, TEST_STASH_VALUE_PREFIX + GONE, TEST_STASH_ABSENT_PREFIX + GONE,
+      TEST_STASH_AT_PREFIX + KEY, TEST_STASH_AT_PREFIX + GONE]
       .forEach(function (k) { props.deleteProperty(k); });
   }
 }

@@ -2622,6 +2622,7 @@ const CN_STATE = {
   searchQuery: '',
   searchField: 'all',
   searchResults: [],
+  searchTruncated: false,    // FX5: the server cut the list to its newest 200
   searchTimer: null,
   searchExact: false,        // true when search was launched by "find prior calls for this TRX" — matches patientAndTrx exactly
   searchExactTrx: '',        // the TRX being matched, for the "Exact match · X · clear" badge
@@ -5572,12 +5573,24 @@ function cnSchedRenderList_() {
         '<span class="cn-sched-lbl">' + esc(it.label || '') + '</span>' +
         '<span class="cn-sched-acts">' +
           '<button type="button" class="cn-act-btn" title="Mark done" aria-label="Mark reminder done: ' + esc(it.label || '') + '"' +
-            ' onclick="cnSchedStatus_(this, \'' + esc(it.id) + '\', \'done\')">' + icon('check', 13) + '</button>' +
+            ' data-sched-id="' + esc(it.id) + '" data-sched-status="done">' + icon('check', 13) + '</button>' +
           '<button type="button" class="cn-act-btn" title="Cancel reminder" aria-label="Cancel reminder: ' + esc(it.label || '') + '"' +
-            ' onclick="cnSchedStatus_(this, \'' + esc(it.id) + '\', \'cancelled\')">' + icon('x', 13) + '</button>' +
+            ' data-sched-id="' + esc(it.id) + '" data-sched-status="cancelled">' + icon('x', 13) + '</button>' +
         '</span>' +
       '</div>';
     }).join('');
+  // FX8 (cycle 26): the id rode inside an onclick LITERAL — `esc()` encodes an
+  // apostrophe, the attribute decodes it again, and the handler's own string
+  // ends early (g133). The ids are the server's today and hold none, so it had
+  // not fired; as data, read back by one listener, it cannot.
+  host.onclick = cnSchedListClick_;
+}
+/** The reminders list's one click listener: a row button's id and status are
+ *  its data attributes (read decoded — handed to the server, never re-drawn, g49). */
+function cnSchedListClick_(e) {
+  var btn = e && e.target && e.target.closest ? e.target.closest('[data-sched-status]') : null;
+  if (!btn || btn.disabled) return;
+  cnSchedStatus_(btn, btn.getAttribute('data-sched-id'), btn.getAttribute('data-sched-status'));
 }
 
 function cnSchedCreate_(btn) {
@@ -5763,7 +5776,7 @@ function cnScratchHeldClick_(ev) {
     var plain = cnScratchPlainText_(CN_SCRATCH.pending[key]);
     copyText_(plain, function (ok) {
       if (ok) showToast('Copied — it is still kept here until you move or discard it', 'toast-success');
-      else manualCopyModal_(plain, 'The unsaved Scratchpad text', { above: true });   // the pad floats above an ordinary overlay
+      else manualCopyModal_(plain, 'The unsaved Scratchpad text');   // (it paints above the pad — the dialog always takes that layer, FX4)
     });
     return;
   }
@@ -9582,6 +9595,7 @@ function cnFireSearch_() {
         return;
       }
       CN_STATE.searchResults = res.results || [];
+      CN_STATE.searchTruncated = res.truncated === true;   // FX5: a cut list says so
       cnRenderSearchResults_();
     })
     .withFailureHandler(function (err) {
@@ -9610,7 +9624,13 @@ function cnRenderSearchResults_() {
     host.innerHTML = `<div class="cn-stack-empty">No matches.</div>`;
     return;
   }
-  const count = `<div class="cn-result-count"><b>${results.length}</b> result${results.length === 1 ? '' : 's'} for &ldquo;${esc(CN_STATE.searchQuery)}&rdquo;</div>`;
+  // FX5 (cycle 26): searchMyCallNotes keeps the newest 200 matches and has
+  // said so (`truncated`) since cycle 23 — for the patient timeline. This
+  // view never read it: "200 results" for a search with five hundred, and the
+  // older calls simply not there (g53; the manager's search says it — F30).
+  const count = CN_STATE.searchTruncated
+    ? `<div class="cn-result-count" role="status">Showing the newest <b>${results.length}</b> results for &ldquo;${esc(CN_STATE.searchQuery)}&rdquo; — there are more. Narrow by date range to see older ones.</div>`
+    : `<div class="cn-result-count"><b>${results.length}</b> result${results.length === 1 ? '' : 's'} for &ldquo;${esc(CN_STATE.searchQuery)}&rdquo;</div>`;
   host.innerHTML = count + results.map(function (n) { return cnRenderResultCard_(n); }).join('');
   // Term highlight (reuses the KB DOM-walk highlighter — wraps matches in
   // <mark class="kb-hl">, never string-level HTML surgery). Skip in exact mode.

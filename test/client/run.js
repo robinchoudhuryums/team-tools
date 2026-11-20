@@ -21130,7 +21130,7 @@ test('PR4-4: K8 — critical-only immediate mail (operator decision 1) that carr
   assert.ok(/if \(v\.item\.severity === 'critical'\) \{\s*result\.mailed = false;\s*notifyAfter = function/.test(create), 'the mail closure exists ONLY for critical, and `mailed` starts false');
   assert.ok(create.indexOf('lock.releaseLock()') < create.lastIndexOf('notifyAfter()'), 'the closure fires after the lock (M-7)');
   const voidFn = stripJsComments_(extractRawFunction('Code.js', 'voidCoaching'));
-  assert.ok(/if \(found\.item\.severity === 'critical' && found\.item\.status !== 'void'\) \{[\s\S]*?notifyRepOfCoachingRetraction_/.test(voidFn), 'voiding a critical item sends the retraction (a rep already told to act must be told to stop)');
+  assert.ok(/if \(found\.item\.severity === 'critical'\) \{[\s\S]*?notifyRepOfCoachingRetraction_/.test(voidFn), 'voiding a critical item sends the retraction (a rep already told to act must be told to stop)');
   // The weekly recap: trigger-gated, heartbeat on BOTH exits, brief-flag-free (INV-151), non-critical only, recap window read from CONFIG (F1).
   const recap = stripJsComments_(extractRawFunction('Code.js', 'sendCoachingRecapDigest'));
   assert.ok(/^function sendCoachingRecapDigest\(\) \{\s*assertManagerCaller_\('sendCoachingRecapDigest'\)/.test(recap), 'INV-44 gate first');
@@ -34606,6 +34606,7 @@ test('F18 (cycle 25): a biweekly rep without their own PayAnchor cell gets the O
   // The rail's target follows the range it shows.
   const sb = buildSandbox([], { MONTH_NAMES: ['January','February','March','April','May','June','July','August','September','October','November','December'],
     fmtHrs: (h) => String(h), esc: (s) => String(s), dispTime: (t) => t });
+  loadFunction(sb, 'tc/script_timeoff.html', 'tsArchiveNoteHtml_');   // FX6: the tile's archive note
   const rail = loadFunction(sb, 'tc/script_timeoff.html', 'renderTimesheetSideRail_');
   const target = (d) => /\/ (\d+)h target/.exec(rail(d))[1];
   const days = (from, n) => Array.from({ length: n }, (_, i) => { const iso = new Date(Date.parse(from + 'T12:00:00Z') + i * 86400000).toISOString().slice(0, 10); const dow = new Date(iso + 'T12:00:00Z').getUTCDay(); return { date: iso, isWeekend: dow === 0 || dow === 6 }; });
@@ -51356,7 +51357,7 @@ test('FT1: the held row and the layer above the pad have their rules, the recove
   const pad = Number(/\.cn-float-panel \{[^}]*?z-index:\s*(\d+)/.exec(cn)[1]);
   assert.ok(zOf('.overlay.overlay-above-panels') > pad, 'which is above the floating pad');
   const core = fs.readFileSync(path.join(PA_WEB, 'script_core.html'), 'utf8');
-  assert.ok(/extraClass: opts\.above \? 'overlay-above-panels' : ''/.test(extractFunction('script_core.html', 'manualCopyModal_')), 'and rides extraClass (g134), asked for by the caller');
+  assert.ok(/extraClass: 'overlay-above-panels' \}\);/.test(extractFunction('script_core.html', 'manualCopyModal_')), 'and rides extraClass (g134) — for EVERY caller since FX4, not only one that asks');
   assert.ok(core.indexOf('overlay-above-panels') === core.lastIndexOf('overlay-above-panels'), 'one writer');
   const rec = stripJsComments_(extractFunction('cn/script_callnotes.html', 'cnScratchRecover_'));
   assert.ok(/if \(CN_SCRATCH\.recovering\[lostPage\]\) return;/.test(rec), 'one add per text');
@@ -52172,8 +52173,8 @@ test('F73 (cycle 26): a live Script Property the editor suite overwrites is STAS
   const props = { getProperty: (k) => (Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null), setProperty: (k, v) => { store[k] = String(v); },
     deleteProperty: (k) => { delete store[k]; }, getKeys: () => Object.keys(store) };
   const ctx = vm.createContext({ String, Object, Array, JSON, PropertiesService: { getScriptProperties: () => props }, Logger: { log() {} } });
-  ['TEST_STASH_VALUE_PREFIX', 'TEST_STASH_ABSENT_PREFIX'].forEach((k) => vm.runInContext('var ' + k + ' = ' + new RegExp('^const ' + k + ' = ([^;]+);', 'm').exec(tests)[1] + ';', ctx));
-  ['_stashRead_', '_stashProp_', '_unstashProp_', '_restoreStashedProps_'].forEach((n) => vm.runInContext(extractRawFunction('Tests.js', n), ctx));
+  ['TEST_STASH_VALUE_PREFIX', 'TEST_STASH_ABSENT_PREFIX', 'TEST_STASH_AT_PREFIX', 'TEST_STASH_OLD_MS'].forEach((k) => vm.runInContext('var ' + k + ' = ' + new RegExp('^const ' + k + ' = ([^;]+);', 'm').exec(tests)[1] + ';', ctx));
+  ['_stashRead_', '_stashProp_', '_stashRestoreLine_', '_unstashProp_', '_restoreStashedProps_'].forEach((n) => vm.runInContext(extractRawFunction('Tests.js', n), ctx));
   // A test in a run that is killed: stash, overwrite — and no finally.
   store.CN_FEATURE_FLAGS = '{"enablePtoTracking":true}';
   assert.strictEqual(ctx._stashProp_('CN_FEATURE_FLAGS'), '{"enablePtoTracking":true}', 'the stash hands back the value, like the getProperty it replaces');
@@ -52265,6 +52266,89 @@ test('FW6 (cycle 26): the Team Training fixtures have the SERVER\'s shape — th
     assert.ok(shoot.indexOf("['" + n + "'") >= 0, n + ' is a scenario the matrix has');
   });
   assert.strictEqual(new Set(gate.CI_SCENARIOS).size, gate.CI_SCENARIOS.length, 'no name twice');
+});
+
+// ── Cycle 26 follow-ons after Batch 14: FX1, FX4, FX6 ────────────────────────
+console.log('\nCycle 26 follow-ons after Batch 14 — the stash restore says how old it is and what it replaced (FX1), the blocked-copy dialog above every panel (FX4), the pay-period tile names an unread archive (FX6)');
+
+test('FX1 (cycle 26): a stash is DATED, and the backstop says what it did — how long ago the run stopped, and, when the restore replaced a value that was NOT the original, that value, so a setting someone changed by hand in between can be put back; an old stash says so plainly (driven)', () => {
+  const tests = b14Read_('web-app/Tests.js');
+  const store = {}, logged = [];
+  let now = Date.UTC(2026, 10, 20, 9, 0, 0);
+  const RealDate = Date;
+  function FakeDate(...a) { return a.length ? new RealDate(...a) : new RealDate(now); }
+  FakeDate.now = () => now; FakeDate.UTC = RealDate.UTC;
+  const props = { getProperty: (k) => (Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null), setProperty: (k, v) => { store[k] = String(v); },
+    deleteProperty: (k) => { delete store[k]; }, getKeys: () => Object.keys(store) };
+  const ctx = vm.createContext({ String, Object, Array, JSON, Number, Math, isFinite, Date: FakeDate, PropertiesService: { getScriptProperties: () => props }, Logger: { log: (l) => logged.push(String(l)) } });
+  ['TEST_STASH_VALUE_PREFIX', 'TEST_STASH_ABSENT_PREFIX', 'TEST_STASH_AT_PREFIX', 'TEST_STASH_OLD_MS'].forEach((k) => vm.runInContext('var ' + k + ' = ' + new RegExp('^const ' + k + ' = ([^;]+);', 'm').exec(tests)[1] + ';', ctx));
+  ['_stashRead_', '_stashProp_', '_stashRestoreLine_', '_unstashProp_', '_restoreStashedProps_'].forEach((n) => vm.runInContext(extractRawFunction('Tests.js', n), ctx));
+  const OLD = ctx.TEST_STASH_OLD_MS;
+  assert.ok(OLD >= 3600000 && OLD <= 12 * 3600000, 'longer than any run, shorter than a working day (' + OLD + ')');
+  // The line, case by case.
+  const L = (at, replaced, original) => ctx._stashRestoreLine_('CN_FEATURE_FLAGS', at, now, replaced, original);
+  assert.strictEqual(L(now - 4 * 60000, '{"a":1}', '{"a":1}'), 'CN_FEATURE_FLAGS — stashed 4 min ago; it already held its original value.', 'nothing lost, nothing printed');
+  const fresh = L(now - 4 * 60000, '{"test":true}', '{"a":1}');
+  assert.ok(/stashed 4 min ago; restored to its value from before the run\. It REPLACED "\{\\"test\\":true\}"\.$/.test(fresh), 'a recent restore names what it replaced, and no more: ' + fresh);
+  const old = L(now - (OLD + 60000), '{"mine":true}', '{"a":1}');
+  assert.ok(/stashed \d+ h \d+ min ago/.test(old) && /It REPLACED "\{\\"mine\\":true\}"\./.test(old) && /THIS STASH WAS OLD: if you set CN_FEATURE_FLAGS by hand after that run stopped, that value is the one just replaced — set it again\.$/.test(old),
+    'THE POINT: an old stash that replaced a different value says the hand-made change may be what was lost: ' + old);
+  assert.ok(!/THIS STASH WAS OLD/.test(L(now - OLD, 'x', 'y')), 'exactly at the limit is not old');
+  assert.ok(/stashed at an unknown time/.test(L('', 'x', 'y')) && /THIS STASH WAS OLD/.test(L('', 'x', 'y')), 'a stash with no date (made before FX1) is treated as old');
+  assert.ok(/It REPLACED \(not set\)\./.test(L(now - 60000, null, 'real')), 'a property that was deleted meanwhile');
+  assert.ok(L(now - 60000, 'x'.repeat(900), 'y').length < 520, 'a long value is cut');
+  assert.ok(/it already held its original value/.test(L(now - 60000, null, null)), 'absent then, absent now');
+  // End to end: a killed run, three hours, an admin's own change, then cleanup.
+  store.CN_FEATURE_FLAGS = '{"enablePtoTracking":true}';
+  ctx._stashProp_('CN_FEATURE_FLAGS');
+  assert.strictEqual(store.TEST_STASH_AT_CN_FEATURE_FLAGS, String(now), 'the stash is dated when it is taken');
+  store.CN_FEATURE_FLAGS = '{"employeeImmediateAdjust":true}';     // the test's value; the run is killed here
+  now += 3 * 3600000;
+  assert.strictEqual(ctx._stashProp_('CN_FEATURE_FLAGS'), '{"enablePtoTracking":true}');
+  assert.strictEqual(store.TEST_STASH_AT_CN_FEATURE_FLAGS, String(now - 3 * 3600000), 'a second stash does not re-date the first');
+  store.CN_FEATURE_FLAGS = '{"enablePtoTracking":false}';          // an admin changes the setting by hand
+  logged.length = 0;
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx._restoreStashedProps_())), ['CN_FEATURE_FLAGS']);
+  assert.deepStrictEqual(store, { CN_FEATURE_FLAGS: '{"enablePtoTracking":true}' }, 'restored, with the stash and its date gone');
+  const line = logged.filter((l) => /CN_FEATURE_FLAGS — /.test(l))[0] || '';
+  assert.ok(/stashed 3 h 0 min ago/.test(line) && line.indexOf('{\\"enablePtoTracking\\":false}') > 0 && /THIS STASH WAS OLD/.test(line),
+    'THE REGRESSION: the restore replaced a hand-made change without a word — the log now carries it: ' + line);
+  // The normal path leaves no date behind.
+  ctx._stashProp_('WHATSNEW_KB_ID'); store.WHATSNEW_KB_ID = 'kb-test'; ctx._unstashProp_('WHATSNEW_KB_ID');
+  assert.deepStrictEqual(Object.keys(store), ['CN_FEATURE_FLAGS'], 'an unstash removes its date with its stash');
+});
+
+test('FX4 + FX6 (cycle 26): the blocked-copy dialog takes the layer above the Reference drawer and the Scratchpad for EVERY caller; the pay-period tile says when the timesheet archive could not be read (derived + driven)', () => {
+  // FX4 — the numbers, read from the rules.
+  const css = fs.readFileSync(path.join(PA_WEB, 'styles.html'), 'utf8'), kb = fs.readFileSync(path.join(PA_WEB, 'kb/script_kb.html'), 'utf8'), cn = fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8');
+  const overlay = Number(/\n  \.overlay \{[^}]*?z-index:\s*(\d+)/.exec(css)[1]);
+  const above = Number(/\.overlay\.ui-dialog, \.overlay\.overlay-above-panels \{ z-index:\s*(\d+)/.exec(css)[1]);
+  const drawer = Number(/#kb-drawer \{[^}]*?z-index:\s*(\d+)/.exec(kb)[1]);
+  const pad = Number(/\.cn-float-panel \{[^}]*?z-index:\s*(\d+)/.exec(cn)[1]);
+  assert.ok(overlay < drawer && overlay < pad, 'an ordinary overlay (' + overlay + ') is UNDER the drawer (' + drawer + ') and the pad (' + pad + ') — which is why the layer matters');
+  assert.ok(above > drawer && above > pad, 'the dialog layer (' + above + ') is over both');
+  const fn = extractFunction('script_core.html', 'manualCopyModal_');
+  assert.ok(/extraClass: 'overlay-above-panels' \}\);/.test(fn) && !/opts\.above/.test(stripJsComments_(fn)), 'THE REGRESSION: only a caller that asked got the layer — the drawer\'s copy buttons did not ask');
+  // Every caller is covered without saying anything: none passes the option any more.
+  const callers = [cn, kb, fs.readFileSync(path.join(PA_WEB, 'shared/script_manual_render.html'), 'utf8'), fs.readFileSync(path.join(PA_WEB, 'script_core.html'), 'utf8')].join('\n');
+  assert.ok((callers.match(/manualCopyModal_\(/g) || []).length >= 6, 'the callers were read');
+  assert.ok(!/manualCopyModal_\([^;]*above:/.test(callers), 'no caller carries an option that no longer decides anything');
+  // FX6 — the tile.
+  const sb = buildSandbox([], { MONTH_NAMES: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+    fmtHrs: (h) => h + 'h', dispTime: (t) => t });
+  sb.icon = () => '<i>!</i>'; sb.esc = (x) => String(x == null ? '' : x);
+  const note = loadFunction(sb, 'tc/script_timeoff.html', 'tsArchiveNoteHtml_');
+  const rail = loadFunction(sb, 'tc/script_timeoff.html', 'renderTimesheetSideRail_');
+  assert.strictEqual(note({ archiveError: '' }), ''); assert.strictEqual(note(null), '');
+  const said = note({ archiveError: 'Exception: Service Spreadsheets failed (id 1AbC…)' });
+  assert.ok(/role="status"/.test(said) && /The timesheet archive could not be read, so hours worked earlier in this period may be missing from this total/.test(said));
+  assert.ok(!/Service Spreadsheets|1AbC/.test(said), 'only the fact rides into the page — the server\'s message does not');
+  const base = { totalHours: 61.5, daysWorked: 8, days: [], startDate: '2026-11-02', endDate: '2026-11-15', payCycle: 'Biweekly', incompleteCount: 0 };
+  assert.ok(!/archive could not be read/.test(rail(Object.assign({}, base, { archiveError: '' }))), 'a period read whole says nothing');
+  const short = rail(Object.assign({}, base, { archiveError: 'boom' }));
+  assert.ok(/61\.5h/.test(short) && /The timesheet archive could not be read/.test(short), 'THE REGRESSION: the tile drew its hours and "all complete" for a period it could not read whole');
+  // …and it is the same field the server ships.
+  assert.ok(/archiveError: read\.archiveError/.test(extractRawFunction('Code.js', 'buildTimesheetForEmployee_')), 'getTimesheetData\'s payload carries it');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

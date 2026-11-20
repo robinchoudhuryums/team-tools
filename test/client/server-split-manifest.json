@@ -4916,6 +4916,16 @@
     "submitIntakeFeedback"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-20",
+   "why": "cycle 26 FX7: voidCoaching — a conjunct that was always true (F45's early return) is removed",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "voidCoaching"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -16028,7 +16038,7 @@
   "voidCoaching": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "41fab374f83f16de"
+   "sha": "f068e8d2aab3f052"
   },
   "voidDoc": {
    "file": "81_empdocs.js",

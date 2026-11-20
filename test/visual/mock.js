@@ -1234,12 +1234,12 @@ function runRecAgo(msAgo, notes) {
         { key: 'quiz:quiz-1', itemType: 'quiz', itemId: 'quiz-1', title: 'CPAP resupply quiz', assigned: 3, done: 1, overdue: 0 }],
       reps: [
         { id: 'E-1002', name: 'Avery Blake', items: { 'kb:kb-1': 'done', 'quiz:quiz-1': 'done' }, attempts: { 'quiz:quiz-1': 2 } },
-        { id: 'E-1003', name: 'Jordan Lee', items: { 'kb:kb-1': 'overdue', 'quiz:quiz-1': 'pending' }, attempts: { 'quiz:quiz-1': 3 } },
-        { id: 'E-1004', name: 'Sam Ortiz', items: { 'kb:kb-1': 'pending', 'quiz:quiz-1': 'pending' }, attempts: {} }],
+        { id: 'E-1104', name: 'Leo Kim', items: { 'kb:kb-1': 'overdue', 'quiz:quiz-1': 'pending' }, attempts: { 'quiz:quiz-1': 3 } },
+        { id: 'E-1077', name: 'Sam Ortiz', items: { 'kb:kb-1': 'pending', 'quiz:quiz-1': 'pending' }, attempts: {} }],
       assignments: [
         { assignId: 'as-2', itemType: 'quiz', itemId: 'quiz-1', title: 'CPAP resupply quiz', empId: '*', empLabel: 'All employees', assignedBy: 'manager@example.com', assignedAt: ts(daysAgo(3), '09:05:00'), dueDate: daysAgo(-6) },
         { assignId: 'as-1', itemType: 'kb', itemId: 'kb-1', title: 'HIPAA refresher', empId: '*', empLabel: 'All employees', assignedBy: 'manager@example.com', assignedAt: ts(daysAgo(9), '09:00:00'), dueDate: daysAgo(2) }],
-      locked: [{ empId: 'E-1003', empName: 'Jordan Lee', quizId: 'quiz-1', title: 'CPAP resupply quiz', retryAtMs: Date.now() + 5 * 3600000, retryLabel: 'tomorrow, 9:15 AM' }],
+      locked: [{ empId: 'E-1104', empName: 'Leo Kim', quizId: 'quiz-1', title: 'CPAP resupply quiz', retryAtMs: Date.now() + 5 * 3600000, retryLabel: 'tomorrow, 9:15 AM' }],
       maxAttempts: 3, lockHours: 24 },
     getQuizzes: { quizzes: [
       { quizId: 'quiz-1', title: 'CPAP resupply quiz', kbItemId: 'kb-1', passPct: 80, questionCount: 2, questions: [

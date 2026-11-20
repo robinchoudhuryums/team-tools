@@ -964,8 +964,8 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1810 | `node test/client/run.js` |
-| DOM harness tests | 505 | `node test/client/dom/runDom.js` |
+| Pure harness tests | 1812 | `node test/client/run.js` |
+| DOM harness tests | 508 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 321 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 357 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 62 | `'Admin access required.'` in the server source |

@@ -75,6 +75,18 @@ function calArchiveNoteHtml_(data) {
     : '';
 }
 
+/** FX6 (cycle 26) — the same fact on the pay-period tile. `getTimesheetData`
+ *  has shipped `archiveError` since TC2-9, and the calendar says it (above);
+ *  the tile beside it drew its hours and "all complete" without a word, so a
+ *  period whose older days sit in an archive that would not open read as a
+ *  short one (g53). Only the fact rides into the page, as on the calendar. */
+function tsArchiveNoteHtml_(data) {
+  return (data && data.archiveError)
+    ? '<div role="status" style="margin-top:8px;font-size:12px;color:var(--warning-deep)">' + icon('warning', 11) +
+      ' The timesheet archive could not be read, so hours worked earlier in this period may be missing from this total. Reload, or ask a manager for an export.</div>'
+    : '';
+}
+
 /** P1 (operator 2026-11-05) — the pay-week banner over the calendar: from
  *  the reminder day to the period's end, what to check and by when. The
  *  server decides the window (payWeekReminder_); null outside it. */
@@ -669,6 +681,7 @@ function renderTimesheetSideRail_(d) {
         <span>${daysWorked}d worked</span>
         <span>${incompleteHtml}</span>
       </div>
+      ${tsArchiveNoteHtml_(d)}
     </div>
     <button type="button" onclick="openPayStatement_(0, '', '')"
       style="width:100%;margin-top:10px;padding:9px 12px;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:10px;background:var(--paper-card);color:var(--info-deep);cursor:pointer;text-align:center">
