@@ -1219,6 +1219,11 @@ const CN_REP_LEASE_PREFIX = 'CN_REP_LEASE_';
 const CN_REP_LEASE_MS = 60000;
 const CN_REP_LEASE_WAIT_MS = 15000;
 const CN_REP_LEASE_POLL_MS = 200;
+// FU1 (cycle 26): a leased save refuses to WRITE once less than this much of
+// its lease is left (cnAssertLeaseLive_) — it can no longer be sure the Sheet
+// is still its own. A healthy save writes within a second or two of taking a
+// 60-second lease.
+const CN_REP_LEASE_GUARD_MS = 10000;
 // F42 (cycle 26): how long a writer that HOLDS the ScriptLock waits for a
 // rep's note-save lease before it refuses by name (getCallNotesSheetForWrite_).
 // Under the 15 s every other waiter gives the ScriptLock — so they outlast the
@@ -1227,7 +1232,9 @@ const CN_REP_LEASE_HOLDER_WAIT_MS = 8000;
 // F42: the Scratchpad's own lease — `CN_SCRATCH_LEASE_<sheetId>`, the same
 // {token, until} shape, present only while a Scratchpad save or page change
 // runs. It replaced the USER lock, which is one lock for every rep (the web
-// app runs as the deployer).
+// app runs as the deployer). FU2: that same fact makes the user lock a usable
+// MUTEX — the Scratchpad lease's check-and-set (a few milliseconds) is taken
+// under it, so a pad save never waits on, or fails with, the project lock.
 const CN_SCRATCH_LEASE_PREFIX = 'CN_SCRATCH_LEASE_';
 const SCRATCHPAD_LEASE_TIMEOUT_MSG = 'Your scratchpad is still saving from another window — try again in a moment.';
 // 25post — Admin → System's daily email-quota line warns at or below this many

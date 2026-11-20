@@ -16619,3 +16619,36 @@ test('F41 DOM (cycle 26): a Dept Requests read asked for before a resolve made h
   h.flushTimers();
   assert.deepStrictEqual([openIds(), !!h.read('DR_STATE.entry')], [['q2'], true]);
 });
+
+section('DOM harness — cycle 26 follow-ons after Batch 12 (FU1–FU3)');
+
+test('FU3 DOM: unsaved Scratchpad text whose 24-hour browser copy has expired is SAID to its owner when it is removed — at start-up, and on opening the pad; another account\'s expired text is removed without a word to this one', () => {
+  const KEY = 'umsScratchUnsaved';
+  const old = (who) => JSON.stringify({ who: who, at: Date.now() - 25 * 3600 * 1000, pages: { main: { text: 'never saved', base: 100 } } });
+  const stickies = (h) => Array.from(h.document.querySelectorAll('#toast-stack .toast-sticky')).map((t) => t.textContent);
+  const said = (h) => stickies(h).some((t) => /never saved has expired and was removed/.test(t));
+  const h = bootLog();
+  h.window.localStorage.setItem(KEY, old('TEST_E1'));
+  h.read('cnScratchBootNotice_')();
+  assert.ok(said(h), 'THE REGRESSION: the text was removed without a word — the rep found the pad without it');
+  assert.strictEqual(h.window.localStorage.getItem(KEY), null, 'and it is removed: it is not kept at rest past its time');
+  assert.ok(!stickies(h).some((t) => /open it to keep it/.test(t)), 'there is nothing left to open the pad for');
+  // Opening the pad with an expired copy (a page left open past the 24 hours): said there too, and the pad loads as usual.
+  const h2 = bootLog();
+  const p2 = b11Pad(h2);
+  h2.window.localStorage.setItem(KEY, old('TEST_E1'));
+  h2.read('cnOpenScratchpadModal_')();
+  assert.ok(said(h2) && h2.window.localStorage.getItem(KEY) === null);
+  p2.load('the server copy', 100);
+  assert.deepStrictEqual([p2.ed().innerHTML, p2.sent()], ['the server copy', []], 'nothing of the expired text is shown or sent');
+  // Another account's: removed (it is past its time), and nothing is said to this account about text that was never theirs.
+  const h3 = bootLog();
+  h3.window.localStorage.setItem(KEY, old('SOMEONE_ELSE'));
+  h3.read('cnScratchBootNotice_')();
+  assert.deepStrictEqual([said(h3), h3.window.localStorage.getItem(KEY)], [false, null]);
+  // A copy inside its 24 hours is the F58 notice, unchanged.
+  const h4 = bootLog();
+  h4.window.localStorage.setItem(KEY, JSON.stringify({ who: 'TEST_E1', at: Date.now() - 3600 * 1000, pages: { main: { text: 'recent', base: 100 } } }));
+  h4.read('cnScratchBootNotice_')();
+  assert.ok(!said(h4) && stickies(h4).some((t) => /open it to keep it/.test(t)) && h4.window.localStorage.getItem(KEY) !== null);
+});

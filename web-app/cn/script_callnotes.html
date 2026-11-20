@@ -5829,12 +5829,16 @@ function cnScratchMirrorBlob_(who, pending, base, nowMs) {
 }
 /** PURE (Node-pinned) — what a stored blob gives THIS account: {pageId: {text,
  *  base}}, or null — nothing stored, unreadable, another account's, or older
- *  than `maxAgeMs`. `stale` says the blob should be removed (too old). */
+ *  than `maxAgeMs`. `stale` says the blob should be removed (too old), and
+ *  `mine` (FU3) that the expired text was THIS account's — so its owner is
+ *  told, not left to find the pad without it. */
 function cnScratchMirrorRead_(raw, who, nowMs, maxAgeMs) {
   var m = null;
   try { m = JSON.parse(raw); } catch (e) { m = null; }
   if (!m || typeof m !== 'object' || !m.pages || typeof m.pages !== 'object') return { pages: null, stale: !!raw };
-  if (!(m.at > 0) || (nowMs - m.at) > maxAgeMs) return { pages: null, stale: true };
+  if (!(m.at > 0) || (nowMs - m.at) > maxAgeMs) {
+    return { pages: null, stale: true, mine: m.at > 0 && !!who && String(m.who || '') === String(who) && Object.keys(m.pages).length > 0 };
+  }
   if (!who || String(m.who || '') !== String(who)) return { pages: null, stale: false };
   var out = {}, n = 0;
   Object.keys(m.pages).forEach(function (pg) {
@@ -5855,6 +5859,17 @@ function cnScratchMirrorNow_() {
     if (r.pages || r.stale) localStorage.removeItem(CN_SCRATCH_MIRROR_KEY);
   } catch (e) { /* privacy mode — the pad works as it did before the mirror */ }
 }
+/** FU3 (cycle 26) — remove a blob past its 24 hours, and SAY so to the account
+ *  whose unsaved text it held. It was removed without a word: text nobody had
+ *  saved, moved, copied or discarded simply was not there the next day. */
+function cnScratchDropStale_(r) {
+  if (!r || !r.stale) return false;
+  try { localStorage.removeItem(CN_SCRATCH_MIRROR_KEY); } catch (e) {}
+  if (r.mine) {
+    showToast('Scratchpad text that was never saved has expired and was removed — unsaved text is kept in this browser for 24 hours', 'toast-warn', { sticky: true });
+  }
+  return true;
+}
 /** Take mirrored text into `pending` (a page this session already has unsaved
  *  text for keeps the session's). Adopted pages are `unchecked`: nothing saves
  *  them until their page's server copy has been read (cnScratchSettleAdopted_).
@@ -5863,7 +5878,7 @@ function cnScratchAdoptMirror_() {
   var got = [];
   try {
     var r = cnScratchMirrorRead_(localStorage.getItem(CN_SCRATCH_MIRROR_KEY), cnScratchWho_(), Date.now(), CN_FORM_STICKY_MAX_AGE_MS);
-    if (r.stale) localStorage.removeItem(CN_SCRATCH_MIRROR_KEY);
+    cnScratchDropStale_(r);
     Object.keys(r.pages || {}).forEach(function (pg) {
       if (cnScratchHasPending_(pg)) return;
       CN_SCRATCH.pending[pg] = r.pages[pg].text;
@@ -5908,7 +5923,7 @@ function cnScratchBootNotice_() {
   try {
     if (!cnScratchWho_()) return;
     var r = cnScratchMirrorRead_(localStorage.getItem(CN_SCRATCH_MIRROR_KEY), cnScratchWho_(), Date.now(), CN_FORM_STICKY_MAX_AGE_MS);
-    if (r.stale) { localStorage.removeItem(CN_SCRATCH_MIRROR_KEY); return; }
+    if (cnScratchDropStale_(r)) return;
     if (!r.pages) return;
     showToast('Your Scratchpad has text that was not saved last time — open it to keep it', 'toast-warn', {
       sticky: true, actionLabel: 'Open Scratchpad', onAction: function () { cnOpenScratchpadModal_(); } });

@@ -812,9 +812,10 @@ function recordClientError(payload) {
     // Batch K (B) — USER lock, not the global script lock: this is a
     // fire-and-forget single-appendRow diagnostics log, and holding the ONE
     // script lock made punch/note writes queue behind error beacons. The
-    // user lock still serializes a rep's own double-fires; appendRow itself
-    // is atomic, and a rare first-touch tab-create race just fails one
-    // best-effort call.
+    // "user" lock is ONE lock for every rep (the app runs as the deployer —
+    // cycle 26 F42), so it serialises every beacon, for the length of one
+    // append; appendRow itself is atomic, and a rare first-touch tab-create
+    // race just fails one best-effort call.
     const lock = LockService.getUserLock();
     lock.waitLock(15000);
     try {

@@ -711,8 +711,8 @@ function getOrCreateKbViewsSheet_() {
 function kbRecordView(itemId, context) {
   // Batch K (B) — USER lock, not the global script lock: an append-only
   // fire-and-forget usage log (KbViews) must never make punch/note writes
-  // wait. Same rationale as recordClientError; appendRow is atomic and the
-  // user lock still serializes one rep's double-fires.
+  // wait. Same rationale as recordClientError; appendRow is atomic, and the
+  // "user" lock is one lock for every rep (cycle 26 F42), held for one append.
   const lock = LockService.getUserLock();
   lock.waitLock(15000);
   try {

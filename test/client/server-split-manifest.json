@@ -4853,6 +4853,40 @@
     "scratchpadPageOp"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-20",
+   "why": "Follow-ons after Batch 12 (FU1-FU2): a leased save checks its lease before it writes; the Scratchpad lease's check-and-set is under the user lock",
+   "added": [
+    "CN_REP_LEASE_GUARD_MS",
+    "cnAssertLeaseLive_",
+    "cnLeaseHasMargin_"
+   ],
+   "removed": [],
+   "changed": [
+    "cnAcquireRepLease_",
+    "deleteCallNote",
+    "kbRecordView",
+    "recordClientError",
+    "saveMyScratchpad",
+    "scratchpadPageOp",
+    "setCallNoteFlag",
+    "setCallNotePinned",
+    "setCallNoteResolved",
+    "submitCallNote",
+    "updateCallNote"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-20",
+   "why": "Follow-ons after Batch 12 (FU1-FU2): a leased save checks its lease before it writes; the Scratchpad lease's check-and-set is under the user lock",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "scratchpadPageOp"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -5366,6 +5400,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "bc625fbaf36ca33f"
+  },
+  "CN_REP_LEASE_GUARD_MS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "336a0af1995bf392"
   },
   "CN_REP_LEASE_HOLDER_WAIT_MS": {
    "file": "00_config.js",
@@ -9340,7 +9379,7 @@
   "cnAcquireRepLease_": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "8a85c216d5fb65a2"
+   "sha": "8d94dbf8379a30f6"
   },
   "cnAppendBounded_": {
    "file": "30_callnotes.js",
@@ -9356,6 +9395,11 @@
    "file": "30_callnotes.js",
    "kind": "function",
    "sha": "211d405f4ee7f3fe"
+  },
+  "cnAssertLeaseLive_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "1085ed63556661d4"
   },
   "cnBlobPinned_": {
    "file": "30_callnotes.js",
@@ -9431,6 +9475,11 @@
    "file": "30_callnotes.js",
    "kind": "function",
    "sha": "1d96885605ea6f09"
+  },
+  "cnLeaseHasMargin_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "be6991bbab3c74ad"
   },
   "cnLeaseWaitOver_": {
    "file": "30_callnotes.js",
@@ -9875,7 +9924,7 @@
   "deleteCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "18f87cb855a75b34"
+   "sha": "9ac5eb8a7ec6bcf1"
   },
   "deleteEmpDocLetterhead": {
    "file": "81_empdocs.js",
@@ -12965,7 +13014,7 @@
   "kbRecordView": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "8402be31cccb4a96"
+   "sha": "2170779592912cbc"
   },
   "kbReplaceDocImageTokens_": {
    "file": "70_kb.js",
@@ -14505,7 +14554,7 @@
   "recordClientError": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "ac625c34b68dcb84"
+   "sha": "0b3b55cf222e3a75"
   },
   "recordPresence": {
    "file": "20_timeclock.js",
@@ -14820,7 +14869,7 @@
   "saveMyScratchpad": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "fa1dac6516483880"
+   "sha": "332008a4a18fd023"
   },
   "saveQaMembers": {
    "file": "90_qa.js",
@@ -14905,7 +14954,7 @@
   "scratchpadPageOp": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "b768c693f9b818d0"
+   "sha": "a0944278714b4e11"
   },
   "scratchpadPagesFromRows_": {
    "file": "30_callnotes.js",
@@ -15090,7 +15139,7 @@
   "setCallNoteFlag": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "3da8734a1981e518"
+   "sha": "88ee9263bd6e2c51"
   },
   "setCallNoteManagerComment": {
    "file": "30_callnotes.js",
@@ -15100,12 +15149,12 @@
   "setCallNotePinned": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "61b323eaef087984"
+   "sha": "bcd4a018009203da"
   },
   "setCallNoteResolved": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "d5092395259757e5"
+   "sha": "67e5ddb14e06f5cd"
   },
   "setCallNoteTrainingReply": {
    "file": "80_training.js",
@@ -15560,7 +15609,7 @@
   "submitCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "d7154a11b6940120"
+   "sha": "73c5c22551c289d8"
   },
   "submitFormByToken": {
    "file": "61_forms.js",
@@ -15845,7 +15894,7 @@
   "updateCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "4c7f40dfe102334f"
+   "sha": "7c9919108f1e660b"
   },
   "updateInfoToSubformKey_": {
    "file": "30_callnotes.js",

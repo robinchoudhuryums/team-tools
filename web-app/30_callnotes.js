@@ -108,6 +108,7 @@ function submitCallNote(payload) {
     row[CN.SUBFORM_DATA]    = subformDataJson;
     // CN-7 (cycle 23): the free text lands in '@' cells (CN_TEXT_IDX) — a
     // callback "0123…" kept its zero, a "12/5" stayed text.
+    cnAssertLeaseLive_(lease);   // FU1: the append is positional
     const newRowIndex = appendRowsTextSafe_(sheet, [row], CN_TEXT_IDX);
 
     writeAuditLog_(emp, 'CallNoteCreate', dateLocal, '', false, 0,
@@ -155,6 +156,7 @@ function updateCallNote(noteId, payload) {
     // CN-7 (cycle 23): the seven content columns are CN_TEXT_IDX, contiguous
     // CALLBACK..RESOLUTION — one '@' range, re-asserted by the statement that
     // writes it (a note created before the fix gains the format on its edit).
+    cnAssertLeaseLive_(lease);   // FU1: the row index is only good while the Sheet is ours
     sheet.getRange(located.rowIndex, CN.CALLBACK + 1, 1, CN_TEXT_IDX.length).setNumberFormat('@')
       .setValues(sheetTextRows_([[cleaned.callback, cleaned.caller, cleaned.relationship, cleaned.patientAndTrx,
         cleaned.issue, cleaned.transferredTo, cleaned.resolution]], null));
@@ -197,6 +199,7 @@ function setCallNoteFlag(noteId, flagType, trainingQuestion, reviewComment) {
     const sheet = getCallNotesSheet_(emp);
     const located = findCallNoteRow_(sheet, noteId);
     if (!located) return { success: false, error: 'Note not found.' };
+    cnAssertLeaseLive_(lease);   // FU1: the row index is only good while the Sheet is ours
 
     let subformData = null;
     if (located.row[CN.SUBFORM_DATA]) {
@@ -281,6 +284,7 @@ function setCallNoteResolved(noteId, resolved) {
     const sheet = getCallNotesSheet_(emp);
     const located = findCallNoteRow_(sheet, noteId);
     if (!located) return { success: false, error: 'Note not found.' };
+    cnAssertLeaseLive_(lease);   // FU1: the row index is only good while the Sheet is ours
     const flagType = String(located.row[CN.FLAG_TYPE] || '').trim().toLowerCase();
     if (flagType !== 'action') {
       return { success: false, error: 'Only action-flagged notes can be resolved.' };
@@ -324,6 +328,7 @@ function deleteCallNote(noteId) {
     const sheet = getCallNotesSheet_(emp);
     const located = findCallNoteRow_(sheet, noteId);
     if (!located) return { success: false, error: 'Note not found.' };
+    cnAssertLeaseLive_(lease);   // FU1: the row index is only good while the Sheet is ours
 
     const empTz = empTz_(emp);
     // F(M-14): coercion-safe read — a locale-coerced Date cell stringified
@@ -434,6 +439,7 @@ function setCallNotePinned(noteId, pinned) {
       delete subformData.pinned;
       delete subformData.pinnedAt;
     }
+    cnAssertLeaseLive_(lease);   // FU1
     sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(sheetSafe_(JSON.stringify(subformData)));
 
     const dateLocal = cnDateLocalString_(located.row[CN.DATE_LOCAL]);
@@ -4772,6 +4778,7 @@ function saveMyScratchpad(content, format, pageId) {
         return { error: 'That page was deleted in another window — your text is still here; copy it to another page.', pageGone: true };
       }
     }
+    cnAssertLeaseLive_(lease);   // FU1: `row` was read by index
     const now = Date.now();
     sh.getRange(row, 1).setNumberFormat('@').setValue(sheetText_(text));   // S2: the '@' cell, re-asserted — raw, never an apostrophe
     sh.getRange(row, 2).setValue(sheetSafe_(now));   // epoch-ms NUMBER cell — coercion-immune
@@ -4792,6 +4799,7 @@ function scratchpadPageOp(op, pageId, name) {
     if (!emp) return { error: 'Not authorized.' };
     lease = cnAcquireRepLease_(emp, CN_SCRATCH_LEASE_PREFIX, SCRATCHPAD_LEASE_TIMEOUT_MSG);
     const sh = scratchpadSheet_(emp, true);
+    cnAssertLeaseLive_(lease);   // FU1: the slow part (opening the Sheet) is behind it; everything below writes by row
     if (sh.getLastRow() < 1) sh.getRange(1, 3).setValue(sheetSafe_('html'));   // the legacy page exists before any other
     let pages = scratchpadReadPages_(sh);
     const id = pageId == null ? '' : String(pageId);
@@ -4913,20 +4921,48 @@ function cnAcquireRepLease_(emp, prefix, timeoutMsg) {
   const token = Utilities.getUuid();
   const props = PropertiesService.getScriptProperties();
   const deadline = Date.now() + CN_REP_LEASE_WAIT_MS;
+  // FU2 (cycle 26): the NOTE lease's check-and-set is under the project lock
+  // on purpose — a writer holding that lock must know no new note lease can
+  // start (getCallNotesSheetForWrite_). Nothing of the kind is true of the
+  // Scratchpad's lease, and taking the project lock for it made every pad
+  // autosave fail for as long as a long job held that lock (a tag rename
+  // across every rep's Sheet). Its check-and-set needs only A mutex — and the
+  // "user" lock is one: a single lock for every rep, apart from the project
+  // lock (the app runs as the deployer).
+  const guardIsProjectLock = prefix === CN_REP_LEASE_PREFIX;
   for (;;) {
-    const lock = LockService.getScriptLock();
+    const lock = guardIsProjectLock ? LockService.getScriptLock() : LockService.getUserLock();
     lock.waitLock(CN_REP_LEASE_WAIT_MS);
-    let got = false;
+    let got = false, until = 0;
     try {
       if (cnRepLeaseFree_(props.getProperty(key), Date.now())) {
-        propSetBounded_(key, JSON.stringify({ token: token, until: Date.now() + CN_REP_LEASE_MS }));   // refusing: a full store fails the save by name
+        until = Date.now() + CN_REP_LEASE_MS;
+        propSetBounded_(key, JSON.stringify({ token: token, until: until }));   // refusing: a full store fails the save by name
         got = true;
       }
     } finally { lock.releaseLock(); }
-    if (got) return { key: key, token: token };
+    if (got) return { key: key, token: token, until: until };   // `until` — FU1: the holder knows when its own lease ends
     if (Date.now() >= deadline) throw new Error(timeoutMsg);
     Utilities.sleep(CN_REP_LEASE_POLL_MS);
   }
+}
+/** PURE (Node-pinned) — FU1 (cycle 26): is a lease that ends at `untilMs`
+ *  still safely ours at `nowMs`? Only while more than `guardMs` of it is left:
+ *  a lease cannot have been taken by anyone else before it ends, and the guard
+ *  covers the time the write itself takes and any difference between clocks. */
+function cnLeaseHasMargin_(untilMs, nowMs, guardMs) {
+  return Number(untilMs) - Number(nowMs) > Number(guardMs);
+}
+/** FU1 — called by a leased save right before it WRITES. A save that has run
+ *  to within CN_REP_LEASE_GUARD_MS of its lease's end no longer has the Sheet
+ *  to itself — the lease is free the moment it ends, and a second save could
+ *  then start: two positional appends, or a row-index write after the other's
+ *  delete. It refuses, having written nothing. No read: the holder was told
+ *  when its lease ends. A rep with no Sheet has no lease (the body refused). */
+function cnAssertLeaseLive_(lease) {
+  if (!lease || !lease.key) return;
+  if (cnLeaseHasMargin_(lease.until, Date.now(), CN_REP_LEASE_GUARD_MS)) return;
+  throw new Error('Lock timeout: this save took too long to finish safely — nothing was written. Try again.');
 }
 /** 25post — give the lease back, only if it is still ours (a lease that ran
  *  past CN_REP_LEASE_MS may already be someone else's). No ScriptLock: a holder

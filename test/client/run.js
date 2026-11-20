@@ -30551,10 +30551,10 @@ test('Batch S (operator 2026-11-02): Scratchpad PAGES — row 1 is the legacy pa
     appendRow: (r) => { rows.push(r.slice()); },
     deleteRow: (r) => { rows.splice(r - 1, 1); },
   };
-  let locks = 0, held = 0;
+  let locks = 0, held = 0, liveChecks = 0;
   const ctx = vm.createContext({ String, Number, Math, Date, isFinite, Error, RegExp, JSON,
     SCRATCHPAD_MAX_CHARS: 40000, SCRATCHPAD_MAX_PAGES: 3, SCRATCHPAD_PAGE_NAME_MAX: 40, SCRATCHPAD_MAIN_PAGE: 'main',
-    cnAcquireRepLease_: (emp, prefix) => { locks++; held++; return { key: prefix + emp.callNotesSheetId, token: 't' }; }, cnReleaseRepLease_: (l) => { if (l) held--; },
+    cnAcquireRepLease_: (emp, prefix) => { locks++; held++; return { key: prefix + emp.callNotesSheetId, token: 't' }; }, cnReleaseRepLease_: (l) => { if (l) held--; }, cnAssertLeaseLive_: () => { liveChecks++; },
     CN_SCRATCH_LEASE_PREFIX: 'CN_SCRATCH_LEASE_', SCRATCHPAD_LEASE_TIMEOUT_MSG: 'busy',
     getEmployeeInfo_: () => ({ id: 'E1', callNotesSheetId: 'S' }),
     scratchpadSheet_: () => sheet, scratchpadSanitizeHtml_: (h) => String(h),
@@ -30599,6 +30599,7 @@ test('Batch S (operator 2026-11-02): Scratchpad PAGES — row 1 is the legacy pa
   assert.ok(missing.missing && missing.pageId === add.pageId, 'a load of a deleted page says so and sends the first');
   ctx.scratchpadPageOp('delete', del.pages[1].id);
   assert.ok(/at least one page/.test(J(ctx.scratchpadPageOp('delete', add.pageId)).error), 'the last page is never deleted');
+  assert.ok(liveChecks >= 6, 'FU1: each call that reached a write checked its lease first (' + liveChecks + ')');
   assert.ok(locks >= 8 && held === 0, 'every save and page action takes the rep\'s Scratchpad lease (F42) and gives it back — refusals included (' + locks + ' taken, ' + held + ' still held)');
   // A fresh tab: an add makes the legacy page first.
   rows.length = 0;
@@ -38553,6 +38554,7 @@ test('F31 (cycle 25): a training question asked from a card emails the managers 
   ctx.getEmployeeInfo_ = () => ({ id: 'E1', name: 'Ana' });
   // 25post: the card path holds its rep's LEASE, not the ScriptLock — the mail still goes after it.
   ctx.cnAcquireRepLease_ = () => { lockHeld = true; return { key: 'k', token: 't' }; };
+  ctx.cnAssertLeaseLive_ = () => {};   // FU1
   ctx.cnReleaseRepLease_ = () => { lockHeld = false; };
   ctx.CN = { FLAG_TYPE: 0, RESOLVED: 1, SUBFORM_DATA: 2, DATE_LOCAL: 3 };
   ctx.CN_FLAG_TYPES = ['action', 'training', 'review']; ctx.CN_HEADERS = [0, 1, 2, 3];
@@ -40520,13 +40522,16 @@ function p25LeaseCtx_(opts) {
     CN_REP_LEASE_PREFIX: 'CN_REP_LEASE_', CN_REP_LEASE_MS: 60000, CN_REP_LEASE_WAIT_MS: 15000, CN_REP_LEASE_POLL_MS: 200,
     CN_REP_LEASE_HOLDER_WAIT_MS: b12Const('CN_REP_LEASE_HOLDER_WAIT_MS'), CN_SCRATCH_LEASE_PREFIX: b12Const('CN_SCRATCH_LEASE_PREFIX'),
     Utilities: { getUuid: () => 'tok-' + (log.length + 1), sleep: (ms) => { clock.now += ms; if (o.onSleep) o.onSleep(clock, props); } },
-    LockService: { getScriptLock: () => ({ waitLock: (ms) => { held = true; log.push('lock ' + ms); }, releaseLock: () => { held = false; log.push('unlock'); } }) },
+    LockService: { getScriptLock: () => ({ waitLock: (ms) => { held = true; log.push('lock ' + ms); }, releaseLock: () => { held = false; log.push('unlock'); } }),
+      // FU2: the "user" lock — a second global mutex, apart from the project lock.
+      getUserLock: () => ({ waitLock: (ms) => { held = true; log.push('userlock ' + ms); }, releaseLock: () => { held = false; log.push('userunlock'); } }) },
+    CN_REP_LEASE_GUARD_MS: b12Const('CN_REP_LEASE_GUARD_MS'),
     PropertiesService: { getScriptProperties: () => ({
       getProperty: (k) => (k in props ? props[k] : null),
       deleteProperty: (k) => { log.push('delete ' + k); delete props[k]; } }) },
     propSetBounded_: (k, v) => { log.push('set ' + k + (held ? ' (under lock)' : ' (NO LOCK)')); props[k] = v; },
     getCallNotesSheet_: (emp) => ({ sheetOf: emp.callNotesSheetId }) });
-  ['cnRepLeaseFree_', 'cnAcquireRepLease_', 'cnReleaseRepLease_', 'cnLeaseWaitOver_', 'getCallNotesSheetForWrite_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  ['cnRepLeaseFree_', 'cnAcquireRepLease_', 'cnReleaseRepLease_', 'cnLeaseWaitOver_', 'cnLeaseHasMargin_', 'cnAssertLeaseLive_', 'getCallNotesSheetForWrite_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   return { ctx, clock, props, log };
 }
 /** A numeric or string CONFIG-file constant, read from the server source. */
@@ -40547,7 +40552,7 @@ test('25post: cnRepLeaseFree_ — absent, unreadable or expired is free; a lease
 test('25post: cnAcquireRepLease_ takes the lease with the ScriptLock held only for the check-and-set, waits for a held lease, and times out with a "Lock timeout" throw — like the waitLock it replaces (driven)', () => {
   const t1 = p25LeaseCtx_();
   const lease = JSON.parse(JSON.stringify(t1.ctx.cnAcquireRepLease_({ callNotesSheetId: 'S1' })));
-  assert.deepStrictEqual(lease.key, 'CN_REP_LEASE_S1');
+  assert.deepStrictEqual([lease.key, lease.until], ['CN_REP_LEASE_S1', 1000000 + 60000], 'FU1: the holder is told when its lease ends');
   assert.deepStrictEqual(t1.log, ['lock 15000', 'set CN_REP_LEASE_S1 (under lock)', 'unlock'], 'the ScriptLock is held for the check-and-set and released before the save runs');
   assert.strictEqual(JSON.parse(t1.props.CN_REP_LEASE_S1).until, 1000000 + 60000, 'a 60 s lease');
   // Another save on the same Sheet: polls until the holder releases.
@@ -51174,12 +51179,14 @@ test('F58: the browser mirror of unsaved Scratchpad text — this account only, 
   assert.deepStrictEqual(read(blob, 'E1'), { pages: { main: { text: 'typed', base: 500 }, p2: { text: '', base: null } }, stale: false });
   assert.deepStrictEqual(read(blob, 'E2'), { pages: null, stale: false }, 'THE RULE: another account\'s text is not read — and not removed');
   assert.deepStrictEqual(read(blob, ''), { pages: null, stale: false });
-  assert.deepStrictEqual(read(blob, 'E1', now + DAY + 1), { pages: null, stale: true }, 'past the TTL it is to be removed, whoever it belongs to');
-  assert.deepStrictEqual(read(blob, 'E2', now + DAY + 1), { pages: null, stale: true });
+  assert.deepStrictEqual(read(blob, 'E1', now + DAY + 1), { pages: null, stale: true, mine: true }, 'past the TTL it is to be removed, whoever it belongs to — and (FU3) its owner is the one told');
+  assert.deepStrictEqual(read(blob, 'E2', now + DAY + 1), { pages: null, stale: true, mine: false }, 'another account\'s expired text is removed without a word to this one');
+  assert.deepStrictEqual(read(blob, '', now + DAY + 1), { pages: null, stale: true, mine: false });
+  assert.deepStrictEqual(read(JSON.stringify({ who: 'E1', at: now, pages: {} }), 'E1', now + DAY + 1), { pages: null, stale: true, mine: false }, 'an expired blob that held no text is nothing to announce');
   assert.deepStrictEqual(read(null, 'E1'), { pages: null, stale: false });
   assert.deepStrictEqual(read('{not json', 'E1'), { pages: null, stale: true }, 'an unreadable blob is removed');
   assert.deepStrictEqual(read(JSON.stringify({ who: 'E1', at: now, pages: { main: { text: 5 }, p2: null } }), 'E1'), { pages: null, stale: false }, 'an entry that is not text is not a page');
-  assert.deepStrictEqual(read(JSON.stringify({ who: 'E1', pages: { main: { text: 'x' } } }), 'E1'), { pages: null, stale: true }, 'no stamp: cannot be aged, so it is not kept');
+  assert.deepStrictEqual(read(JSON.stringify({ who: 'E1', pages: { main: { text: 'x' } } }), 'E1'), { pages: null, stale: true, mine: false }, 'no stamp: cannot be aged, so it is not kept — and a malformed blob is not "expired text" to announce');
   // The verdict.
   assert.deepStrictEqual([c.cnScratchMirrorVerdict_(500, 500), c.cnScratchMirrorVerdict_(500, '500'), c.cnScratchMirrorVerdict_(0, null)], ['save', 'save', 'save']);
   assert.deepStrictEqual([c.cnScratchMirrorVerdict_(500, 900), c.cnScratchMirrorVerdict_(500, 100), c.cnScratchMirrorVerdict_(500, null)], ['conflict', 'conflict', 'conflict'],
@@ -51446,13 +51453,21 @@ test('F42: the wait a ScriptLock holder gives a rep\'s note lease is capped unde
   const sc = p25LeaseCtx_({ props: { CN_REP_LEASE_S1: JSON.stringify({ token: 'note', until: 9e15 }) } });
   const got = JSON.parse(JSON.stringify(sc.ctx.cnAcquireRepLease_({ callNotesSheetId: 'S1' }, b12Const('CN_SCRATCH_LEASE_PREFIX'), 'busy')));
   assert.deepStrictEqual([got.key, sc.clock.now], ['CN_SCRATCH_LEASE_S1', 1000000], 'THE POINT: an autosave does not wait for the rep\'s own note save (or the reverse)');
+  // FU2 (cycle 26): and it never touches the PROJECT lock — Batch 12 took it for this check-and-set, so every pad
+  // autosave failed for as long as a long job (a tag rename across every rep's Sheet) held that lock.
+  assert.deepStrictEqual(sc.log, ['userlock 15000', 'set CN_SCRATCH_LEASE_S1 (under lock)', 'userunlock'], 'THE REGRESSION (FU2): the Scratchpad lease was taken under the project lock');
+  const nt = p25LeaseCtx_();
+  nt.ctx.cnAcquireRepLease_({ callNotesSheetId: 'S1' });
+  assert.deepStrictEqual(nt.log, ['lock 15000', 'set CN_REP_LEASE_S1 (under lock)', 'unlock'], 'the NOTE lease stays under the project lock — its holders rely on that');
   assert.throws(() => sc.ctx.cnAcquireRepLease_({ callNotesSheetId: 'S1' }, b12Const('CN_SCRATCH_LEASE_PREFIX'), 'busy'), /^Error: busy$/, 'a second Scratchpad save on the same pad waits, then refuses in the caller\'s words');
   const w = stripJsComments_(extractRawFunction('Code.js', 'getCallNotesSheetForWrite_'));
   assert.ok(/CN_REP_LEASE_PREFIX \+ sheetId/.test(w) && !/CN_SCRATCH_LEASE_PREFIX/.test(w), 'a ScriptLock holder waits on the NOTE lease only — none writes the Scratchpad tab');
   assert.ok(/cnLeaseWaitOver_\(Date\.now\(\) - startedAt, CN_REP_LEASE_HOLDER_WAIT_MS\)/.test(w) && /throw new Error\('Lock timeout: /.test(w) && !/CN_REP_LEASE_MS/.test(w), 'capped, then refused by name — never the lease\'s whole life');
-  // No server code in the call-notes file takes the user lock any more.
-  const cnFile = fs.readFileSync(path.join(PA_WEB, '30_callnotes.js'), 'utf8');
-  assert.ok(!/getUserLock\(/.test(stripJsComments_(cnFile)), 'the user lock is one lock for every rep (the app runs as the deployer)');
+  // The user lock is one lock for every rep (the app runs as the deployer). Nothing in the call-notes file holds it
+  // for a SAVE any more; its one use (FU2) is as the few-millisecond guard of the Scratchpad lease's check-and-set.
+  const cnFile = stripJsComments_(fs.readFileSync(path.join(PA_WEB, '30_callnotes.js'), 'utf8'));
+  assert.strictEqual((cnFile.match(/getUserLock\(/g) || []).length, 1, 'one use of the user lock in the file');
+  assert.ok(/guardIsProjectLock \? LockService\.getScriptLock\(\) : LockService\.getUserLock\(\)/.test(extractRawFunction('Code.js', 'cnAcquireRepLease_')), 'and it is the lease taker\'s guard');
   // The third part of the finding was already closed by Batch 6 (F44): the decode, hash and page count run before the lock.
   [['issueDoc', 'empDocPdfItem_('], ['createCoaching', 'coachImageItem_(']].forEach(([fn, call]) => {
     const b = stripJsComments_(extractRawFunction('Code.js', fn));
@@ -51530,6 +51545,48 @@ test('F43: push-env.sh REFUSES to run over an uncommitted web-app/.clasp.json �
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+console.log('\nCycle 26 follow-ons after Batch 12 (FU1–FU3)');
+
+test('FU1: a leased save REFUSES to write once its lease is nearly over — it can no longer be sure the Sheet is its own; every function that holds a lease checks before its first write (driven + derived)', () => {
+  const t = p25LeaseCtx_();
+  const guard = b12Const('CN_REP_LEASE_GUARD_MS'), life = b12Const('CN_REP_LEASE_MS');
+  assert.ok(guard >= 5000 && guard < life / 2, 'a guard of ' + guard + ' ms inside a ' + life + ' ms lease');
+  const M = (u, n) => t.ctx.cnLeaseHasMargin_(u, n, guard);
+  assert.deepStrictEqual([M(60000, 0), M(60000, 60000 - guard - 1), M(60000, 60000 - guard), M(60000, 60000), M(60000, 90000), M(undefined, 0), M(null, 0)],
+    [true, true, false, false, false, false, false], 'more than the guard left, or it is not safe — an unknown end is not safe');
+  const lease = t.ctx.cnAcquireRepLease_({ callNotesSheetId: 'S1' });
+  t.ctx.cnAssertLeaseLive_(lease);                       // just taken
+  t.clock.now += life - guard - 1;
+  t.ctx.cnAssertLeaseLive_(lease);                       // the last safe millisecond
+  t.clock.now += 1;
+  assert.throws(() => t.ctx.cnAssertLeaseLive_(lease), /^Error: Lock timeout: this save took too long to finish safely — nothing was written/,
+    'THE REGRESSION: a save that outran its 60 s lease went on to write — while a second save, free to start, wrote the same rows');
+  t.clock.now += 120000;
+  assert.throws(() => t.ctx.cnAssertLeaseLive_(lease), /Lock timeout/);
+  t.ctx.cnAssertLeaseLive_({ key: '', token: '' }); t.ctx.cnAssertLeaseLive_(null);   // no Sheet: no lease — the body refuses by name
+  const before = t.log.length;
+  t.clock.now = 1000000; t.ctx.cnAssertLeaseLive_(lease);
+  assert.strictEqual(t.log.length, before, 'the check reads nothing and takes no lock — the holder was told when its lease ends');
+  // Derived: every function that takes a lease checks it before its first write to the Sheet.
+  const src = stripJsComments_(fs.readFileSync(path.join(PA_WEB, '30_callnotes.js'), 'utf8'));
+  const holders = [];
+  const re = /\nfunction ([A-Za-z0-9_]+)\(/g;
+  let m;
+  while ((m = re.exec(src)) !== null) {
+    const s0 = src.indexOf('{', m.index); let d = 0, k = s0;
+    for (; k < src.length; k++) { if (src[k] === '{') d++; else if (src[k] === '}' && --d === 0) break; }
+    const body = src.slice(s0, k + 1);
+    if (/cnAcquireRepLease_\(/.test(body) && m[1] !== 'cnAcquireRepLease_') holders.push({ name: m[1], body });
+  }
+  assert.strictEqual(holders.length, 8, 'the six note actions and the two Scratchpad endpoints: ' + holders.map((h) => h.name).join(', '));
+  const WRITE = /\.setValues?\(|\.appendRow\(|\.deleteRow\(|appendRowsTextSafe_\(|appendRowsSafe_\(/;
+  holders.forEach((h) => {
+    const at = h.body.indexOf('cnAssertLeaseLive_(lease);');
+    const w = h.body.search(WRITE);
+    assert.ok(at >= 0 && w >= 0 && at < w, h.name + ': checks its lease (' + at + ') before its first write (' + w + ')');
+  });
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
