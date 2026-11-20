@@ -7529,6 +7529,41 @@ pick them up without re-deriving the context.
     the days a rep took inbound calls (whether an outbound-only day counts is
     the Department Dashboard's rule to set); the Scratchpad's session copy is
     still one page.
+- <a id="c26-batch-12-server-small-items"></a>**Batch 12 — the department's own address is the department; a held reply resolves and logs under one lock; list reads are numbered against local changes; the Scratchpad has its own per-rep lease; the leading apostrophe is left (cycle 26 F41–F43).**
+  - **The department map, read at the click (F41).** The row could have
+    started storing full addresses — but the ToEmail cell keeps domains on
+    purpose (a "Other" recipient may be a patient's address), and the map is
+    already the app's record of which address is which department. Today's
+    map is used: a department whose address changed since the send is
+    recognised by its new one.
+  - **Resolve first, under the same lock (F41).** Two locks in sequence is
+    not a transaction. `drResolveRowLocked_` is the write for a caller that
+    already holds the lock; `markDeptRequestResolved_` is the wrapper every
+    other caller keeps using.
+  - **Re-apply in the Spanish inbox, drop in Dept Requests (F41).** The
+    Spanish re-read costs two Gmail scans, so its answer is kept and patched
+    with the changes made since it was asked for. A Dept Requests read is
+    cheap and the local patch is exact for a rep (a manager's reconcile is
+    already on its way), so its stale answer is dropped and the stamp left
+    cleared.
+  - **A kept answer has a key (F41).** What was typed for one request is
+    given back for that request only; a partly failed bulk resolve re-keys it
+    to the requests still selected.
+  - **A second lease prefix, not the note lease (F42).** One lease per rep
+    would have made an autosave wait for the same rep's note save. No
+    ScriptLock holder writes the Scratchpad tab, so nothing waits on the new
+    key but another Scratchpad save of the same pad. It costs two Script
+    Property writes per save, as a note save does.
+  - **Eight seconds for a lock holder (F42).** Long enough for any healthy
+    save; short enough that the punches and saves queued behind the holder
+    (15 s each) outlast it. The holder refuses rather than writing over a
+    save that may still be running.
+  - **The decode hoist was already done (F42).** Batch 6 (F44) moved the PDF
+    and screenshot decode-and-hash ahead of the lock; this batch only pins
+    that it stays there.
+  - **The leading apostrophe is left (F43).** See the amendment under g144.
+    `sheetSafe_` must be idempotent, and it cannot tell its own marker from
+    the author's apostrophe. Recorded so the one-line fix is not tried again.
 - <a id="c26-one-verdict-for-employee-docs"></a>**One verdict for Verify, the certificate and the copy; the copy email is capped and reaches only today's managers; pdf.js is checksum-checked (cycle 26 Batch 6: F13, F14, F15, F44, F56, F64).**
   - **`verified` is its own field, not "not tampered" (F13).** A check has
     three outcomes and the old flag recorded one of them. `empDocVerdict_`

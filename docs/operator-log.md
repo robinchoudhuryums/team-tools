@@ -11,6 +11,36 @@ keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
 
+## 2026-11-20 — Cycle 26 Batch 12: Server small items (F41–F43)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The
+handbook app is not affected.
+
+- **Dept Requests (F41):** a department mailbox's click on the resolve link
+  counts as the department's response even when that mailbox is on the roster
+  or the CC list (it was recorded as an untimed copy). Answering **Resolved**
+  on a held reply can no longer log the answer without resolving the request.
+  Two patients whose Patient & TRX say "TRX pending" are no longer folded
+  together; a fold's header counts what is still open after Mark resolved.
+- **Spanish inbox (F41):** a resolve that fails gives the outcome and the
+  typed note back when the dialog is opened again. A refresh that finishes
+  after you resolved or claimed a card no longer undoes it on screen.
+- **Scratchpad (F42):** saves no longer wait on other reps' saves. A new,
+  short-lived Script Property appears while a pad saves:
+  `CN_SCRATCH_LEASE_<sheet id>` — like `CN_REP_LEASE_…`, never delete one by
+  hand mid-shift.
+- **A stuck note save (F42):** a manager action or nightly job on that rep's
+  notes now stops after about eight seconds with "Lock timeout: a save to
+  these call notes has not finished" instead of holding everyone's punches
+  for up to a minute. Try again shortly.
+- **What's new, the agent's email copy (F43):** two small fixes — the panel
+  cannot show the wrong article after one is deleted; an agent whose address
+  is contained in another BCC address gets their own copy again.
+- **`npm run push:prod` / `push:dev` (F43):** they refuse to run while
+  `web-app/.clasp.json` has uncommitted changes. Commit it first.
+- **Not changed:** text that begins with an apostrophe still loses that one
+  character in some cells (see the g144 note in `docs/gotchas.md`).
+
 ## 2026-11-20 — Cycle 26 follow-ons after Batch 11 (FT1–FT4)
 
 **Nothing to set.** Deploy Team Tools (`clasp push -f` + New version) and

@@ -607,6 +607,11 @@ with **Move to a new page**, **Copy it** and **Discard**. Deleting a page
 moves it by itself. It stays in the browser for up to 24 hours, like other
 unsaved text.
 
+**Cycle 26 Batch 12 (F42): each rep's Scratchpad saves on its own.** The
+saves used a lock that turned out to be shared by every rep, so with many
+people typing at once some saves timed out. Each rep's pad now has its own
+short lease; a rep's autosave waits only for another save of the same pad.
+
 The server allowlist and the client sanitizer were widened together. A link
 keeps only an http(s) href.
 

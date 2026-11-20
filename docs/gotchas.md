@@ -673,6 +673,37 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `assertManagerCaller_` or the suite's `_assertSuiteCaller_`). A new wrapper
   with no gate over a locking helper fails it.
 
+  **AMENDED (cycle 26 F42 + F41): whose lock, how long, and how many.**
+  `saveMyScratchpad` and `scratchpadPageOp` took the USER lock, with the
+  comment "the user lock still serializes one rep's double-fires". The web
+  app runs as the deployer (`executeAs: USER_DEPLOYING`), so there is ONE
+  user: `getUserLock()` is a single lock shared by every rep. The pad
+  autosaves 800 ms after typing stops, and each save held that lock across
+  an `openById`, a page read and three writes — with ten reps typing, the
+  tail waited past its 15 seconds and failed. They now hold a per-rep lease
+  of their own (`CN_SCRATCH_LEASE_<sheetId>` — the note lease's machinery
+  under a second key, so an autosave and the same rep's note save do not
+  wait on each other either). The caller is checked before anything is
+  waited for, and a wait that times out is an `{error}` the pad shows.
+
+  The note lease had a wait of its own that was too long.
+  `getCallNotesSheetForWrite_` — used by every writer that HOLDS the project
+  lock and touches a rep's Sheet — waited for the lease's whole life plus a
+  second. One killed save (or a release that failed) left the lease for 60 s,
+  and the next manager comment, tag rename or nightly job on that rep slept
+  for up to 61 s with the project lock held: every punch, time-off and note
+  save in the app timed out behind it. The wait is capped at
+  `CN_REP_LEASE_HOLDER_WAIT_MS` (under the 15 s the other waiters give the
+  lock, far past a healthy save) and then REFUSES by name; a cross-rep job
+  already names a rep whose Sheet it could not write.
+
+  And `answerDeptReplyLook('resolved')` wrote its two facts under two locks:
+  the answer row, release, then the resolve — which waits for the lock again.
+  A timeout there left "resolved" on the review report for a request that
+  was still open, and the retry counted it twice. The resolve write is split
+  out (`drResolveRowLocked_`, for a caller that holds the lock) and runs
+  first, under the same lock as the answer row.
+
 <a id="g18-normalizetype-strips-the-adj-prefix"></a>
 
 - **`normalizeType_` strips the `ADJ-` prefix.** Adjustments are
@@ -2524,6 +2555,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   instead of the rule living only in this paragraph. Verify: the F1-followon pin
   (the guard precedes the mutation, the restore is still last).
 
+  **AMENDED (cycle 26 F43): the same checkout in the deploy script.**
+  `scripts/push-env.sh` restores the committed `web-app/.clasp.json` with a
+  `git checkout` — before every prod push, and on exit of every dev push. An
+  operator who had just added a server file to `filePushOrder` and pushed
+  before committing lost the edit without a word, and the push went out with
+  the old order. The script now refuses while that file differs from HEAD
+  (staged or not) and says why; nothing is pushed.
+
 <a id="g66-an-outerhtml-patch-replaces-one-element-so"></a>
 
 - **An `outerHTML` patch replaces ONE element, so that element must contain
@@ -3205,6 +3244,27 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the settled state. A list answered while a write is in flight needs no guard:
   deletes and edits are not optimistic, and an in-flight toggle keeps its local
   object (INV-56) — a mutant without that half was measured equivalent. Verify: the F22 (cycle 25) DOM drive.
+
+  **AMENDED (cycle 26 F41): a read asked for before the change.** The
+  Spanish inbox paints its session cache and re-reads behind it, and each
+  re-read is two Gmail scans that take seconds. A resolve, claim, release or
+  auto-assign made in that window was applied to the page — and then the
+  read landed, computed before it, and replaced the list and the cache: the
+  resolved card came back (and could be resolved, and replied to, a second
+  time) and the claim pill vanished. Changes made here are now NUMBERED
+  (`spanishNoteLocal_`); a read notes the number when it is asked for, and
+  the changes made since are re-applied to its answer before it is used.
+  Dept Requests had the same shape in a narrower window, and its stale
+  answer also stamped the round fresh for 45 seconds; there the answer is
+  simply dropped (`drLocalChange_` / `drAnswerPredatesChange_`) — the local
+  patch is exact for a rep, and a manager's reconcile is already on its way.
+
+  The resolve dialog had the mirror problem: it closes BEFORE the server
+  answers, so a "Resolve failed: Lock timeout" left the member with a toast
+  and up to 500 typed characters gone. The outcome and note are kept until
+  the answer is a success, and given back when the dialog is opened again
+  for the same request(s) — keyed, so a note written about one request is
+  never offered on another.
 
 <a id="g85-form-completion-timer-is-persisted-to-localstorage"></a>
 
@@ -4527,6 +4587,15 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   passed (g128). Its first version stopped walking at the first opaque
   ancestor and so missed a see-through GROUP above it; the known-pairs page is
   what caught that, before any screen was trusted to it.
+
+  **AMENDED (cycle 26 F41): a twenty-sixth — the fixture production never
+  writes, again.** `drEmailClickVia_` had a rule "an address the email was
+  sent TO is the department", read from the row's ToEmail cell — which
+  stores only the recipient DOMAINS (`ums.com`). A full address can never
+  equal one, so the rule never fired; its pin fed a row with full addresses
+  there and asserted the opposite of what production did. The pin now builds
+  the cell through the real writer (`drRecipientDomains_`), and the rule
+  reads the department map's addresses instead.
 
 <a id="g117-a-recovery-is-not-a-prevention"></a>
 - **A recovery is not a prevention, and shipping one can make the other feel
@@ -6216,6 +6285,23 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   `appendRowsTextSafe_` / a re-asserted format on edit, and S2's named list
   of raw-text writers gained `saveEmpDocTemplate` and `saveQuiz`.
 
+  **AMENDED (cycle 26 F43): the apostrophe `sheetSafe_` cannot fix.** Text
+  that itself begins with an apostrophe (`'Bud' Smith called`, `'til
+  Friday`) written to a non-'@' cell reads back without it: Sheets takes a
+  leading apostrophe as its literal-text marker. The scan's sketch was one
+  line — prefix another apostrophe. It was written, and reverted: a pin and
+  two callers showed why it is wrong. `sheetSafe_` is applied MORE THAN ONCE
+  to some values (a row helper over cells already made safe), and it must
+  leave `'=already literal` alone — with the extra rule, a second pass turns
+  `'=x` into `''=x` and a literal apostrophe is stored in front of every
+  neutralised formula. And the handbook app prefixes an apostrophe by hand
+  to force a search term to text, then passes the row through
+  `sheetSafeRow_`. A string cannot say whether its apostrophe is a marker or
+  the author's. The loss (one leading character, in the few free-text
+  columns that are not '@' cells) is LEFT; the fix, if wanted, is to make
+  the column an '@' cell, as the note, document and coaching text already
+  are.
+
 <a id="g145-a-positional-write-at-getlastrow-1"></a>
 
 - **A positional write at `getLastRow() + 1` THROWS once the tab outgrows its
@@ -6914,6 +7000,14 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   no verdict — neutral, verbatim. Verify: the F7 pin (a sweep: no value is
   green unless all of it is an accept) and the DOM drive.
 
+  **AMENDED (cycle 26 F41 + F43): two more words read as numbers.** The TRX
+  fold took whatever followed "TRX" as the key, so "Maria Lopez TRX pending"
+  and "John Smith trx pending" both keyed `pending` and were folded into "2
+  open requests for this TRX" — one patient's card hidden behind the
+  other's. A key must hold a digit. And the agent's self-BCC was skipped
+  when their address was a SUBSTRING of the list (`ann@x.com` inside
+  `maryann@x.com`); the test is by whole address (`mailListHasAddress_`).
+
 <a id="g157-scriptcache-is-shared-by-every-deployment"></a>
 
 - **A ScriptCache entry is shared by HEAD and every versioned deployment, so
@@ -7162,6 +7256,13 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   reads the NoteId column too; a fetched row must carry that id and still be
   pinned, otherwise the note is found again by its id (`findCallNoteRow_`).
   Verify: the F32 (cycle 25) drive.
+
+  **AMENDED (cycle 26 F43): What's new.** `getWhatsNew` scans the KB id
+  column, then fetches the matching row by its index — unlocked, on every
+  Dashboard load. An article deleted between the two reads moves every row
+  up one, and the row under that index is another article: its title and
+  body would open for every rep as "What's new". The fetched row is checked
+  against the id it was found by; a mismatch shows nothing.
 
 <a id="g165-a-grant-earned-by-a-covered-period-applies-forward"></a>
 

@@ -4423,3 +4423,31 @@ F53, F54, F57.**
   pop-out's editor most of its height at the default panel size; the panel
   resizes.
 - **Bite-checks: 53 mutations (16 pure, 37 DOM), 53 bit. Three bit only after a pin or a drive was strengthened: a pin whose ordering check passed when the line was missing (index −1), a pin where a missing page limit read as zero, and the drive that holds the held row is not rebuilt (nothing in it redrew the row).**
+
+## Cycle 26 Batch 12 — Server small items, F41–F43 (2026-11-20)
+
+- **Pure harness: six pins.** The TRX key and the fold header; list reads
+  against local changes with the kept resolve answer; the lease caps, the two
+  key spaces and the real lease taker under the Scratchpad's key; What's new
+  across a deleted row; the self-BCC by address; `push-env.sh` driven in a
+  throwaway git repository with a stand-in for clasp.
+- **DOM harness: four drives.** A failed Spanish resolve (same request, another
+  request, a retry, a transport failure, a partly failed bulk, a failed
+  Assign); a Spanish read that lands after a resolve and a claim; a fold
+  through three in-place resolves; a Dept Requests read that lands after a
+  resolve.
+- **Older pins updated:** every pin that read `markDeptRequestResolved_`'s
+  body reads the wrapper and `drResolveRowLocked_` together (`drWriterSrc_`);
+  the F55 click pin's row is built through the real writer (it held full
+  addresses where production stores domains); the E4 pin drives a resolve
+  that fails; the Scratchpad server pin holds the lease instead of the user
+  lock; the 25post lease pin holds the cap instead of 61 s; the one-hop lock
+  net and the serialised-writers pin count the two Scratchpad endpoints.
+- **A fix that was written and reverted.** The leading-apostrophe rule in
+  `sheetSafe_` broke the S2 pin (`'=already literal` must pass unchanged) and
+  two handbook pins (a hand-prefixed apostrophe doubled). The pins were
+  right; the finding's sketch was not.
+- **Harness fact:** the view's own enter runs on a timer, and a badge poller
+  may already have a call of the same method pending — a drive that answers
+  by hand flushes timers first, then every pending call of that method.
+- **Bite-checks: 51 mutations (32 pure, 19 DOM), 51 bit, each on its first run.**

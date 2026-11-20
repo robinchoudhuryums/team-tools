@@ -106,6 +106,12 @@ You do **not** need a global `clasp` install: `npm run push:dev` / `push:prod`
 run a **pinned** clasp via `npx` (`scripts/push-env.sh`; override with `CLASP=…`).
 The first push in a fresh shell downloads clasp once, then it is cached.
 
+**Commit `web-app/.clasp.json` before you push.** Both commands put the
+committed file back with a `git checkout` (before a prod push, after a dev
+push). Since cycle 26 the script refuses to run while that file has
+uncommitted changes — an edit to `filePushOrder` used to be discarded without
+a word, and the push went out with the old order.
+
 **Cloud Shell fallback (only if you must push from Cloud Shell):** since the OOB
 flow is dead, you can't `clasp login` there directly. Log in on your **laptop
 first** with the SAME pinned version (`npx --yes @google/clasp@2.4.2 login`),
