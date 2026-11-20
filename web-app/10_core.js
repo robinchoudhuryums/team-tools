@@ -50,8 +50,9 @@ function doGet(e) {
   }
   // ── Intake recommendation-feedback route ───────────────────────────
   // The "Send feedback" button in a PPD/PMD/PAP email lands here. The
-  // recipient is an internal agent; submitIntakeFeedback re-authenticates
-  // via getEmployeeInfo_, so this page only COLLECTS the text.
+  // recipient is on the roster or signed in to an org account (the Sales and
+  // PAP teams are not on the roster — F22); submitIntakeFeedback identifies
+  // them itself, so this page only COLLECTS the text.
   if (e && e.parameter && e.parameter.intakefb) {
     return serveIntakeFeedbackPage_(e.parameter.intakefb, e.parameter.ft);
   }
@@ -2865,8 +2866,12 @@ function getStorageHealth(opts) {
 
     const intakeProp = props.getProperty('INTAKE_SS_ID');
     const intakeId = intakeProp || (isPlaceholder(CONFIG.INTAKE.SS_ID) ? '' : CONFIG.INTAKE.SS_ID);
-    stores.push(probe({ label: 'Intake (PHI)', role: 'Offerings + PPD/PMD/PAP submissions',
-      cls: 'PHI', retention: 'Optional purge', prop: 'INTAKE_SS_ID', id: intakeId,
+    // F23 (cycle 26): this row said "Optional purge". No purge of this store
+    // exists — every submission, and the feedback written about one, is kept —
+    // and an operator deciding what to do about PHI at rest read it as a
+    // setting they had. The feedback tab was not named anywhere either.
+    stores.push(probe({ label: 'Intake (PHI)', role: 'Offerings + PPD/PMD/PAP submissions + ' + CONFIG.INTAKE.FEEDBACK_TAB,
+      cls: 'PHI', retention: 'Kept — no purge exists', prop: 'INTAKE_SS_ID', id: intakeId,
       source: intakeProp ? 'Script Property' : (intakeId ? 'CONFIG' : 'unset'),
       note: intakeId ? '' : 'Set INTAKE_SS_ID — Intake fails on first preview/send without it.' }));
 

@@ -2859,7 +2859,7 @@ function runRecAgo(msAgo, notes) {
             { standard: { dept: 'CSR', target: 92, band: 2, source: 'sheet', error: '' },
               holidays: { source: 'sheet', ranges: 9, thisYear: 9, year: '2026', error: '' },
               partialDays: { source: 'sheet', rows: 7, marks: 6, agents: 3, offRoster: 1, likely: [], error: '' } }),   // Batch PD; FQ9
-          store('Intake (PHI)', 'Offerings + PPD/PMD/PAP submissions', 'PHI', 'Optional purge', 'INTAKE_SS_ID'),
+          store('Intake (PHI)', 'Offerings + PPD/PMD/PAP submissions + IntakeFeedback', 'PHI', 'Kept — no purge exists', 'INTAKE_SS_ID'),
           store('Forms (PHI)', 'FormTokens + FormSubmissions', 'PHI', '90-day purge (if enabled)', 'FORMS_SS_ID',
             // ADM-04 (cycle 23): the shape the server now ships for an unset
             // fallback store — NOT configured, but the fallback opened.

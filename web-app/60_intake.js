@@ -518,14 +518,33 @@ function intakeFeedbackResult_(formType, submissionId) {
     ? { items: r, unavailable: false }
     : { items: [], unavailable: true, error: String((r && r.error) || '') };
 }
-/** Rep-callable (the recipient IS an employee — intake recipients resolve from
- *  the roster). Locked (INV-01); the row is appended only when the submission
- *  actually EXISTS, so a mistyped/forged id can't seed junk rows. The audit
- *  row is PHI-free (id + type only — the feedback TEXT may reference the
- *  patient and stays in the Intake store). */
+/** PURE (Node-pinned) — F22 (cycle 26): who a feedback row is from. A roster
+ *  employee as before; otherwise anyone signed in to an org account, known by
+ *  that address alone. null = refuse. The button is put in every copy sent to
+ *  an org address (`isOrgEmail_(recipient)`), and since 25post B6 the usual
+ *  recipients are the Sales and PAP teams — read from the CDR roster, not on
+ *  this app's Employees sheet — so the roster-only gate answered the people
+ *  the button is for with "Not authorized." */
+function intakeFeedbackCaller_(emp, activeEmail) {
+  if (emp) return { id: emp.id, name: emp.name, email: emp.email, onRoster: true };
+  const e = String(activeEmail || '').trim().toLowerCase();
+  if (e && isOrgEmail_(e)) return { id: '', name: '', email: e, onRoster: false };
+  return null;
+}
+/** Callable by a roster employee or anyone signed in to an org account (F22 —
+ *  the recipient of the email is one or the other). Locked (INV-01); the row
+ *  is appended only when the submission actually EXISTS, so a mistyped/forged
+ *  id can't seed junk rows. The audit row is PHI-free (id + type only — the
+ *  feedback TEXT may reference the patient and stays in the Intake store). */
 function submitIntakeFeedback(submissionId, formType, text) {
-  const emp = getEmployeeInfo_();
-  if (!emp) return { success: false, error: 'Not authorized.' };
+  // The caller before the lock (F58). An address we cannot read is a different
+  // answer from one that is not ours (g128).
+  const active = getActiveUserEmail_();
+  const who = intakeFeedbackCaller_(getEmployeeInfo_(), active);
+  if (!who) {
+    return { success: false, error: active ? 'Not authorized.'
+      : 'Could not tell who is signed in \u2014 sign in with your work account, then open the link from the email again.' };
+  }
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
@@ -550,10 +569,10 @@ function submitIntakeFeedback(submissionId, formType, text) {
     }
     if (!found) return { success: false, error: 'Submission not found — the link may be stale.' };
     getIntakeFeedbackSheet_().appendRow(sheetSafeRow_([
-      fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), id, ft, emp.email, emp.name, body,
+      fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), id, ft, who.email, who.name, body,
     ]));
-    writeAuditLog_(emp, 'IntakeFeedback', fmtDate_(new Date()), '', false, 0,
-      'type=' + ft + '; submissionId=' + id, emp.email);
+    writeAuditLog_(who, 'IntakeFeedback', fmtDate_(new Date()), '', false, 0,
+      'type=' + ft + '; submissionId=' + id + (who.onRoster ? '' : '; sender not on the roster'), who.email);
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }

@@ -224,6 +224,10 @@
   .intk-card-line span { color: var(--muted); }
   .intk-card-acts { display: flex; gap: 8px; flex-wrap: wrap; }
   .intk-card-note { margin: 0; font-size: .75rem; color: var(--muted); }
+  /* F21 (cycle 26): one section per card. With several, each is set apart. */
+  .intk-card-one { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .intk-card-one + .intk-card-one { border-top: 1px solid var(--line); padding-top: 10px; }
+  .intk-card-which { font-size: .8rem; font-weight: 600; color: var(--muted); }
   /* I2 — saved drafts: the count on the rail button and the Drafts list. */
   .intk-drafts-n { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 999px; background: var(--accent); color: var(--paper-card); font-family: var(--mono); font-size: 11px; line-height: 18px; text-align: center; }
   .intk-modal.intk-drafts-modal { width: min(560px, calc(100vw - 32px)); }
@@ -3391,15 +3395,38 @@ function intakeCardRows_(lines) {
 // "Group Number0701234"), so a label is found without a word boundary after
 // it where its own letters make it unmistakable. A value must look like its
 // field, or it is not taken — the rep types it instead.
+// F67 (cycle 26): the patterns are SOURCES, compiled at first use inside a
+// try (intakeCardRx_). They were regex LITERALS with a lookbehind — "not after
+// a letter" — and a literal the engine cannot parse is an early error for the
+// whole <script>: on Safari / iOS older than 16.4 none of this partial's
+// functions were defined, so PPD, PMD, PAP, Sent and Catalog all vanished, not
+// only the optional card reader. A pin parses every client partial and refuses
+// a lookbehind in any regex literal.
 var INTAKE_CARD_LABELS = [
-  { key: 'rxBin', skip: true, re: /(?<![a-z])(?:rx?\s*bin|bin(?![a-z]))(?:\s*(?:#|no\.?|number)(?![a-z]))?/i },
-  { key: 'rxPcn', skip: true, re: /(?<![a-z])(?:rx?\s*pcn|pcn(?![a-z]))(?:\s*(?:#|no\.?)(?![a-z]))?/i },
-  { key: 'rxGrp', skip: true, re: /(?<![a-z])rx\s*(?:grp|group)(?:\s*(?:#|no\.?|number)(?![a-z]))?/i },
-  { key: 'payerId', skip: true, re: /(?<![a-z])payer\s*(?:id|#)(?![a-z])/i },
-  { key: 'mbi', re: /(?<![a-z])(?:medicare\s*(?:number|no\.?|#|id|claim\s*number)|mbi)(?![a-z])/i, ok: null },
-  { key: 'memberId', re: /(?<![a-z])(?:member\s*(?:identification|id|#|no\.?|number)|subscriber\s*(?:id|#|no\.?|number)|identification\s*(?:no\.?|number|#)|id\s*(?:no\.?|number|#))(?![a-z]{2})/i, ok: /^(?=.*\d)[A-Z0-9-]{5,20}$/ },
-  { key: 'group', re: /(?<![a-z])(?:group|grp)(?:\s*(?:number|no\.?|#|id)(?![a-z]))?/i, ok: /^(?=.*\d)[A-Z0-9-]{3,15}$/ },
+  { key: 'rxBin', skip: true, src: '(?<![a-z])(?:rx?\\s*bin|bin(?![a-z]))(?:\\s*(?:#|no\\.?|number)(?![a-z]))?' },
+  { key: 'rxPcn', skip: true, src: '(?<![a-z])(?:rx?\\s*pcn|pcn(?![a-z]))(?:\\s*(?:#|no\\.?)(?![a-z]))?' },
+  { key: 'rxGrp', skip: true, src: '(?<![a-z])rx\\s*(?:grp|group)(?:\\s*(?:#|no\\.?|number)(?![a-z]))?' },
+  { key: 'payerId', skip: true, src: '(?<![a-z])payer\\s*(?:id|#)(?![a-z])' },
+  { key: 'mbi', src: '(?<![a-z])(?:medicare\\s*(?:number|no\\.?|#|id|claim\\s*number)|mbi)(?![a-z])', ok: null },
+  { key: 'memberId', src: '(?<![a-z])(?:member\\s*(?:identification|id|#|no\\.?|number)|subscriber\\s*(?:id|#|no\\.?|number)|identification\\s*(?:no\\.?|number|#)|id\\s*(?:no\\.?|number|#))(?![a-z]{2})', ok: /^(?=.*\d)[A-Z0-9-]{5,20}$/ },
+  { key: 'group', src: '(?<![a-z])(?:group|grp)(?:\\s*(?:number|no\\.?|#|id)(?![a-z]))?', ok: /^(?=.*\d)[A-Z0-9-]{3,15}$/ },
 ];
+var INTAKE_CARD_ADVANTAGE_SRC = 'medicare\\s*advantage|(?<![a-z])(?:hmo|ppo|pffs|d-?snp)(?![a-z])|part\\s*c(?![a-z])|gold\\s*plus';
+// {labels, advantage} once compiled; false when this browser cannot compile them.
+var INTAKE_CARD_RX = null;
+/** The compiled card patterns, or false where the browser has no regex
+ *  lookbehind — the card reader then says so, and the rest of Intake works. */
+function intakeCardRx_() {
+  if (INTAKE_CARD_RX === null) {
+    try {
+      INTAKE_CARD_RX = {
+        labels: INTAKE_CARD_LABELS.map(function (L) { return { key: L.key, skip: !!L.skip, ok: L.ok, re: new RegExp(L.src, 'gi') }; }),
+        advantage: new RegExp(INTAKE_CARD_ADVANTAGE_SRC, 'i'),
+      };
+    } catch (e) { INTAKE_CARD_RX = false; }
+  }
+  return INTAKE_CARD_RX;
+}
 // Words a value can run into when the reader drops a space ("X1234005CMS").
 var INTAKE_CARD_TAIL_WORDS = ['CMS', 'RXBIN', 'RXPCN', 'RXGRP', 'BIN', 'PCN', 'RX', 'PLAN', 'ISSUER', 'PAYER', 'PCP', 'EFF'];
 // Payers a rep will see on a card, matched with the spaces taken out; the
@@ -3441,6 +3468,8 @@ var INTAKE_CARD_SURE = 0.8;
  *  own characters (I3a). */
 function intakeCardParse_(rows) {
   var out = { payer: '', memberId: '', group: '', mbi: '', advantage: false, unsure: {} };
+  var rx = intakeCardRx_();
+  if (!rx) return out;   // F67: no lookbehind in this browser — intakeCardRead_ has already said so
   rows = rows || [];
   var rowText = function (r) { return r.items.map(function (i) { return i.text; }).join('  '); };
   var probsOf = function (it) { return it.probs || it.text.split('').map(function () { return 1; }); };
@@ -3464,8 +3493,9 @@ function intakeCardParse_(rows) {
   rows.forEach(function (row, ri) {
     var text = rowText(row), probs = rowProbs(row);
     var hits = [];
-    INTAKE_CARD_LABELS.forEach(function (L) {
-      var re = new RegExp(L.re.source, 'gi'), m;
+    rx.labels.forEach(function (L) {
+      var re = L.re, m;
+      re.lastIndex = 0;
       while ((m = re.exec(text))) {
         if (!m[0]) { re.lastIndex++; continue; }
         if (hits.some(function (h) { return m.index < h.end && m.index + m[0].length > h.start; })) continue;
@@ -3506,7 +3536,7 @@ function intakeCardParse_(rows) {
       }
     });
   });
-  out.advantage = /medicare\s*advantage|(?<![a-z])(?:hmo|ppo|pffs|d-?snp)(?![a-z])|part\s*c(?![a-z])|gold\s*plus/i.test(all);
+  out.advantage = rx.advantage.test(all);
   var flat = function (s) { return s.toLowerCase().replace(/[^a-z&]/g, ''); };
   for (var r = 0; r < rows.length && !out.payer; r++) {
     for (var i = 0; i < rows[r].items.length && !out.payer; i++) {
@@ -3540,6 +3570,78 @@ function intakeCardMerge_(a, b) {
   if (out.advantage) { out.mbi = ''; delete out.unsure.mbi; }
   return out;
 }
+/** PURE — the known payers a payer line names (matched with the spaces out). */
+function intakeCardPayerKeys_(payer) {
+  var f = String(payer || '').toLowerCase().replace(/[^a-z&]/g, '');
+  return INTAKE_CARD_PAYERS.filter(function (p) { return f.indexOf(p) >= 0; });
+}
+/** PURE (Node-pinned) — F21 (cycle 26): how one image's read relates to a card
+ *  built so far. 'conflict' — they are different cards: a different member ID,
+ *  Medicare ID, group or payer; a Medicare card against a plan's card.
+ *  'match' — a value they both carry is the same. 'none' — nothing to tell
+ *  them by (a back that carries only a phone number). Two payer lines are the
+ *  same payer when they name a known payer in common ("Aetna" / "Aetna
+ *  Medicare"); a line naming none is compared as written. An Advantage read
+ *  with NO value of its own is not a card of its own: it stays 'none', joins
+ *  the card before it, and the merge voids that card's MBI as it always has —
+ *  withholding a Medicare ID is the safe side of that doubt. */
+function intakeCardRel_(a, b) {
+  a = a || {}; b = b || {};
+  var own = function (f) { return !!(f.payer || f.memberId || f.group); };
+  if ((a.mbi && b.advantage && own(b)) || (b.mbi && a.advantage && own(a))) return 'conflict';
+  if ((a.mbi && !a.memberId && b.memberId && !b.mbi) || (b.mbi && !b.memberId && a.memberId && !a.mbi)) return 'conflict';
+  var match = false, ids = ['memberId', 'mbi', 'group'];
+  for (var i = 0; i < ids.length; i++) {
+    var x = String(a[ids[i]] || '').toUpperCase(), y = String(b[ids[i]] || '').toUpperCase();
+    if (!x || !y) continue;
+    if (x !== y) return 'conflict';
+    match = true;
+  }
+  if (a.payer && b.payer) {
+    var ka = intakeCardPayerKeys_(a.payer), kb = intakeCardPayerKeys_(b.payer);
+    var flat = function (v) { return String(v).toLowerCase().replace(/[^a-z0-9&]/g, ''); };
+    var same = (ka.length && kb.length) ? ka.some(function (k) { return kb.indexOf(k) >= 0; }) : flat(a.payer) === flat(b.payer);
+    if (!same) return 'conflict';
+    match = true;
+  }
+  return match ? 'match' : 'none';
+}
+/** PURE (Node-pinned) — F21: the attached images' reads (in image order; null
+ *  for one that could not be read) as CARDS — [{fields, images: [1-based]}].
+ *  The reads were merged as if every image were one card, first value found
+ *  per field: a Humana card and an Aetna card gave "Humana · ID H123 · Group
+ *  555" — Humana's ID with Aetna's group — and any plan card voided the real
+ *  Medicare card's MBI. A read joins the newest card it MATCHES; one with
+ *  nothing to tell it by goes with the card the image BEFORE it went to (a
+ *  front, then its back); anything else starts a card. Within a card the
+ *  front/back merge is unchanged. */
+function intakeCardGroup_(reads) {
+  var cards = [], prev = -1;   // prev: the card the last readable image joined
+  (reads || []).forEach(function (rd, i) {
+    if (!rd) return;
+    var target = -1;
+    for (var c = cards.length - 1; c >= 0 && target < 0; c--) if (intakeCardRel_(cards[c].fields, rd) === 'match') target = c;
+    if (target < 0 && prev >= 0 && intakeCardRel_(cards[prev].fields, rd) === 'none') target = prev;
+    if (target < 0) { cards.push({ fields: rd, images: [i + 1] }); target = cards.length - 1; }
+    else { cards[target].fields = intakeCardMerge_(cards[target].fields, rd); cards[target].images.push(i + 1); }
+    prev = target;
+  });
+  return cards;
+}
+/** PURE — does a card's read hold anything to offer? */
+function intakeCardHasValue_(f) {
+  return !!f && INTAKE_CARD_FIELDS.some(function (p) { return f[p[0]]; });
+}
+/** The cards a stored suggestion still offers: not yet used, and — when there
+ *  is more than one — holding a value. (`fields` alone is the shape a
+ *  suggestion had before F21.) Each keeps its index in the stored list. */
+function intakeCardOffered_(st) {
+  var all = (st && Array.isArray(st.cards)) ? st.cards : ((st && st.fields) ? (st.cards = [{ fields: st.fields, images: [] }]) : []);
+  var live = [];
+  all.forEach(function (c, n) { if (c && !c.used) live.push({ n: n, card: c }); });
+  var withValue = live.filter(function (x) { return intakeCardHasValue_(x.card.fields); });
+  return (live.length > 1 && withValue.length) ? withValue : live;
+}
 /** PURE (Node-pinned) — the one insurance line the form's field holds:
  *  "Medicare 1EG4TE5MK72" (I1 tidies it to "Medicare · 1EG4-TE5-MK72"), or
  *  "Payer · ID … · Group …". */
@@ -3564,29 +3666,31 @@ function intakeCardRead_(form) {
   // the form's current one — never a node captured before the wait (g147).
   var live = function () { return INTAKE_CARD_SEQ[form] === seq ? intakeCardHost_(form) : null; };
   var status = function (msg) { var host = live(); if (host) host.innerHTML = '<p class="intk-card-status" role="status">' + icon('refresh', 13) + '<span>' + esc(msg) + '</span></p>'; };
-  var fail = function (msg) {
+  var fail = function (msg, noRetry) {
     var host = live();
     if (!host) return;
     // No image or typed text rides this message (g146) — and it says what failed.
     host.innerHTML = '<p class="intk-card-status intk-card-fail" role="status">' + icon('warning', 13) + '<span>' + esc(msg) + '</span>' +
-      '<button type="button" class="intk-btn intk-card-retry">' + esc(es ? 'Intentar de nuevo' : 'Try again') + '</button></p>';
+      (noRetry ? '' : '<button type="button" class="intk-btn intk-card-retry">' + esc(es ? 'Intentar de nuevo' : 'Try again') + '</button>') + '</p>';
     var b = host.querySelector('.intk-card-retry');
     if (b) b.addEventListener('click', function () { intakeCardRead_(form); });
   };
+  // F67: a browser that cannot compile the card patterns is told before the
+  // 30 MB reader is fetched — "in this browser" is the right source here (g142).
+  if (!intakeCardRx_()) { fail(intakeOcrFailText_('start', es), true); return; }
   status(INTAKE_OCR.state === 'ready' || window.INTAKE_OCR_ENGINE ? (es ? 'Leyendo la tarjeta…' : 'Reading the card…')
     : (es ? 'Cargando el lector (unos 30 MB la primera vez)…' : 'Loading the card reader (about 30 MB the first time)…'));
   var images = imgs.slice();
   intakeOcrEngine_().then(function (engine) {
-    var merged = null, failed = [], i = 0;
+    var reads = [], failed = [], i = 0;
     var next = function () {
       if (INTAKE_CARD_SEQ[form] !== seq) return null;
-      if (i >= images.length) return { fields: merged, failed: failed, total: images.length };
+      if (i >= images.length) return { cards: intakeCardGroup_(reads), failed: failed, total: images.length };   // F21: per card, not one merge
       status((es ? 'Leyendo la imagen ' : 'Reading image ') + (i + 1) + (es ? ' de ' : ' of ') + images.length + '…');
       var n = i + 1;
       return intakeCardImage_(images[i]).then(function (img) { return engine.read(img); }).then(function (lines) {
-        var f = intakeCardParse_(intakeCardRows_(lines));
-        merged = merged ? intakeCardMerge_(merged, f) : f;
-      }, function () { failed.push(n); }).then(function () { i++; return next(); });
+        reads[n - 1] = intakeCardParse_(intakeCardRows_(lines));
+      }, function () { reads[n - 1] = null; failed.push(n); }).then(function () { i++; return next(); });
     };
     return next();
   }, function (e) { return { engineFailed: true, kind: (e && e.kind) || 'start', file: (e && e.file) || '' }; }).then(function (res) {
@@ -3600,12 +3704,12 @@ function intakeCardRead_(form) {
       if (res.kind === 'checksum' && typeof errBeaconSend_ === 'function') errBeaconSend_(intakeOcrBeaconText_(res.kind, res.file), '', 'errorState');
       return;
     }
-    if (!res.fields) {
+    if (!res.cards.length) {
       fail(res.total === 1 ? (es ? 'La imagen no se pudo leer — pruebe con una foto más clara, o escriba los datos.' : 'The image could not be read — try a clearer photo, or type the details.')
         : (es ? 'Ninguna de las imágenes se pudo leer — pruebe con fotos más claras, o escriba los datos.' : 'None of the images could be read — try clearer photos, or type the details.'));
       return;
     }
-    INTAKE_CARD[form] = { fields: res.fields, failed: res.failed };
+    INTAKE_CARD[form] = { cards: res.cards, failed: res.failed };
     intakeCardPanel_(form);
   }).catch(function () {
     fail(intakeOcrFailText_('start', es));   // fail() paints only while this read is still current
@@ -3615,41 +3719,64 @@ function intakeCardImage_(src) {
   return new Promise(function (ok, no) { var i = new Image(); i.onload = function () { ok(i); }; i.onerror = function () { no(new Error('image')); }; i.src = src; });
 }
 /** The suggestion: each value in a box the rep can correct, the line it makes,
- *  and Use as primary / secondary. Nothing reaches the form until then. */
+ *  and Use as primary / secondary. Nothing reaches the form until then.
+ *  F21: one section PER CARD — two cards are two suggestions, each with its
+ *  own line and its own buttons; using one leaves the other offered. */
 function intakeCardPanel_(form) {
   var host = intakeCardHost_(form);   // F20: this form's host, or nothing
   var st = INTAKE_CARD[form];
   if (!host || !st) return;
   var es = INTAKE_STATE[form].lang === 'ES';
-  var f = st.fields;
-  var shown = INTAKE_CARD_FIELDS.filter(function (p) { return p[0] !== 'mbi' || f.mbi || !f.memberId; });
-  var any = INTAKE_CARD_FIELDS.some(function (p) { return f[p[0]]; });
-  var unsure = f.unsure || (f.unsure = {});
+  var offered = intakeCardOffered_(st);
+  var several = offered.length > 1;
+  var any = offered.some(function (x) { return intakeCardHasValue_(x.card.fields); });
   var failedNote = (st.failed || []).length ? '<p class="intk-card-status intk-card-fail" role="status">' + icon('warning', 13) + '<span>' + esc((es ? 'No se pudo leer: imagen ' : 'Could not read image ') + st.failed.join(', ') +
     (es ? ' — los datos vienen de las demás.' : ' — what is shown comes from the others.')) + '</span></p>' : '';
+  var dismiss = '<button type="button" class="intk-btn" data-card-close="1">' + esc(es ? 'Cerrar' : 'Dismiss') + '</button>';
+  var section = function (x, pos) {
+    var f = x.card.fields, unsure = f.unsure || (f.unsure = {});
+    var shown = INTAKE_CARD_FIELDS.filter(function (p) { return p[0] !== 'mbi' || f.mbi || !f.memberId; });
+    var imgs = x.card.images || [];
+    var name = (es ? 'Tarjeta ' : 'Card ') + (pos + 1);
+    var title = several ? '<div class="intk-card-which">' + esc(name + (imgs.length ? ' · ' + (es ? (imgs.length === 1 ? 'imagen ' : 'imágenes ') : (imgs.length === 1 ? 'image ' : 'images ')) + imgs.join(', ') : '')) + '</div>' : '';
+    return '<div class="intk-card-one" data-card-n="' + x.n + '"' + (several ? ' role="group" aria-label="' + esc(name) + '"' : '') + '>' + title +
+      '<div class="intk-card-grid">' + shown.map(function (p) {
+        var k = p[0], check = !!(f[k] && unsure[k]);
+        var chkId = 'intk-card-chk-' + (several ? x.n + '-' : '') + k;
+        // I3a: an empty box says it was not found; a value the reader was not
+        // sure of says to check it — a flag, never a percentage (the reader's
+        // scores are not odds, and a number invites trust).
+        return '<label class="intk-card-f' + (check ? ' intk-card-unsure' : '') + '"><span>' + esc(p[1]) + '</span>' +
+          '<input type="text" autocomplete="off" aria-label="' + esc(p[1] + (several ? ', ' + name : '')) + '" data-card-key="' + k + '" value="' + esc(f[k] || '') + '"' +
+            ' placeholder="' + esc(es ? 'No está en la tarjeta — escríbalo' : 'Not found on the card — type it') + '"' + (check ? ' aria-describedby="' + chkId + '"' : '') + '>' +
+          (check ? '<span class="intk-card-chk" id="' + chkId + '">' + icon('warning', 11) + ' ' + esc(es ? 'Revise este' : 'Check this one') + '</span>' : '') + '</label>';
+      }).join('') + '</div>' +
+      '<p class="intk-card-line"><span>' + esc(es ? 'Se escribirá:' : 'Will be written as:') + '</span> <b data-card-line>' + esc(intakeCardLine_(f)) + '</b></p>' +
+      '<div class="intk-card-acts"><button type="button" class="intk-btn primary" data-card-use="8">' + esc(es ? 'Usar como seguro primario' : 'Use as primary insurance') + '</button>' +
+        '<button type="button" class="intk-btn" data-card-use="9">' + esc(es ? 'Usar como seguro secundario' : 'Use as secondary insurance') + '</button>' +
+        (several ? '' : dismiss) + '</div>' +
+    '</div>';
+  };
+  var head = !any ? (es ? 'No se encontraron datos del seguro en las imágenes — escríbalos en el formulario.' : 'No insurance details were found in the images — type them on the form.')
+    : several ? (es ? 'Se leyeron ' + offered.length + ' tarjetas — compare cada dato con su tarjeta' : 'Read from ' + offered.length + ' cards — check each value against its card')
+    : (es ? 'Leído de la tarjeta — compare cada dato con la tarjeta' : 'Read from the card — check each value against the card');
   host.innerHTML = '<div class="intk-card-panel" role="group" aria-label="' + esc(es ? 'Datos leídos de la tarjeta' : 'Details read from the card') + '">' +
-    '<div class="intk-card-head">' + icon('fileText', 14) + ' ' + esc(any ? (es ? 'Leído de la tarjeta — compare cada dato con la tarjeta' : 'Read from the card — check each value against the card')
-      : (es ? 'No se encontraron datos del seguro en las imágenes — escríbalos en el formulario.' : 'No insurance details were found in the images — type them on the form.')) + '</div>' +
+    '<div class="intk-card-head">' + icon('fileText', 14) + ' ' + esc(head) + '</div>' +
     failedNote +
-    (any ? '<div class="intk-card-grid">' + shown.map(function (p) {
-      var k = p[0], check = !!(f[k] && unsure[k]);
-      // I3a: an empty box says it was not found; a value the reader was not
-      // sure of says to check it — a flag, never a percentage (the reader's
-      // scores are not odds, and a number invites trust).
-      return '<label class="intk-card-f' + (check ? ' intk-card-unsure' : '') + '"><span>' + esc(p[1]) + '</span>' +
-        '<input type="text" autocomplete="off" aria-label="' + esc(p[1]) + '" data-card-key="' + k + '" value="' + esc(f[k] || '') + '"' +
-          ' placeholder="' + esc(es ? 'No está en la tarjeta — escríbalo' : 'Not found on the card — type it') + '"' + (check ? ' aria-describedby="intk-card-chk-' + k + '"' : '') + '>' +
-        (check ? '<span class="intk-card-chk" id="intk-card-chk-' + k + '">' + icon('warning', 11) + ' ' + esc(es ? 'Revise este' : 'Check this one') + '</span>' : '') + '</label>';
-    }).join('') + '</div>' +
-    '<p class="intk-card-line"><span>' + esc(es ? 'Se escribirá:' : 'Will be written as:') + '</span> <b data-card-line>' + esc(intakeCardLine_(f)) + '</b></p>' +
-    '<div class="intk-card-acts"><button type="button" class="intk-btn primary" data-card-use="8">' + esc(es ? 'Usar como seguro primario' : 'Use as primary insurance') + '</button>' +
-      '<button type="button" class="intk-btn" data-card-use="9">' + esc(es ? 'Usar como seguro secundario' : 'Use as secondary insurance') + '</button>' : '<div class="intk-card-acts">') +
-      '<button type="button" class="intk-btn" data-card-close="1">' + esc(es ? 'Cerrar' : 'Dismiss') + '</button></div>' +
+    (any ? offered.map(section).join('') + (several ? '<div class="intk-card-acts">' + dismiss + '</div>' : '')
+      : '<div class="intk-card-acts">' + dismiss + '</div>') +
     '<p class="intk-card-note">' + esc(es ? 'Leído en este navegador — las imágenes no se envían a ningún lugar para leerlas.' : 'Read in this browser — the images are not sent anywhere to be read.') + '</p>' +
   '</div>';
+  var cardOf = function (el) {
+    var sec = el && el.closest ? el.closest('[data-card-n]') : null;
+    var n = sec ? parseInt(sec.getAttribute('data-card-n'), 10) : -1;
+    return (sec && st.cards && st.cards[n]) ? { n: n, sec: sec, f: st.cards[n].fields } : null;
+  };
   host.oninput = function (e) {
     var k = e.target && e.target.getAttribute('data-card-key');
-    if (!k) return;
+    var c = k ? cardOf(e.target) : null;
+    if (!c) return;
+    var f = c.f, unsure = f.unsure || (f.unsure = {});
     f[k] = String(e.target.value || '').trim();
     if (unsure[k]) {   // the rep has looked at it: the flag goes
       delete unsure[k];
@@ -3658,7 +3785,7 @@ function intakeCardPanel_(form) {
       if (chk) chk.remove();
       e.target.removeAttribute('aria-describedby');
     }
-    var line = host.querySelector('[data-card-line]');
+    var line = c.sec.querySelector('[data-card-line]');
     if (line) line.textContent = intakeCardLine_(f);
   };
   host.onclick = function (e) {
@@ -3666,27 +3793,45 @@ function intakeCardPanel_(form) {
     if (!t) return;
     if (t.hasAttribute('data-card-close')) { delete INTAKE_CARD[form]; host.innerHTML = ''; intakeRenderGallery_(form); return; }
     var idx = t.getAttribute('data-card-use');
-    if (idx) intakeCardUse_(form, parseInt(idx, 10));
+    var c = idx ? cardOf(t) : null;
+    if (c) intakeCardUse_(form, parseInt(idx, 10), c.n);
   };
 }
-/** Write the line into the primary (8) or secondary (9) insurance field —
+/** Write card `n`'s line into the primary (8) or secondary (9) insurance field —
  *  asking first when that field already holds something — then let I1 tidy
- *  and check it and the draft save it. */
-function intakeCardUse_(form, idx) {
+ *  and check it and the draft save it. F21: the other cards stay offered. */
+function intakeCardUse_(form, idx, n) {
   var st = INTAKE_CARD[form];
-  var el = document.querySelector('#intk-' + form + '-form [data-intk-idx="' + idx + '"]');
+  var sel = '#intk-' + form + '-form [data-intk-idx="' + idx + '"]';
+  var el = document.querySelector(sel);
   if (!st || !el) return;
-  var line = intakeCardLine_(st.fields);
+  intakeCardOffered_(st);   // (a suggestion stored before F21 gains its one card)
+  var card = st.cards && st.cards[n == null ? 0 : n];
+  if (!card || card.used) return;
+  var line = intakeCardLine_(card.fields);
   if (!line) return;
   var go = function () {
+    // The suggestion this press was made on — a form reset or a new read while
+    // "Replace?" was open has replaced it, and its line is not this form's
+    // (g147). The field is looked up again: the form may have been redrawn.
+    el = document.querySelector(sel);
+    if (INTAKE_CARD[form] !== st || !el) return;
     el.value = line;
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
-    delete INTAKE_CARD[form];
+    card.used = idx;
+    var left = intakeCardOffered_(st).filter(function (x) { return intakeCardHasValue_(x.card.fields); });
     var host = intakeCardHost_(form);
-    if (host) host.innerHTML = '';
-    intakeRenderGallery_(form);
-    showToast((idx === 8 ? 'Primary' : 'Secondary') + ' insurance filled from the card — check it.', 'toast-success');
+    if (left.length) {
+      intakeCardPanel_(form);   // the cards not used yet, with whatever the rep corrected in them
+      var nextBtn = host && host.querySelector('[data-card-use]');
+      if (nextBtn) { try { nextBtn.focus(); } catch (_) {} }
+    } else {
+      delete INTAKE_CARD[form];
+      if (host) host.innerHTML = '';
+      intakeRenderGallery_(form);
+    }
+    showToast((idx === 8 ? 'Primary' : 'Secondary') + ' insurance filled from the card — check it.' + (left.length ? ' ' + left.length + ' more card' + (left.length === 1 ? ' is' : 's are') + ' still offered.' : ''), 'toast-success');
   };
   var cur = String(el.value || '').trim();
   if (!cur || cur === line) { go(); return; }

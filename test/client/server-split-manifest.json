@@ -4887,6 +4887,20 @@
     "scratchpadPageOp"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-20",
+   "why": "cycle 26 Batch 13 F22: intakeFeedbackCaller_ — the feedback endpoint takes a roster employee or any org sign-in",
+   "added": [
+    "intakeFeedbackCaller_"
+   ],
+   "removed": [],
+   "changed": [
+    "doGet",
+    "getStorageHealth",
+    "submitIntakeFeedback"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -10004,7 +10018,7 @@
   "doGet": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "ae489826773c9785"
+   "sha": "8af7e5ff7e169f3f"
   },
   "drAddThreadId_": {
    "file": "50_deptrequests.js",
@@ -11814,7 +11828,7 @@
   "getStorageHealth": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "febb457dc94c0fb3"
+   "sha": "257396011dcbcccf"
   },
   "getTeamCalendar": {
    "file": "20_timeclock.js",
@@ -12170,6 +12184,11 @@
    "file": "60_intake.js",
    "kind": "function",
    "sha": "e75df115ba3742a1"
+  },
+  "intakeFeedbackCaller_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "dca75c8b8065f7c3"
   },
   "intakeFeedbackCtaHtml_": {
    "file": "60_intake.js",
@@ -15619,7 +15638,7 @@
   "submitIntakeFeedback": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "6e6116eed1d1fc80"
+   "sha": "66cd64a44768eb72"
   },
   "submitPunchAdjustRequests": {
    "file": "20_timeclock.js",

@@ -16652,3 +16652,110 @@ test('FU3 DOM: unsaved Scratchpad text whose 24-hour browser copy has expired is
   h4.read('cnScratchBootNotice_')();
   assert.ok(!said(h4) && stickies(h4).some((t) => /open it to keep it/.test(t)) && h4.window.localStorage.getItem(KEY) !== null);
 });
+
+section('DOM harness — cycle 26 Batch 13 (F21, F67)');
+
+test('F21 DOM (cycle 26): two cards attached are TWO suggestions — each with its own boxes, line and buttons; a correction in one leaves the other alone; using one keeps the other offered; a Medicare card beside a plan card keeps its MBI; a suggestion replaced while "Replace?" is open writes nothing (driven, reader stood in)', async () => {
+  const { h, field } = bootAcct('pmd');
+  const lines = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '..', 'i3-card-lines.json'), 'utf8'));
+  const host = () => h.$('#intk-card-read');
+  const settle = async () => { for (let i = 0; i < 10; i++) await tick(); };
+  const bySrc = { 'data:image/png;base64,HUM1': 'c-humana/clean', 'data:image/png;base64,UHC1': 'c-uhc/clean', 'data:image/png;base64,HUM2': 'c-humana/phone', 'data:image/png;base64,MED1': 'c-medicare/clean' };
+  h.window.INTAKE_OCR_ENGINE = { read: (img) => Promise.resolve(lines[bySrc[img.src]] || []) };
+  h.read('intakeCardImage_ = function (src) { return Promise.resolve({ src: src }); }');
+  const attach = async (names) => {
+    h.window.__imgs = names.map((n) => 'data:image/png;base64,' + n);
+    h.read('INTAKE_STATE.pmd.images = window.__imgs.slice()');
+    h.read('intakeRenderGallery_')('pmd');
+    host().querySelector('[data-card-read]').click();
+    await settle();
+  };
+  const secs = () => Array.from(host().querySelectorAll('.intk-card-one'));
+  const lineOf = (s) => s.querySelector('[data-card-line]').textContent;
+  await attach(['HUM1', 'UHC1', 'HUM2']);
+  assert.strictEqual(secs().length, 2, 'THE REGRESSION: three images of two cards were one suggestion');
+  assert.deepStrictEqual(secs().map(lineOf), ['Humana Gold Plus (HMO) · ID H71938642 · Group X1234005', 'UnitedHealthcare · ID 912345678 · Group 0701234'], 'each card its own line — no ID beside another card\'s group');
+  assert.deepStrictEqual(secs().map((s) => s.querySelector('.intk-card-which').textContent), ['Card 1 · images 1, 3', 'Card 2 · image 2'], 'each says which images it was read from');
+  assert.ok(/Read from 2 cards — check each value against its card/.test(host().textContent));
+  assert.strictEqual(host().querySelectorAll('[data-card-use="8"]').length, 2, 'each card has its own buttons');
+  assert.strictEqual(host().querySelectorAll('[data-card-close]').length, 1, 'one Dismiss, for the panel');
+  const labels = Array.from(host().querySelectorAll('[data-card-key="memberId"]')).map((i) => i.getAttribute('aria-label'));
+  assert.deepStrictEqual(labels, ['Member ID, Card 1', 'Member ID, Card 2'], 'a screen reader hears which card a box belongs to');
+  // A correction in card 2 changes card 2's line only.
+  const payer2 = secs()[1].querySelector('[data-card-key="payer"]');
+  payer2.value = 'UHC';
+  payer2.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.deepStrictEqual(secs().map(lineOf), ['Humana Gold Plus (HMO) · ID H71938642 · Group X1234005', 'UHC · ID 912345678 · Group 0701234']);
+  // Use card 1 as primary: written, and card 2 is still offered — with the correction.
+  secs()[0].querySelector('[data-card-use="8"]').click();
+  await tick();
+  assert.strictEqual(field(8).value, 'Humana Gold Plus (HMO) · ID H71938642 · Group X1234005');
+  assert.strictEqual(secs().length, 1, 'the card not used yet stays');
+  assert.strictEqual(lineOf(secs()[0]), 'UHC · ID 912345678 · Group 0701234', 'what the rep corrected in it is kept');
+  assert.ok(secs()[0].querySelector('[data-card-close]') && !host().querySelector('[data-card-read]'), 'the panel is still the suggestion');
+  secs()[0].querySelector('[data-card-use="9"]').click();
+  await tick();
+  assert.strictEqual(field(9).value, 'UHC · ID 912345678 · Group 0701234', 'the second card, into the secondary insurance');
+  assert.ok(!host().querySelector('.intk-card-panel') && host().querySelector('[data-card-read]') && h.read('INTAKE_CARD.pmd') === undefined, 'nothing left to offer: the panel closes');
+  // The Medicare card beside the plan card: both offered, the MBI kept.
+  field(8).value = ''; field(9).value = '';
+  await attach(['MED1', 'HUM1']);
+  assert.deepStrictEqual(secs().map(lineOf), ['Medicare 1EG4TE5MK72', 'Humana Gold Plus (HMO) · ID H71938642 · Group X1234005'], 'THE REGRESSION: the plan card voided the Medicare card\'s MBI');
+  assert.ok(secs()[0].querySelector('[data-card-key="mbi"]') && !secs()[1].querySelector('[data-card-key="mbi"]'), 'the Medicare ID box is the Medicare card\'s');
+  // "Replace?" is open and a NEW read replaces the suggestion; then the answer arrives.
+  field(8).value = 'Typed by hand';
+  let answer;
+  h.window.uiConfirm = () => new Promise((res) => { answer = res; });
+  h.read('uiConfirm = window.uiConfirm');
+  secs()[0].querySelector('[data-card-use="8"]').click();
+  await tick();
+  assert.strictEqual(typeof answer, 'function', 'asked before replacing');
+  h.read('INTAKE_CARD.pmd = { cards: [{ fields: { payer: "Cigna", memberId: "U1234567" }, images: [1] }], failed: [] }');
+  answer(true);
+  await tick(); await tick();
+  assert.strictEqual(field(8).value, 'Typed by hand', 'a line from a suggestion that is no longer this form\'s is not written');
+  assert.strictEqual(h.read('INTAKE_CARD.pmd.cards[0].used'), undefined, 'and the suggestion that replaced it is untouched');
+  // "Replace?" is open and the form is redrawn (same patient, same suggestion): the line goes to the field now on the page.
+  h.read('intakeCardPanel_')('pmd');
+  host().querySelector('[data-card-use="8"]').click();
+  await tick();
+  const area = h.$('#intk-test-area');
+  h.window.intakeEnterAcct_('pmd', 'PMD Account', area);
+  const liveField = () => h.$('#intk-pmd-form [data-intk-idx="8"]');
+  assert.notStrictEqual(liveField(), field(8), 'the form was redrawn');
+  answer(true);
+  await tick(); await tick();
+  assert.strictEqual(liveField().value, 'Cigna · ID U1234567', 'written into the field that is on the page, not the one that was replaced');
+  delete h.window.INTAKE_OCR_ENGINE;
+});
+
+test('F67 DOM (cycle 26): in a browser that cannot compile the card patterns, Read the insurance details says it cannot be read in this browser — before the reader is fetched, with no Try again — and the form still works (driven)', async () => {
+  const { h, field } = bootAcct('pmd');
+  const host = () => h.$('#intk-card-read');
+  let engine = 0, reads = 0;
+  h.window.INTAKE_OCR_ENGINE = { read: () => { reads++; return Promise.resolve([]); } };
+  h.window.__engineCalls = 0;
+  h.read('window.__eng = intakeOcrEngine_; intakeOcrEngine_ = function () { window.__engineCalls++; return window.__eng(); }');
+  h.read('intakeCardImage_ = function () { return Promise.resolve({}); }');
+  h.read('INTAKE_CARD_RX = false');   // what intakeCardRx_ keeps where new RegExp threw
+  h.read('INTAKE_STATE.pmd.images.push("data:image/png;base64,AAAA")');
+  h.read('intakeRenderGallery_')('pmd');
+  host().querySelector('[data-card-read]').click();
+  for (let i = 0; i < 8; i++) await tick();
+  engine = h.window.__engineCalls;
+  assert.ok(/could not be read in this browser — type the insurance details instead/.test(host().textContent), 'the right source: this browser');
+  assert.ok(!host().querySelector('.intk-card-retry'), 'no Try again — a second press would do the same');
+  assert.deepStrictEqual([engine, reads], [0, 0], 'the reader is neither fetched nor run');
+  assert.strictEqual(h.read('INTAKE_CARD.pmd'), undefined, 'nothing is offered');
+  field(8).value = 'Aetna · ID W123456789';
+  field(8).dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.strictEqual(field(8).value, 'Aetna · ID W123456789', 'the form itself is unaffected');
+  // With the patterns compiled, the same press reads.
+  h.read('INTAKE_CARD_RX = null');
+  h.read('intakeRenderGallery_')('pmd');
+  host().querySelector('[data-card-read]').click();
+  for (let i = 0; i < 8; i++) await tick();
+  assert.strictEqual(reads, 1, 'a browser that can compile them reads as before');
+  h.read('intakeOcrEngine_ = window.__eng');
+  delete h.window.INTAKE_OCR_ENGINE;
+});

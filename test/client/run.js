@@ -10505,8 +10505,8 @@ test('intake feedback loop: gated writer, existence check, PHI-free audit, CTA o
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   const code = serverSource();
   const w = nc(extractRawFunction('Code.js', 'submitIntakeFeedback'));
-  assert.ok(/getEmployeeInfo_\(\)/.test(w) && /Not authorized/.test(w),
-    'the writer requires a registered employee — the page only collects text');
+  assert.ok(/intakeFeedbackCaller_\(getEmployeeInfo_\(\), active\)/.test(w) && /Not authorized/.test(w) && w.indexOf('intakeFeedbackCaller_(') < w.indexOf('waitLock('),
+    'the writer identifies its caller — a roster employee or an org sign-in (cycle 26 F22) — before the lock; the page only collects text');
   assert.ok(/INTAKE_FORM_TYPES_\.indexOf\(ft\) < 0/.test(w) && /INTAKE_FEEDBACK_MAX_CHARS/.test(w),
     'form type whitelisted + text bounded');
   const existAt = w.indexOf('Submission not found');
@@ -10519,8 +10519,8 @@ test('intake feedback loop: gated writer, existence check, PHI-free audit, CTA o
   // assert the feedback text variable never enters it (a [^;]* scan stops at
   // the semicolon INSIDE the quoted string, which is how the first version of
   // this pin failed to bite).
-  const auditCall = w.slice(w.indexOf("writeAuditLog_(emp, 'IntakeFeedback'"), w.indexOf('emp.email);', w.indexOf("writeAuditLog_(emp, 'IntakeFeedback'")));
-  assert.ok(/'type=' \+ ft \+ '; submissionId=' \+ id,\s*$/.test(auditCall) && auditCall.indexOf('body') < 0,
+  const auditCall = w.slice(w.indexOf("writeAuditLog_(who, 'IntakeFeedback'"), w.indexOf('who.email);', w.indexOf("writeAuditLog_(who, 'IntakeFeedback'")));
+  assert.ok(/'type=' \+ ft \+ '; submissionId=' \+ id \+ \(who\.onRoster \? '' : '; sender not on the roster'\),\s*$/.test(auditCall) && auditCall.indexOf('body') < 0,
     'audit row is PHI-free — id + type only, never the feedback text');
   assert.ok(/lock\.waitLock\(15000\)/.test(w) && /finally \{ lock\.releaseLock\(\); \}/.test(nc(w)),
     'locked + finally-released (INV-01)');
@@ -38488,7 +38488,9 @@ test('F58 (cycle 25): every public endpoint that takes the lock checks its calle
   set.forEach((n) => {
     const ctx = vm.createContext({ String, Object, Array, Math, Number, JSON, Date,
       getEmployeeInfo_: () => null, canSeeQa_: () => false,
+      getActiveUserEmail_: () => '',   // cycle 26 F22: submitIntakeFeedback also takes an org sign-in — nobody is signed in here
       LockService: { getScriptLock: () => { throw new Error('LOCK TAKEN'); }, getUserLock: () => { throw new Error('LOCK TAKEN'); } } });
+    vm.runInContext(extractRawFunction('Code.js', 'intakeFeedbackCaller_'), ctx);
     vm.runInContext(extractRawFunction('Code.js', n), ctx);
     let r;
     try { r = ctx[n](); } catch (e) { threw.push(n + ': ' + e.message); return; }
@@ -46309,12 +46311,13 @@ test('I2 drafts: the saved drafts are their own ums… key read and written in t
 const i3Ctx_ = () => {
   const src = fs.readFileSync(path.join(PA_WEB, 'intake/script_intake.html'), 'utf8');
   const ctx = vm.createContext({ String, Number, Math, RegExp, Object, Array, JSON });
-  ['INTAKE_MBI_RE', 'INTAKE_CARD_LABELS', 'INTAKE_CARD_TAIL_WORDS', 'INTAKE_CARD_PAYERS', 'INTAKE_OCR_FILES', 'INTAKE_OCR_CDN', 'INTAKE_CARD_SURE'].forEach((n) => {
+  ['INTAKE_MBI_RE', 'INTAKE_CARD_LABELS', 'INTAKE_CARD_ADVANTAGE_SRC', 'INTAKE_CARD_RX', 'INTAKE_CARD_TAIL_WORDS', 'INTAKE_CARD_PAYERS', 'INTAKE_CARD_FIELDS', 'INTAKE_OCR_FILES', 'INTAKE_OCR_CDN', 'INTAKE_CARD_SURE'].forEach((n) => {
     const i = src.indexOf('var ' + n + ' = ');
     assert.ok(i >= 0, n);
     vm.runInContext(src.slice(i, src.indexOf(';\n', i) + 1), ctx);
   });
-  ['intakeCardRows_', 'intakeCardMbiIn_', 'intakeCardMbiAt_', 'intakeCardParse_', 'intakeCardMerge_', 'intakeCardLine_'].forEach((n) => vm.runInContext(extractFnFrom(src, n), ctx));
+  ['intakeCardRx_', 'intakeCardRows_', 'intakeCardMbiIn_', 'intakeCardMbiAt_', 'intakeCardParse_', 'intakeCardMerge_', 'intakeCardLine_',
+    'intakeCardPayerKeys_', 'intakeCardRel_', 'intakeCardGroup_', 'intakeCardHasValue_', 'intakeCardOffered_'].forEach((n) => vm.runInContext(extractFnFrom(src, n), ctx));
   return { ctx, src };
 };
 const i3Row_ = (...texts) => ({ items: texts.map((t, i) => ({ text: t, x: i * 300, w: 250 })) });
@@ -51587,6 +51590,210 @@ test('FU1: a leased save REFUSES to write once its lease is nearly over — it c
     const w = h.body.search(WRITE);
     assert.ok(at >= 0 && w >= 0 && at < w, h.name + ': checks its lease (' + at + ') before its first write (' + w + ')');
   });
+});
+
+// ── Cycle 26 Batch 13 (the /broad-scan of 2026-11-13): F21, F22, F23, F67 ────
+console.log('\nCycle 26 Batch 13 — Intake remainder: images are grouped into cards (F21), the feedback page takes any org sign-in (F22), the store\'s retention label (F23), no regex lookbehind in a literal (F67)');
+
+/** Every regex LITERAL in a client partial's scripts, as acorn tokenizes it:
+ *  [{file, pattern}], and the files it could read. A server scriptlet inside a
+ *  script stands for a value, and is read as one; a block that still will not
+ *  tokenize is listed apart rather than passed over. */
+const b13RegexLiterals_ = (files) => {
+  const acorn = require('acorn');
+  const out = { literals: [], parsed: [], skipped: [] };
+  files.forEach((file) => {
+    const html = fs.readFileSync(file, 'utf8');
+    const re = /<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g;
+    let m, n = 0;
+    while ((m = re.exec(html))) {
+      if (/^<script[^>]*\ssrc=/.test(m[0]) || !m[1].trim()) continue;
+      const found = [];
+      try {
+        acorn.parse(m[1].replace(/<\?[\s\S]*?\?>/g, 'null'), { ecmaVersion: 2022, sourceType: 'script', allowReturnOutsideFunction: true,
+          onToken: (t) => { if (t.type && t.type.label === 'regexp') found.push({ file: file, pattern: t.value.pattern }); } });
+      } catch (e) { out.skipped.push(path.basename(file) + ': ' + e.message); continue; }
+      out.literals = out.literals.concat(found);
+      n++;
+    }
+    if (n) out.parsed.push(file);
+  });
+  return out;
+};
+const b13Partials_ = () => {
+  const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).reduce((acc, e) =>
+    acc.concat(e.isDirectory() ? walk(path.join(dir, e.name)) : (/\.html$/.test(e.name) ? [path.join(dir, e.name)] : [])), []);
+  return walk(PA_WEB).concat(walk(path.join(PA_WEB, '..', 'handbook-app')));
+};
+
+test('F67 (cycle 26): no client partial holds a regex LITERAL with a lookbehind — one the browser cannot parse is an early error for its whole script, and Intake vanished on Safari older than 16.4 (derived over every partial, tokenized)', () => {
+  const tmp = path.join(require('os').tmpdir(), 'b13-lookbehind-' + process.pid + '.html');
+  fs.writeFileSync(tmp, '<script>var a = /(?<![a-z])bin/i, b = /x(?<=y)z/, c = "/(?<!not a literal)/", d = 4 / 2 / 1, e = <?!= JSON.stringify(x) ?>;</scr' + 'ipt>');
+  let probe;
+  try { probe = b13RegexLiterals_([tmp]); } finally { fs.unlinkSync(tmp); }
+  const behind = (l) => /\(\?<[=!]/.test(l.pattern);
+  assert.deepStrictEqual(probe.literals.filter(behind).map((l) => l.pattern), ['(?<![a-z])bin', 'x(?<=y)z'], 'the scan sees a lookbehind in a literal — and not one inside a string, or a division');
+  const got = b13RegexLiterals_(b13Partials_());
+  const intake = path.join(PA_WEB, 'intake', 'script_intake.html');
+  assert.ok(got.parsed.indexOf(intake) >= 0 && got.parsed.length >= 20, 'the intake partial and the rest were tokenized (' + got.parsed.length + ')');
+  assert.ok(got.literals.length >= 500, 'regex literals were found to check (' + got.literals.length + ')');
+  assert.deepStrictEqual(got.skipped, [], 'every script block was tokenized — the served pages\' scriptlets included');
+  assert.deepStrictEqual(got.literals.filter(behind).map((l) => path.basename(l.file) + ': /' + l.pattern + '/'), [],
+    'THE REGRESSION: a lookbehind in a regex literal — build it with new RegExp inside a try (intakeCardRx_)');
+});
+
+test('F67 (cycle 26): the card patterns are SOURCES compiled at first use — the same seven labels and the Advantage test; where the browser has no lookbehind the reader gets false, the parser returns nothing and throws nothing (driven)', () => {
+  const { ctx, src } = i3Ctx_();
+  const rx = ctx.intakeCardRx_();
+  assert.ok(rx && rx.labels.length === 7 && rx === ctx.intakeCardRx_(), 'compiled once');
+  assert.deepStrictEqual(i1J(rx.labels.map((L) => L.key)), ['rxBin', 'rxPcn', 'rxGrp', 'payerId', 'mbi', 'memberId', 'group'], 'the order is the precedence — Rx labels first, so "Rx Group" is not a group');
+  rx.labels.forEach((L, i) => {
+    assert.strictEqual(L.re.source, ctx.INTAKE_CARD_LABELS[i].src, L.key + ' compiles to its source');
+    assert.ok(L.re.global && L.re.ignoreCase && /^\(\?<!\[a-z\]\)/.test(L.re.source), L.key + ': global, case-blind, and not after a letter');
+  });
+  const hit = (key, text) => { const L = rx.labels.filter((x) => x.key === key)[0]; L.re.lastIndex = 0; return L.re.test(text); };
+  assert.ok(hit('rxBin', 'Rx BIN 610502') && !hit('rxBin', 'cabin 610502'), '"not after a letter" still holds');
+  assert.ok(hit('group', 'Group No. 028914') && !hit('group', 'subgroup 12'));
+  assert.ok(rx.advantage.test('Humana Gold Plus (HMO)') && rx.advantage.test('Medicare Advantage') && !rx.advantage.test('Shop online'), 'the Advantage test, compiled');
+  // A browser with no lookbehind: new RegExp throws on the source.
+  const old = i3Ctx_().ctx;
+  vm.runInContext('var RealRegExp = RegExp; RegExp = function (s, f) { if (/\\(\\?<[=!]/.test(String(s))) throw new SyntaxError("Invalid regular expression: invalid group specifier name"); return new RealRegExp(s, f); };', old);
+  assert.strictEqual(old.intakeCardRx_(), false, 'false, not a throw');
+  assert.strictEqual(old.intakeCardRx_(), false, 'and kept — it will not compile on a second try either');
+  const none = i1J(old.intakeCardParse_([i3Row_('Member ID: H71938642')]));
+  assert.deepStrictEqual([none.payer, none.memberId, none.group, none.mbi, none.advantage], ['', '', '', '', false], 'the parser returns an empty read');
+  // The read says so before it fetches the reader, with no Try again (nothing would change).
+  const read = extractFnFrom(src, 'intakeCardRead_');
+  const iRx = read.indexOf("if (!intakeCardRx_()) { fail(intakeOcrFailText_('start', es), true); return; }");
+  assert.ok(iRx > 0 && iRx < read.indexOf('intakeOcrEngine_()'), 'checked before the engine is loaded');
+  assert.ok(!/\/\(\?<[=!]/.test(src), 'no lookbehind literal is left in the partial');
+});
+
+test('F21 (cycle 26): the attached images are grouped into CARDS before anything is merged — the real reads of four cards stay four, a card photographed twice stays one, and no pair of different cards is ever joined (driven over the fixture)', () => {
+  const { ctx } = i3Ctx_();
+  const lines = JSON.parse(fs.readFileSync(path.join(__dirname, 'i3-card-lines.json'), 'utf8'));
+  const R = {};
+  Object.keys(lines).forEach((k) => { R[k] = i1J(ctx.intakeCardParse_(ctx.intakeCardRows_(lines[k]))); });
+  const G = (ks) => i1J(ctx.intakeCardGroup_(ks.map((k) => (k ? i1J(R[k]) : null)))).map((c) => c.images.join('+') + ' ' + ctx.intakeCardLine_(c.fields));
+  assert.deepStrictEqual(G(['c-medicare/clean', 'c-bcbs/clean', 'c-humana/clean', 'c-uhc/clean']), [
+    '1 Medicare 1EG4TE5MK72',
+    '2 BlueCross BlueShield of Texas · ID XOF923456781 · Group 028914',
+    '3 Humana Gold Plus (HMO) · ID H71938642 · Group X1234005',
+    '4 UnitedHealthcare · ID 912345678 · Group 0701234'], 'four cards, four suggestions');
+  assert.deepStrictEqual(G(['c-medicare/clean', 'c-humana/small', 'c-medicare/rough']), ['1+3 Medicare 1EG4TE5MK72', '2 Humana Gold Plus(HMO) · ID H71938642 · Group X1234005'],
+    'THE REGRESSION: a plan card beside the Medicare card voided the MBI and the plan\'s line was offered alone');
+  assert.deepStrictEqual(G(['c-humana/clean', 'c-uhc/clean', 'c-humana/phone']), ['1+3 Humana Gold Plus (HMO) · ID H71938642 · Group X1234005', '2 UnitedHealthcare · ID 912345678 · Group 0701234'],
+    'a second photo of a card joins it, wherever it comes in the row');
+  assert.deepStrictEqual(G(['c-bcbs/phone', null, 'c-uhc/rough']).map((x) => x.split(' ')[0]), ['1', '3'], 'an image that could not be read keeps its number out of every card');
+  const wrong = [];
+  Object.keys(R).forEach((a) => Object.keys(R).forEach((b) => {
+    const rel = ctx.intakeCardRel_(R[a], R[b]), same = a.split('/')[0] === b.split('/')[0];
+    if (same ? rel !== 'match' : rel !== 'conflict') wrong.push(a + ' vs ' + b + ' = ' + rel);
+  }));
+  assert.deepStrictEqual(wrong, [], 'every pair of the sixteen real reads: the same card matches, different cards conflict');
+});
+
+test('F21 (cycle 26): what makes two reads one card — a shared ID, group or payer; a back with nothing to tell it by goes with the image before it; a different ID, group or payer, or a plan card against a Medicare card, starts another (driven)', () => {
+  const { ctx } = i3Ctx_();
+  const rel = (a, b) => ctx.intakeCardRel_(a, b);
+  const G = (reads) => i1J(ctx.intakeCardGroup_(reads)).map((c) => ({ images: c.images, line: ctx.intakeCardLine_(c.fields), mbi: c.fields.mbi || '' }));
+  // The scan's case: two plan cards.
+  assert.deepStrictEqual(G([{ payer: 'Humana', memberId: 'H123456' }, { payer: 'Aetna', group: '555001' }]).map((c) => c.line), ['Humana · ID H123456', 'Aetna · Group 555001'],
+    'THE REGRESSION: the merge gave "Humana · ID H123456 · Group 555001" — one card\'s ID with the other\'s group');
+  // Front, then a back that names nothing the front does.
+  assert.deepStrictEqual(G([{ payer: 'Aetna', memberId: 'W123456789' }, { group: '0701234' }]), [{ images: [1, 2], line: 'Aetna · ID W123456789 · Group 0701234', mbi: '' }], 'front and back are one card');
+  assert.strictEqual(rel({ payer: 'Aetna', memberId: 'W123456789' }, { group: '0701234' }), 'none');
+  assert.strictEqual(rel({ memberId: 'w123456789' }, { memberId: 'W123456789', group: '7' }), 'match', 'the same ID, whatever its case');
+  assert.strictEqual(rel({ memberId: 'W123456789', group: '1' }, { memberId: 'W123456789', group: '2' }), 'conflict', 'one field that differs is enough');
+  assert.strictEqual(rel({ payer: 'Aetna' }, { payer: 'Aetna Medicare Advantage' }), 'match', 'two lines naming the same known payer');
+  assert.strictEqual(rel({ payer: 'Aetna' }, { payer: 'Cigna' }), 'conflict');
+  assert.strictEqual(rel({ payer: 'Sunrise Mutual' }, { payer: 'sunrise  mutual' }), 'match', 'a payer the list does not know is compared as written');
+  assert.strictEqual(rel({ payer: 'Sunrise Mutual' }, { payer: 'Sunset Mutual' }), 'conflict');
+  assert.strictEqual(rel({ payer: 'Medicare', mbi: '1EG4TE5MK72' }, { memberId: 'H71938642' }), 'conflict', 'a Medicare card and a member-ID card');
+  assert.strictEqual(rel({ payer: 'Medicare', mbi: '1EG4TE5MK72' }, { payer: 'Humana', advantage: true }), 'conflict', 'a plan card with a name of its own');
+  assert.strictEqual(rel(null, undefined), 'none');
+  // An Advantage read with nothing of its own is the back of the card before it: the MBI is withheld, as before.
+  assert.strictEqual(rel({ mbi: '1EG4TE5MK72' }, { advantage: true }), 'none');
+  assert.deepStrictEqual(G([{ mbi: '1EG4TE5MK72' }, { advantage: true }]), [{ images: [1, 2], line: '', mbi: '' }], 'the doubt is resolved toward not offering a Medicare ID');
+  // "The card before it" is the one the PREVIOUS image joined — not the last card started.
+  assert.deepStrictEqual(G([{ payer: 'Humana', memberId: 'H1' }, { payer: 'Cigna', memberId: 'C1' }, { memberId: 'H1' }, { group: 'G77' }]).map((c) => [c.images, c.line]),
+    [[[1, 3, 4], 'Humana · ID H1 · Group G77'], [[2], 'Cigna · ID C1']], 'a back follows its own front');
+  assert.deepStrictEqual(G([null, null]), [], 'nothing read, no card');
+  assert.deepStrictEqual(G([{ group: '9' }]).map((c) => c.images), [[1]], 'a first read with nothing to compare still starts a card');
+  // What is offered: not a used card; not an empty one beside a real one; a suggestion stored before F21.
+  const off = (st) => i1J(ctx.intakeCardOffered_(st)).map((x) => x.n);
+  assert.deepStrictEqual(off({ cards: [{ fields: { payer: 'A' } }, { fields: { payer: 'B' }, used: 8 }, { fields: { advantage: true } }] }), [0], 'used and empty cards are not offered');
+  assert.deepStrictEqual(off({ cards: [{ fields: {} }] }), [0], 'a lone card with nothing found is still shown — to say so');
+  assert.deepStrictEqual(off({ cards: [{ fields: {} }, { fields: { unsure: {} } }] }), [0, 1], 'nothing found on any card');
+  const legacy = { fields: { payer: 'Aetna' }, failed: [] };
+  assert.deepStrictEqual(off(legacy), [0]);
+  assert.strictEqual(legacy.cards[0].fields, legacy.fields, 'the old one-suggestion shape becomes its one card');
+  assert.deepStrictEqual(off(undefined), []);
+});
+
+test('F22 (cycle 26): intake feedback is taken from a roster employee OR anyone signed in to an org account — the Sales and PAP recipients are not on the roster; nobody else, and nobody unidentified; the row and the audit line carry the address (driven)', () => {
+  const who = b10Ctx_(['isOrgEmail_', 'intakeFeedbackCaller_'], { CONFIG: { ORG_EMAIL_DOMAINS: ['universalmedsupply.com', 'umsupply.com'] } });
+  const W = (emp, e) => b10J(who.intakeFeedbackCaller_(emp, e));
+  assert.deepStrictEqual(W({ id: 'E1', name: 'Ana Ruiz', email: 'ana@umsupply.com', isManager: true }, 'ana@umsupply.com'), { id: 'E1', name: 'Ana Ruiz', email: 'ana@umsupply.com', onRoster: true });
+  assert.deepStrictEqual(W(null, ' Sam.Sales@UniversalMedSupply.com '), { id: '', name: '', email: 'sam.sales@universalmedsupply.com', onRoster: false }, 'THE REGRESSION: a Sales recipient was "Not authorized."');
+  assert.strictEqual(W(null, 'dr.smith@gmail.com'), null, 'an outside account is refused');
+  assert.strictEqual(W(null, 'x@umsupply.com.evil.io'), null, 'a look-alike domain is outside');
+  assert.strictEqual(W(null, ''), null, 'nobody signed in is nobody');
+  assert.strictEqual(W(undefined, undefined), null);
+  // The endpoint, driven.
+  const run = (emp, active, id) => {
+    const log = { locks: 0, rows: [], audit: [] };
+    const ctx = b10Ctx_(['isOrgEmail_', 'intakeFeedbackCaller_', 'submitIntakeFeedback'], {
+      CONFIG: { ORG_EMAIL_DOMAINS: ['umsupply.com'] }, INTAKE_FORM_TYPES_: ['PPD', 'PMD', 'PAP'], INTAKE_FEEDBACK_MAX_CHARS: 4000,
+      getEmployeeInfo_: () => emp, getActiveUserEmail_: () => active,
+      LockService: { getScriptLock: () => ({ waitLock() { log.locks++; }, releaseLock() {} }) },
+      getIntakeSubmissionSheet_: () => ({ getLastRow: () => 3, getRange: () => ({ getValues: () => [['SUB-1'], ['SUB-2']] }) }),
+      getIntakeFeedbackSheet_: () => ({ appendRow: (r) => log.rows.push(r) }),
+      sheetSafeRow_: (r) => r, fmtDate_: () => '2026-11-20', fmtTime_: () => '10:00:00',
+      writeAuditLog_: (t, action, d, tm, adj, back, notes, actor) => log.audit.push([t.id, t.name, action, notes, actor]) });
+    const res = b10J(ctx.submitIntakeFeedback(id || 'SUB-2', 'pmd', 'The cap looked low for this weight.'));
+    return { res, log: b10J(log) };
+  };
+  const sales = run(null, 'sam.sales@umsupply.com');
+  assert.deepStrictEqual(sales.res, { success: true });
+  assert.deepStrictEqual(sales.log.rows, [['2026-11-20 10:00:00', 'SUB-2', 'PMD', 'sam.sales@umsupply.com', '', 'The cap looked low for this weight.']], 'the row names the sender by address');
+  assert.deepStrictEqual(sales.log.audit, [['', '', 'IntakeFeedback', 'type=PMD; submissionId=SUB-2; sender not on the roster', 'sam.sales@umsupply.com']], 'the audit line says so, and carries no feedback text');
+  const rep = run({ id: 'E7', name: 'Bo Lee', email: 'bo@umsupply.com' }, 'bo@umsupply.com');
+  assert.deepStrictEqual(rep.log.rows[0].slice(3, 5), ['bo@umsupply.com', 'Bo Lee']);
+  assert.deepStrictEqual(rep.log.audit, [['E7', 'Bo Lee', 'IntakeFeedback', 'type=PMD; submissionId=SUB-2', 'bo@umsupply.com']], 'a roster sender is recorded as before');
+  const out = run(null, 'dr.smith@gmail.com');
+  assert.deepStrictEqual([out.res.success, out.res.error, out.log.locks, out.log.rows.length], [false, 'Not authorized.', 0, 0], 'refused before the lock (F58)');
+  const anon = run(null, '');
+  assert.ok(anon.res.success === false && /Could not tell who is signed in/.test(anon.res.error) && anon.log.locks === 0 && !anon.log.rows.length, '"could not tell" is not "not allowed" (g128)');
+  const forged = run(null, 'sam.sales@umsupply.com', 'SUB-999');
+  assert.ok(forged.res.success === false && /Submission not found/.test(forged.res.error) && !forged.log.rows.length && !forged.log.audit.length, 'an org sign-in still cannot seed a row for an id that does not exist');
+  // The button is offered to exactly the readers the endpoint accepts.
+  ['intakeSendPPD', 'intakeSendAcct_'].forEach((fn) => assert.ok(/isOrgEmail_\(recipient\) \? intakeFeedbackCta_\(submissionId, /.test(stripJsComments_(extractRawFunction('Code.js', fn))), fn));
+});
+
+test('F23 (cycle 26): the Intake store is labelled for what happens to it — KEPT, no purge — and its feedback tab is named, in Storage Health, the visual fixture and the storage map; the label is true only while nothing deletes from that store (derived)', () => {
+  const health = extractRawFunction('Code.js', 'getStorageHealth');
+  const row = health.slice(health.indexOf("label: 'Intake (PHI)'"), health.indexOf("prop: 'INTAKE_SS_ID'"));
+  assert.ok(row.length > 40 && /retention: 'Kept — no purge exists'/.test(row), 'THE REGRESSION: "Optional purge" named a setting that does not exist');
+  assert.ok(/role: 'Offerings \+ PPD\/PMD\/PAP submissions \+ ' \+ CONFIG\.INTAKE\.FEEDBACK_TAB/.test(row), 'the feedback tab is on the row, by its configured name');
+  assert.strictEqual(b8aConst_('INTAKE_FEEDBACK_HEADERS').indexOf("'Feedback'") > 0, true);
+  // Derived: every function that opens the intake store or one of its tabs — none removes a row.
+  const openers = ['getIntakeSS_', 'getIntakeSubmissionSheet_', 'getIntakeFeedbackSheet_'];
+  const kinds = serverDecls().decls;
+  const users = Array.from(new Set(openers.concat.apply(openers, openers.map((n) => serverCallersOf(n))))).filter((n) => (kinds.get(n) || {}).kind === 'function');
+  assert.ok(users.length >= 10 && users.indexOf('submitIntakeFeedback') >= 0 && users.indexOf('intakeSendPPD') >= 0, 'the functions that touch the store (' + users.length + ')');
+  const removers = users.filter((n) => /deleteRows?\(|deleteRowsWhere|clearContents?\(|\.clear\(|sheetReplaceBody_\(|deleteSheet\(/.test(stripJsComments_(extractRawFunction('Code.js', n))));
+  assert.deepStrictEqual(removers, [], 'nothing deletes from the Intake store — when a purge is built, this label (and the two below) must say so');
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/store\('Intake \(PHI\)', 'Offerings \+ PPD\/PMD\/PAP submissions \+ IntakeFeedback', 'PHI', 'Kept — no purge exists', 'INTAKE_SS_ID'\)/.test(mock), 'the fixture shows the real row');
+  const claude = fs.readFileSync(path.join(C26_ROOT, 'CLAUDE.md'), 'utf8');
+  const mapRow = claude.split('\n').filter((l) => /^\| Intake \| `INTAKE_SS_ID`/.test(l));
+  assert.strictEqual(mapRow.length, 1);
+  const cells = mapRow[0].split('|').map((c) => c.trim());
+  assert.ok(/IntakeFeedback/.test(cells[3]) && /^kept — NO purge exists/.test(cells[5]) && !/^optional purge/i.test(cells[5]), 'the storage map: the tab named, the retention true');
+  const ops = fs.readFileSync(path.join(C26_ROOT, 'docs', 'operator-state.md'), 'utf8');
+  const entry = ops.slice(ops.indexOf('<a id="operator-set-script-property-intake-ss-id"></a>'), ops.indexOf('<a id="operator-intake-recipient-addresses-are-script-property-backed"></a>'));
+  assert.ok(entry.length > 100 && /`IntakeFeedback`/.test(entry) && /no purge/i.test(entry), 'the operator entry names the tab and that nothing is purged');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

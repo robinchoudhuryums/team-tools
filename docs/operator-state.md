@@ -447,6 +447,17 @@ entry says which it is.
   any seat cell it calls unreadable.** The inherently-solid codes (solid whatever
   the cell says) are one list in code, `intakeInherentlySolidCodes_`; an
   unreadable word on one of those is only a warning.
+  **The `IntakeFeedback` tab (auto-provisioned on the first feedback) and
+  retention (cycle 26 F22 + F23):** it holds what a recipient wrote from an
+  intake email's "Send feedback on this recommendation" button — Timestamp ·
+  SubmissionId · FormType · FromEmail · FromName · Feedback. The text may name
+  the patient, so it is PHI and stays in this store. A sender is a roster
+  employee or, since F22, anyone signed in to an org account (the Sales and
+  PAP teams are not on the roster): `FromName` is then blank and the AuditLog
+  line reads "sender not on the roster". **Nothing in this spreadsheet is
+  ever purged — there is no purge job for it.** Admin → System → Storage
+  Health said "Optional purge" until F23; it now reads "Kept — no purge
+  exists". Rows are removed only by hand.
 <a id="operator-intake-recipient-addresses-are-script-property-backed"></a>
 - **Intake recipient addresses are Script-Property-backed.**
   `INTAKE_SALES_EMAIL` (PMD default), `INTAKE_SLEEP_EMAIL` (PAP default),
