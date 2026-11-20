@@ -16210,7 +16210,8 @@ test('FT1 DOM: recovered Scratchpad text is HELD when the pad is full — never 
   assert.deepStrictEqual(p.sent(), ['main:the server copy plus a line']);
   p.saved(950);
   assert.ok(/^Saved/.test(p.status()), 'the status reads Saved with held text waiting — ' + p.status());
-  assert.strictEqual(ftRow(h), row, 'and a save does not rebuild the row (a focused button keeps the focus)');
+  h.read('cnScratchTakePages_')({ pages: ftTen, maxPages: 10 });   // a page list arriving again (any load's answer) redraws the page bar
+  assert.strictEqual(ftRow(h), row, 'and a repaint that changes nothing does not rebuild the row (a focused button keeps the focus)');
   // It is still in the browser — a reload does not lose it.
   h.read('cnScratchMirrorNow_')();
   const m = JSON.parse(ls.getItem(KEY));
