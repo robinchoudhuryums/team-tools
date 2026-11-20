@@ -16408,3 +16408,214 @@ test('FT4 DOM: a view-as switch keeps the Spanish assignee count — once on eac
   h2.read('cnCloseScratchpadModal_')();
   assert.deepStrictEqual(p.sent(), ['p2:p2 typed, then changed with no event'], 'and so does the close (INV-148: read before the panel goes)');
 });
+
+section('DOM harness — cycle 26 Batch 12: Server small items (F41–F43)');
+
+const b12SpBoot = (pend, members) => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true, canSeeSpanish: true });
+  const outs = { reached: 'Reached the patient', noanswer: 'No answer' };
+  const stats = { address: 'sp@x.com', days: 30, pending: pend.length, resolved: 0, avgMinutes: null, medianMinutes: null, avgBusinessMinutes: null, medianBusinessMinutes: null,
+    businessCount: 0, businessHours: { startMin: 480, endMin: 1020, weekdaysOnly: true }, membersConfigured: true, threadsScanned: pend.length, truncated: false };
+  const pendingRes = (list) => ({ escalateDays: 7, pending: JSON.parse(JSON.stringify(list)), members: members || ['me@x.com', 'sam@x.com'], self: 'me@x.com', truncated: false, deptUnavailable: '',
+    resolveOutcomes: outs, resolveNoteMax: 500 });
+  const resolvedRes = { resolved: [], members: members || ['me@x.com'], truncated: false, deptUnavailable: '' };
+  return { h, stats, pendingRes, resolvedRes };
+};
+
+test('F41 DOM (cycle 26): a Spanish resolve that FAILS gives the outcome and the typed note back when the dialog is opened again for the same request — never on another request, and not as "typed work"; a resolve that goes through forgets them; Resolve selected keeps them for the requests still selected; a failed Assign puts the select back', async () => {
+  const b = b12SpBoot([spItem_('a', 30), spItem_('b', 20), spItem_('c', 10)]);
+  const h = b.h;
+  h.run.respond('getSpanishInboxStats', () => b.stats);
+  h.run.respond('getSpanishInboxPending', () => b.pendingRes([spItem_('a', 30), spItem_('b', 20), spItem_('c', 10)]));
+  h.run.respond('getSpanishInboxResolved', () => b.resolvedRes);
+  h.window.enterTool('timeClock', 'metricsSpanish');
+  h.flushTimers();
+  const open = async (tid) => { h.read('spanishResolve_')(h.$('.sp-resolve[data-thread="' + tid + '"]')); await tick(); };
+  const picked = () => { const r = h.$('input[name="sp-res-outcome"]:checked'); return r ? r.value : ''; };
+  const NOTE = 'Called twice — no answer. Try after 3 <b>pm</b>';
+  await open('a');
+  h.$('input[name="sp-res-outcome"][value="noanswer"]').checked = true; h.window.spanishResolveSync_();
+  h.$('#sp-res-note').value = NOTE;
+  h.$('#sp-res-note').dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  h.window.spanishResolveConfirm_();
+  await tick();
+  h.run.flushSuccess({ error: 'Resolve failed: Lock timeout — try again.' }, 'resolveSpanishThread');
+  assert.ok(!h.$('#sp-resolve-overlay') && /Lock timeout/.test(h.$('#toast-stack').textContent), 'the resolve failed; the dialog is long closed');
+  // Another request: nothing of a's is offered there.
+  await open('b');
+  assert.deepStrictEqual([h.$('#sp-res-note').value, picked(), !!h.$('#sp-res-kept'), h.$('#sp-res-go').disabled], ['', '', false, true],
+    'THE RULE: a note written about one request is never offered on another');
+  h.window.closeOverlay(h.$('#sp-resolve-overlay'));
+  await tick();
+  assert.ok(!h.$('#sp-resolve-overlay') && !h.$('.ui-dialog'));
+  // The same request: it is all back.
+  await open('a');
+  assert.deepStrictEqual([h.$('#sp-res-note').value, picked(), h.$('#sp-res-go').disabled], [NOTE, 'noanswer', false],
+    'THE REGRESSION: the dialog closed before the server answered, and a failed resolve left the member with a toast and the typed note gone');
+  assert.ok(/did not go through/.test(h.$('#sp-res-kept').textContent) && !h.$('#sp-resolve-overlay b'), 'said — and the note is a value, never markup');
+  h.window.closeOverlay(h.$('#sp-resolve-overlay'));   // Escape
+  await tick();
+  assert.ok(!h.$('#sp-resolve-overlay') && !h.$('.ui-dialog'), 'a prefill is not typed work: Escape closes without a question, and nothing is lost by it');
+  await open('a');
+  assert.strictEqual(h.$('#sp-res-note').value, NOTE, 'still kept');
+  h.window.spanishResolveConfirm_();
+  await tick();
+  assert.deepStrictEqual(Array.from(h.run.pending('resolveSpanishThread')[0].args), ['a', 'noanswer', NOTE], 'the retry sends what was entered');
+  h.run.flushSuccess({ success: true, reply: { sent: true }, replyNote: 'A reply saying so was sent on the email thread.' }, 'resolveSpanishThread');
+  h.flushTimers();
+  assert.strictEqual(h.read('SP_RESOLVE_ASK.last'), null, 'it went through: nothing is kept');
+  // A transport failure keeps it too.
+  await open('b');
+  h.$('input[name="sp-res-outcome"][value="reached"]').checked = true; h.window.spanishResolveSync_();
+  h.$('#sp-res-note').value = 'b note';
+  h.window.spanishResolveConfirm_();
+  await tick();
+  h.run.flushFailure(new Error('Service timed out'), 'resolveSpanishThread');
+  await open('b');
+  assert.deepStrictEqual([h.$('#sp-res-note').value, picked()], ['b note', 'reached'], 'a call that never reached the server keeps it as well');
+  h.window.closeOverlay(h.$('#sp-resolve-overlay'));
+  await tick();
+  // Resolve selected: what could not be resolved stays selected, and so does the answer — for exactly those.
+  ['b', 'c'].forEach((t) => { const bx = h.$('input.sp-sel[data-thread="' + t + '"]'); bx.checked = true; h.window.spanishSelToggle_(bx); });
+  h.window.spanishResolveSelected_();
+  await tick();
+  assert.strictEqual(h.$('#sp-res-note').value, '', 'a different selection: b\'s own note is not offered for b and c together');
+  h.$('input[name="sp-res-outcome"][value="noanswer"]').checked = true; h.window.spanishResolveSync_();
+  h.$('#sp-res-note').value = 'for both';
+  h.window.spanishResolveConfirm_();
+  await tick();
+  h.run.flushSuccess({ success: true, resolved: ['b'], already: [], failed: [{ threadId: 'c', error: 'Thread not found.' }], replies: { sent: 1, voicemail: 0, failed: [], off: false } }, 'resolveSpanishThreads');
+  h.flushTimers();
+  h.window.spanishResolveSelected_();   // c is still selected
+  await tick();
+  assert.deepStrictEqual([/Mark this request resolved/.test(h.$('#sp-res-h').textContent), h.$('#sp-res-note').value, picked()], [true, 'for both', 'noanswer'],
+    'the request that could not be resolved is still selected, and its answer comes back with it');
+  h.window.closeOverlay(h.$('#sp-resolve-overlay'));
+  await tick();
+  // A failed Assign: the select must not go on showing a name nothing was assigned to.
+  const sel = h.$('select.sp-assign[data-thread="c"]');
+  sel.value = 'sam@x.com';
+  h.read('spanishAssign_')(sel);
+  h.run.flushFailure(new Error('Service timed out'), 'claimSpanishThread');
+  assert.strictEqual(h.$('select.sp-assign[data-thread="c"]').value, '', 'THE REGRESSION: after a failed call the select kept the chosen name');
+});
+
+test('F41 DOM (cycle 26): a Spanish list read asked for BEFORE a resolve or a claim made here does not paint over it — the resolved card stays gone and the claim stays on the card, in the list and in the session cache; a change the read already knew about is not applied twice', async () => {
+  const b = b12SpBoot([spItem_('a', 30), spItem_('b', 20), spItem_('c', 10)]);
+  const h = b.h;
+  const all = [spItem_('a', 30), spItem_('b', 20), spItem_('c', 10)];
+  h.run.respond('getSpanishInboxStats', () => b.stats);
+  h.window.enterTool('timeClock', 'metricsSpanish');
+  h.flushTimers();
+  b12FlushAll(h, 'getSpanishInboxPending', () => b.pendingRes(all));
+  b12FlushAll(h, 'getSpanishInboxResolved', b.resolvedRes);
+  h.flushTimers();
+  const cards = () => h.$$('.sp-task .sp-resolve[data-thread]').map((x) => x.getAttribute('data-thread'));
+  assert.deepStrictEqual(cards(), ['a', 'b', 'c']);
+  // A second enter paints the session cache and asks again — the Gmail scans take seconds.
+  h.window.enterTool('timeClock', 'clock');
+  h.window.enterTool('timeClock', 'metricsSpanish');
+  h.flushTimers();
+  assert.ok(h.run.pending('getSpanishInboxPending').length >= 1, 'a background read is on its way');
+  // Meanwhile: a is resolved and b is claimed.
+  h.read('spanishResolve_')(h.$('.sp-resolve[data-thread="a"]'));
+  await tick();
+  h.$('input[name="sp-res-outcome"][value="reached"]').checked = true; h.window.spanishResolveSync_();
+  h.window.spanishResolveConfirm_();
+  await tick();
+  h.run.flushSuccess({ success: true, reply: { sent: true } }, 'resolveSpanishThread');
+  h.flushTimers();
+  h.read('spanishClaim_')(h.$('.sp-claim-btn[data-thread="b"]'));
+  h.run.flushSuccess({ success: true, claim: { by: 'me@x.com', atMs: Date.now() } }, 'claimSpanishThread');
+  assert.deepStrictEqual(cards(), ['b', 'c']);
+  // The read lands: computed before either change, it still lists a, and b unclaimed.
+  assert.ok(b12FlushAll(h, 'getSpanishInboxPending', () => b.pendingRes(all)) >= 1);
+  b12FlushAll(h, 'getSpanishInboxResolved', b.resolvedRes);
+  h.flushTimers();
+  assert.deepStrictEqual(cards(), ['b', 'c'], 'THE REGRESSION: the resolved card came back — and could be resolved, and replied to, a second time');
+  assert.ok(h.$('.sp-claim-release[data-thread="b"]') && !h.$('.sp-claim-btn[data-thread="b"]'), 'THE REGRESSION: the claim pill vanished');
+  const cached = h.read('SPANISH_STATE.cache[SPANISH_STATE.days].pending.pending');
+  assert.deepStrictEqual(Array.from(cached).map((t) => t.threadId + ':' + (t.claim ? t.claim.by : '-')), ['b:me@x.com', 'c:-'], 'and the session cache holds the same — the next enter paints it');
+  // A read asked for AFTER the changes is taken as it comes: a release made elsewhere shows.
+  h.window.spanishLoadList_({ background: true });
+  b12FlushAll(h, 'getSpanishInboxPending', () => b.pendingRes([spItem_('b', 20), spItem_('c', 10), spItem_('d', 1)]));
+  b12FlushAll(h, 'getSpanishInboxResolved', b.resolvedRes);
+  h.flushTimers();
+  assert.deepStrictEqual(cards(), ['b', 'c', 'd']);
+  assert.ok(h.$('.sp-claim-btn[data-thread="b"]'), 'THE RULE: only changes made after a read was asked for are re-applied — this one already knew them');
+});
+
+const b12FlushAll = (h, method, payload) => { let n = 0; while (h.run.pending(method).length) { h.run.flushSuccess(typeof payload === 'function' ? payload() : payload, method); n++; } return n; };
+const b12DrItem = (id, ms, extra) => Object.assign({ requestId: id, toDept: 'Billing', label: 'Close Order', patientTrx: 'J Rivera · TRX 47790', createdAt: 'Nov 18', createdMs: ms, byName: 'Me',
+  status: 'open', elapsedMin: 30, slaBusiness: true, slaStatus: 'ontime', slaDays: 2 }, extra || {});
+const b12DrData = (mine) => ({ isManager: false, myDepts: ['Billing'], departments: ['Billing'], mine: mine, incoming: [], recentResolved: [], recentResolvedTotal: 0, reopenDays: 7,
+  truncated: false, listCap: 100, mineTotal: mine.length, incomingTotal: 0 });
+
+test('F41 DOM (cycle 26): a TRX fold\'s header follows an in-place resolve — it counts the requests still open, and an open request is never left hidden behind a resolved card; two patients whose cells say "TRX pending" do not fold', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  const mine = [b12DrItem('n3', 3000), b12DrItem('n2', 2000), b12DrItem('n1', 1000),
+    b12DrItem('p1', 900, { patientTrx: 'Maria Lopez TRX pending' }), b12DrItem('p2', 800, { patientTrx: 'John Smith trx pending' })];
+  h.run.respond('getDeptRequests', () => JSON.parse(JSON.stringify(b12DrData(mine))));
+  h.window.enterTool('callNotes', 'metricsDeptReq');
+  h.flushTimers();
+  const folds = () => h.$$('.dr-fold');
+  assert.strictEqual(folds().length, 1, 'THE REGRESSION: "TRX pending" on two patients keyed as `pending` and folded them — one card hidden behind the other');
+  assert.ok(h.$$('.sp-task[data-req="p1"]').length === 1 && h.$$('.sp-task[data-req="p2"]').length === 1 && !h.$('.sp-task[data-req="p1"]').closest('.dr-fold'), 'each stands alone');
+  const fold = folds()[0];
+  const head = () => fold.querySelector('.dr-fold-head').textContent.replace(/\s+/g, ' ').trim();
+  assert.ok(/^3 open requests for this TRX · 2 follow-ups with no response$/.test(head()), head());
+  assert.strictEqual(fold.querySelector('.dr-fold-more').hidden, true, 'the earlier requests start collapsed');
+  // Resolve the top card.
+  h.read('drResolveClick_')(fold.querySelector('.sp-task[data-req="n3"] .sp-resolve'));
+  h.run.flushSuccess({ success: true }, 'resolveDeptRequest');
+  assert.ok(/^2 open requests for this TRX · 1 follow-up with no response · 1 resolved$/.test(head()), 'THE REGRESSION: the header still read "3 open requests" over a resolved card — ' + head());
+  assert.strictEqual(fold.querySelector('.dr-fold-more').hidden, false, 'THE RULE: the open requests are shown — not collapsed behind the resolved one');
+  assert.strictEqual(fold.querySelector('.dr-fold-toggle').getAttribute('aria-expanded'), 'true');
+  assert.ok(fold.querySelector('.sp-task[data-req="n2"] .sp-resolve') && fold.querySelector('.sp-task[data-req="n1"] .sp-resolve'), 'each still its own card, with its own button');
+  h.read('drResolveClick_')(fold.querySelector('.sp-task[data-req="n2"] .sp-resolve'));
+  h.run.flushSuccess({ success: true }, 'resolveDeptRequest');
+  assert.ok(/^1 open request for this TRX · 2 resolved$/.test(head()), head());
+  h.read('drResolveClick_')(fold.querySelector('.sp-task[data-req="n1"] .sp-resolve'));
+  h.run.flushSuccess({ success: true }, 'resolveDeptRequest');
+  assert.ok(/^No open request left for this TRX · 3 resolved$/.test(head()), head());
+  // A resolve that fails changes nothing.
+  assert.ok(!/open requests/.test(head()));
+});
+
+test('F41 DOM (cycle 26): a Dept Requests read asked for before a resolve made here is dropped — it does not paint the request back as open or stamp the round fresh; with no change in between it is taken as before', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  const mine = [b12DrItem('q1', 2000, { patientTrx: 'A · TRX 11111' }), b12DrItem('q2', 1000, { patientTrx: 'B · TRX 22222' })];
+  const data = () => JSON.parse(JSON.stringify(b12DrData(mine)));
+  h.window.enterTool('callNotes', 'metricsDeptReq');
+  h.flushTimers();
+  b12FlushAll(h, 'getDeptRequests', data);
+  h.flushTimers();
+  const openIds = () => h.$$('.sp-task[data-req] .sp-resolve').map((x) => x.closest('.sp-task').getAttribute('data-req'));
+  assert.deepStrictEqual(openIds(), ['q1', 'q2']);
+  // The round goes stale; the next enter paints it and asks again.
+  h.read('DR_STATE.entry = { at: 1 }');
+  h.window.enterTool('callNotes', 'callNotes');
+  h.window.enterTool('callNotes', 'metricsDeptReq');
+  h.flushTimers();
+  assert.ok(h.run.pending('getDeptRequests').length >= 1, 'a refresh is on its way behind the painted cards');
+  h.read('drResolveClick_')(h.$('.sp-task[data-req="q1"] .sp-resolve'));
+  h.run.flushSuccess({ success: true }, 'resolveDeptRequest');
+  assert.deepStrictEqual(openIds(), ['q2']);
+  b12FlushAll(h, 'getDeptRequests', data);   // computed before the resolve: q1 still open
+  h.flushTimers();
+  assert.deepStrictEqual(openIds(), ['q2'], 'THE REGRESSION: the refresh asked for before the resolve painted the request back as open');
+  assert.strictEqual(h.read('DR_STATE.entry'), null, 'and it is not stamped a fresh round — the next enter reads again');
+  // With no change in between, a refresh is taken as it always was.
+  h.window.enterTool('callNotes', 'callNotes');
+  h.window.enterTool('callNotes', 'metricsDeptReq');
+  h.flushTimers();
+  b12FlushAll(h, 'getDeptRequests', () => JSON.parse(JSON.stringify(b12DrData([mine[1]]))));
+  h.flushTimers();
+  assert.deepStrictEqual([openIds(), !!h.read('DR_STATE.entry')], [['q2'], true]);
+});

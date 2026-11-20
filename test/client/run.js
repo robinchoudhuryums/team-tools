@@ -51367,6 +51367,171 @@ test('FT3: the tour\'s "still loading" reads BOTH shared loaders inside the view
   assert.ok(/selector: '#m-my-content \.m-hero'/.test(tour), 'the Stats step waits on #m-my-content');
 });
 
+console.log('\nCycle 26 Batch 12 — Server small items (F41–F43)');
+
+test('F41: the TRX key is a NUMBER — a word after "TRX" is not one (two patients "TRX pending" folded into one); and a fold\'s header is written for the requests still OPEN (driven)', () => {
+  const dr = fs.readFileSync(path.join(PA_WEB, 'metrics/script_deptrequests.html'), 'utf8');
+  const ctx = vm.createContext({ String, Number, Math, Infinity, esc: (x) => String(x).replace(/</g, '&lt;'), icon: () => '[i]' });
+  ['drTrxKey_', 'drFoldKey_', 'drFoldStats_', 'drFoldList_', 'drFoldHeadHtml_'].forEach((n) => vm.runInContext(extractFnFrom(dr, n), ctx));
+  const K = (s) => ctx.drTrxKey_(s);
+  assert.deepStrictEqual([K('Maria Lopez TRX pending'), K('John Smith trx unknown'), K('Pat TRX: none yet'), K('Ann trx number to follow')], ['', '', '', ''],
+    'THE REGRESSION: the word after "TRX" was the key — `pending`, `unknown`, `none`, `number`');
+  assert.deepStrictEqual([K('J · TRX 47790'), K('Pat · TRX: A-1234'), K('trx#b77'), K('Maria TRX pending 4812233')], ['47790', 'a-1234', 'b77', '4812233'],
+    'a key with a digit is kept — lettered too; and with a word after "TRX" the cell\'s one long number still is the TRX');
+  const r = (id, ms, extra) => Object.assign({ requestId: id, toDept: 'Billing', status: 'open', patientTrx: 'x', createdMs: ms }, extra || {});
+  const two = JSON.parse(JSON.stringify(ctx.drFoldList_([r('a', 2, { patientTrx: 'Maria Lopez TRX pending' }), r('b', 1, { patientTrx: 'John Smith trx pending' })])));
+  assert.deepStrictEqual(two.map((e) => [!!e.key, e.items.length]), [[false, 1], [false, 1]], 'so the two patients stand alone');
+  // The header, for what is still open.
+  const H = (open, total) => ctx.drFoldHeadHtml_(open, total).replace(/<[^>]+>/g, '');
+  assert.strictEqual(H([r('a', 300), r('b', 200), r('c', 100)], 3), '[i] 3 open requests for this TRX · 2 follow-ups with no response');
+  assert.strictEqual(H([r('b', 200), r('c', 100, { repliedMs: 150 })], 3), '[i] 2 open requests for this TRX · 1 follow-up · 1 resolved', 'the counts are of the OPEN ones; the rest are said');
+  assert.strictEqual(H([r('c', 100)], 3), '[i] 1 open request for this TRX · 2 resolved');
+  assert.strictEqual(H([], 3), '[i] No open request left for this TRX · 3 resolved');
+  assert.strictEqual(H([r('a', 300), r('b', 200)], 2), '[i] 2 open requests for this TRX · 1 follow-up with no response', 'nothing resolved: nothing said about it');
+  const st = JSON.parse(JSON.stringify(ctx.drFoldStats_([r('b', 200), r('a', 300), r('c', 100)])));
+  assert.deepStrictEqual([st.asc.map((x) => x.requestId), st.followUps, st.unanswered], [['c', 'b', 'a'], 2, 2]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.drFoldStats_([]))).followUps, 0);
+  // Wiring: the list's first draw and the in-place repaint share the one header writer.
+  assert.ok(/drFoldHeadHtml_\(e\.items, n\)/.test(extractFnFrom(dr, 'drFoldHtml_')) && /head\.innerHTML = drFoldHeadHtml_\(open, cards\.length\)/.test(extractFnFrom(dr, 'drFoldRefresh_')));
+  assert.ok(/folds\.forEach\(drFoldRefresh_\)/.test(extractFnFrom(dr, 'drRepaintRequest_')), 'an in-place repaint refreshes its fold');
+});
+
+test('F41: a list read asked for BEFORE a change made here — Dept Requests drops it, the Spanish inbox re-applies the change onto it; and a kept resolve answer belongs to ITS request(s) only (driven)', () => {
+  const dr = fs.readFileSync(path.join(PA_WEB, 'metrics/script_deptrequests.html'), 'utf8');
+  const c = vm.createContext({ Number, String, Array });
+  vm.runInContext(extractFnFrom(dr, 'drAnswerPredatesChange_'), c);
+  assert.deepStrictEqual([c.drAnswerPredatesChange_(0, 0), c.drAnswerPredatesChange_(3, 3), c.drAnswerPredatesChange_(3, 4), c.drAnswerPredatesChange_(undefined, 1), c.drAnswerPredatesChange_(undefined, undefined)],
+    [false, false, true, true, false]);
+  const drS = stripJsComments_(dr);
+  assert.strictEqual((drS.match(/drLocalChange_\(\);/g) || []).length, 3, 'the three changes a person makes here — a resolve, an answer to a held reply, a reopen — are numbered');
+  ['enterDeptRequestsView', 'drReconcile_'].forEach((fn) => {
+    const b = stripJsComments_(extractFnFrom(dr, fn));
+    const asked = b.indexOf('const seqAsked = DR_STATE.changeSeq || 0;');
+    assert.ok(asked >= 0 && asked < b.indexOf('google.script.run') && /if \(drAnswerPredatesChange_\(seqAsked, DR_STATE\.changeSeq\)\) return;/.test(b), fn + ': numbered when ASKED, checked when answered');
+  });
+  // Spanish.
+  const mt = fs.readFileSync(path.join(PA_WEB, 'metrics/script_metrics.html'), 'utf8');
+  const s = vm.createContext({ Number, String, Array });
+  ['spanishReapplyLocal_', 'spanishResolveKey_', 'spanishResolveKept_'].forEach((n) => vm.runInContext(extractFnFrom(mt, n), s));
+  const ans = () => ({ pending: [{ threadId: 'a', claim: null }, { threadId: 'b', claim: null }, { threadId: 'c', claim: { by: 'old@x' } }], members: ['m'] });
+  const changes = [{ n: 1, tid: 'c', claim: null }, { n: 2, tid: 'a', gone: true }, { n: 3, tid: 'b', claim: { by: 'me@x' } }, { n: 4, tid: 'b', claim: null }, { n: 5, tid: 'b', claim: { by: 'sam@x' } }];
+  const show = (res) => JSON.parse(JSON.stringify(res)).pending.map((t) => t.threadId + ':' + (t.claim ? t.claim.by : '-'));
+  assert.deepStrictEqual(show(s.spanishReapplyLocal_(ans(), changes, 0)), ['b:sam@x', 'c:-'], 'every change since, in order — the last claim wins');
+  assert.deepStrictEqual(show(s.spanishReapplyLocal_(ans(), changes, 1)), ['b:sam@x', 'c:old@x'], 'THE RULE: a change made before the read was asked for is already in it — not applied again');
+  assert.deepStrictEqual(show(s.spanishReapplyLocal_(ans(), changes, 5)), ['a:-', 'b:-', 'c:old@x'], 'nothing since: the answer as it came');
+  assert.deepStrictEqual(show(s.spanishReapplyLocal_(ans(), null, 0)), ['a:-', 'b:-', 'c:old@x']);
+  assert.strictEqual(s.spanishReapplyLocal_(null, changes, 0), null);
+  assert.strictEqual(JSON.parse(JSON.stringify(s.spanishReapplyLocal_({ error: 'x' }, changes, 0))).error, 'x', 'a failed answer is passed through untouched');
+  const mtS = stripJsComments_(mt);
+  ['spanishSetClaimLocal_', 'spanishRemovePendingLocal_', 'spanishAutoAssign_'].forEach((fn) =>
+    assert.ok(/spanishNoteLocal_\(\{ tid: /.test(stripJsComments_(extractFnFrom(mt, fn))), fn + ' numbers its change'));
+  assert.ok(/var changeAsked = SPANISH_STATE\.changeSeq \|\| 0;/.test(mtS) && /d = spanishReapplyLocal_\(d, SPANISH_STATE\.localChanges, changeAsked\);/.test(mtS), 'the pending read is numbered when asked and patched when it lands');
+  // The kept answer.
+  assert.deepStrictEqual([s.spanishResolveKey_('t1'), s.spanishResolveKey_(['b', 'a']), s.spanishResolveKey_(['a', 'b']), s.spanishResolveKey_([]), s.spanishResolveKey_(null)], ['t1', 'a|b', 'a|b', '', '']);
+  const last = { key: 'a|b', outcome: 'reached', note: 'n' };
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(s.spanishResolveKept_(last, 'a|b'))), { outcome: 'reached', note: 'n' });
+  assert.deepStrictEqual([s.spanishResolveKept_(last, 'a'), s.spanishResolveKept_(last, ''), s.spanishResolveKept_(null, 'a|b'), s.spanishResolveKept_({ key: 'a', outcome: '', note: '' }, 'a')], [null, null, null, null],
+    'another request, no key, nothing kept, or nothing in it: no prefill');
+});
+
+test('F42: the wait a ScriptLock holder gives a rep\'s note lease is capped under every other waiter\'s 15 s; the Scratchpad lease is its own key; and the multi-megabyte decodes are outside the project lock (driven + source)', () => {
+  const c = vm.createContext({ Number });
+  vm.runInContext(extractRawFunction('Code.js', 'cnLeaseWaitOver_'), c);
+  assert.deepStrictEqual([c.cnLeaseWaitOver_(0, 8000), c.cnLeaseWaitOver_(7999, 8000), c.cnLeaseWaitOver_(8000, 8000), c.cnLeaseWaitOver_(60000, 8000)], [false, false, true, true]);
+  const cap = b12Const('CN_REP_LEASE_HOLDER_WAIT_MS'), wait = b12Const('CN_REP_LEASE_WAIT_MS'), life = b12Const('CN_REP_LEASE_MS');
+  assert.ok(cap < wait && wait <= 15000 && cap < life, 'holder cap ' + cap + ' < the acquire wait ' + wait + ' < the lease life ' + life);
+  assert.ok(b12Const('CN_SCRATCH_LEASE_PREFIX') !== b12Const('CN_REP_LEASE_PREFIX') && b12Const('CN_SCRATCH_LEASE_PREFIX').indexOf(b12Const('CN_REP_LEASE_PREFIX')) !== 0
+    && b12Const('CN_REP_LEASE_PREFIX').indexOf(b12Const('CN_SCRATCH_LEASE_PREFIX')) !== 0, 'two key spaces — a note save and a Scratchpad save never wait on each other');
+  // Driven through the real lease taker: with a rep's NOTE lease held, their Scratchpad lease is taken at once.
+  const sc = p25LeaseCtx_({ props: { CN_REP_LEASE_S1: JSON.stringify({ token: 'note', until: 9e15 }) } });
+  const got = JSON.parse(JSON.stringify(sc.ctx.cnAcquireRepLease_({ callNotesSheetId: 'S1' }, b12Const('CN_SCRATCH_LEASE_PREFIX'), 'busy')));
+  assert.deepStrictEqual([got.key, sc.clock.now], ['CN_SCRATCH_LEASE_S1', 1000000], 'THE POINT: an autosave does not wait for the rep\'s own note save (or the reverse)');
+  assert.throws(() => sc.ctx.cnAcquireRepLease_({ callNotesSheetId: 'S1' }, b12Const('CN_SCRATCH_LEASE_PREFIX'), 'busy'), /^Error: busy$/, 'a second Scratchpad save on the same pad waits, then refuses in the caller\'s words');
+  const w = stripJsComments_(extractRawFunction('Code.js', 'getCallNotesSheetForWrite_'));
+  assert.ok(/CN_REP_LEASE_PREFIX \+ sheetId/.test(w) && !/CN_SCRATCH_LEASE_PREFIX/.test(w), 'a ScriptLock holder waits on the NOTE lease only — none writes the Scratchpad tab');
+  assert.ok(/cnLeaseWaitOver_\(Date\.now\(\) - startedAt, CN_REP_LEASE_HOLDER_WAIT_MS\)/.test(w) && /throw new Error\('Lock timeout: /.test(w) && !/CN_REP_LEASE_MS/.test(w), 'capped, then refused by name — never the lease\'s whole life');
+  // No server code in the call-notes file takes the user lock any more.
+  const cnFile = fs.readFileSync(path.join(PA_WEB, '30_callnotes.js'), 'utf8');
+  assert.ok(!/getUserLock\(/.test(stripJsComments_(cnFile)), 'the user lock is one lock for every rep (the app runs as the deployer)');
+  // The third part of the finding was already closed by Batch 6 (F44): the decode, hash and page count run before the lock.
+  [['issueDoc', 'empDocPdfItem_('], ['createCoaching', 'coachImageItem_(']].forEach(([fn, call]) => {
+    const b = stripJsComments_(extractRawFunction('Code.js', fn));
+    assert.ok(b.indexOf(call) >= 0 && b.indexOf('waitLock(') >= 0 && b.indexOf(call) < b.indexOf('waitLock('), fn + ': ' + call + ' runs before the project lock');
+  });
+});
+
+test('F43: What\'s new never shows another article under its id — the row fetched by index is checked against the id it was found by (driven)', () => {
+  const KBX = { ID: 0, TITLE: 1, BODY_MD: 2, STATUS: 3, TYPE: 4, UPDATED_AT: 5 };
+  const run = (rowsAtFetch) => {
+    const ids = [['k1'], ['k2'], ['k3']];
+    const sheet = { getLastRow: () => 4, getRange: (r, c, n, w) => ({ getValues: () => (w === 1 ? ids : [rowsAtFetch[r - 2]]) }) };
+    const ctx = vm.createContext({ String, Object, getEmployeeInfo_: () => ({ id: 'E1' }),
+      PropertiesService: { getScriptProperties: () => ({ getProperty: () => 'k2' }) }, getOrCreateKbSheet_: () => sheet, getKbSS_: () => ({ getSpreadsheetTimeZone: () => 'UTC' }),
+      KB: KBX, KB_HEADERS: new Array(6).fill('h'), kbRowStatus_: (x) => String(x || 'published'), KB_STATUS_DRAFT: 'draft', kbCellTs_: (x) => String(x), kbManualRecentPayload_: () => null });
+    vm.runInContext(extractRawFunction('Code.js', 'getWhatsNew'), ctx);
+    return JSON.parse(JSON.stringify(ctx.getWhatsNew()));
+  };
+  const row = (id, title) => [id, title, 'body of ' + id, 'published', 'article', 't-' + id];
+  const steady = run([row('k1', 'One'), row('k2', 'Two'), row('k3', 'Three')]);
+  assert.deepStrictEqual([steady.id, steady.title, steady.bodyMd], ['k2', 'Two', 'body of k2']);
+  // k1 was deleted between the id scan and the row fetch: every row moved up one, and index 1 now holds k3.
+  const raced = run([row('k2', 'Two'), row('k3', 'Three'), ['', '', '', '', '', '']]);
+  assert.deepStrictEqual(raced, { none: true }, 'THE REGRESSION: "Three" would have opened for every rep as What\'s new — the wrong article under the configured id (g164)');
+});
+
+test('F43: the agent\'s own copy is skipped only when their WHOLE address is already on the BCC list — "ann@x.com" inside "maryann@x.com" is not her (driven)', () => {
+  const ctx = vm.createContext({ String, Array });
+  ['mailHeaderAddrs_', 'mailListHasAddress_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const has = (list, a) => ctx.mailListHasAddress_(list, a);
+  assert.strictEqual(has('maryann@x.com', 'ann@x.com'), false, 'THE REGRESSION: a substring match — Ann got no copy of her own send');
+  assert.deepStrictEqual([has('maryann@x.com, Ann@X.com', 'ann@x.com'), has('"Lee, Ann" <ann@x.com>', 'ANN@x.com'), has('', 'ann@x.com'), has(null, 'ann@x.com'), has('ann@x.com', ''), has('ann@x.com.au', 'ann@x.com')],
+    [true, true, false, false, false, false]);
+  const send = stripJsComments_(extractRawFunction('Code.js', 'sendRepEmail_'));
+  assert.ok(/if \(!mailListHasAddress_\(bcc, self\)\)/.test(send) && !/indexOf\(self/.test(send), 'sendRepEmail_ asks by address');
+});
+
+test('F43: push-env.sh REFUSES to run over an uncommitted web-app/.clasp.json — its restore is a git checkout, which discarded the edit and pushed the old filePushOrder (driven in a throwaway repository)', () => {
+  const cp = require('child_process');
+  const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'b12-pushenv-'));
+  const git = (...a) => cp.execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t.invalid', '-c', 'commit.gpgsign=false'].concat(a), { cwd: dir, stdio: 'pipe' });
+  try {
+    fs.mkdirSync(path.join(dir, 'scripts')); fs.mkdirSync(path.join(dir, 'web-app'));
+    fs.copyFileSync(path.join(__dirname, '../../scripts/push-env.sh'), path.join(dir, 'scripts/push-env.sh'));
+    const clasp = path.join(dir, 'web-app/.clasp.json');
+    fs.writeFileSync(clasp, '{"scriptId":"PROD","filePushOrder":["a.js"]}\n');
+    fs.writeFileSync(path.join(dir, 'web-app/.clasp.dev.json'), '{"scriptId":"DEV","filePushOrder":["a.js"]}\n');
+    // A stand-in for clasp: it records which project the push would have gone to.
+    fs.writeFileSync(path.join(dir, 'fakeclasp.sh'), '#!/usr/bin/env bash\ncp .clasp.json ../pushed.json\n');
+    git('init', '-q'); git('add', '-A'); git('commit', '-q', '-m', 'init');
+    const run = (env) => cp.spawnSync('bash', ['scripts/push-env.sh', env], { cwd: dir, encoding: 'utf8', env: Object.assign({}, process.env, { CLASP: 'bash ../fakeclasp.sh' }) });
+    const pushed = () => (fs.existsSync(path.join(dir, 'pushed.json')) ? JSON.parse(fs.readFileSync(path.join(dir, 'pushed.json'), 'utf8')).scriptId : null);
+    // Clean: both paths work as before, and dev puts the committed file back.
+    let r = run('prod');
+    assert.deepStrictEqual([r.status, pushed()], [0, 'PROD'], r.stderr);
+    r = run('dev');
+    assert.deepStrictEqual([r.status, pushed(), JSON.parse(fs.readFileSync(clasp, 'utf8')).scriptId], [0, 'DEV', 'PROD'], 'dev pushes the dev project and restores the committed file — ' + r.stderr);
+    // An uncommitted edit: a new file added to the push order.
+    const edited = '{"scriptId":"PROD","filePushOrder":["a.js","b.js"]}\n';
+    fs.unlinkSync(path.join(dir, 'pushed.json'));
+    ['prod', 'dev'].forEach((env) => {
+      fs.writeFileSync(clasp, edited);
+      const x = run(env);
+      assert.strictEqual(x.status, 1, env + ': refused');
+      assert.ok(/web-app\/\.clasp\.json has uncommitted changes/.test(x.stderr) && /Nothing was pushed/.test(x.stderr), env + ': and says why — ' + x.stderr);
+      assert.strictEqual(fs.readFileSync(clasp, 'utf8'), edited, 'THE REGRESSION (' + env + '): the edit was reverted without a word');
+      assert.strictEqual(pushed(), null, env + ': nothing was pushed');
+    });
+    // Staged counts as uncommitted too; once committed, the push goes out with it.
+    git('add', '-A');
+    assert.strictEqual(run('prod').status, 1, 'a staged edit is still not the committed file');
+    git('commit', '-q', '-m', 'order');
+    r = run('prod');
+    assert.deepStrictEqual([r.status, fs.readFileSync(clasp, 'utf8')], [0, edited]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
