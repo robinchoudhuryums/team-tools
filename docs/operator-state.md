@@ -2753,7 +2753,15 @@ entry says which it is.
   (`CONFIG.CALL_NOTES.FORM_BASE_URL`). Interactive (fillable) forms
   must also have a rendering function in `form_public.html`.
 <a id="operator-the-editor-suite-is-owner-only-cycle-22"></a>
-- **The editor suite is OWNER-only (cycle 22 S1, 2026-09-23).** Every runner
+- **The editor suite is OWNER-only (cycle 22 S1, 2026-09-23).** *(Since cycle
+  26 F73 a test that overwrites a live Script Property — the feature flags,
+  `ADMIN_EMAILS`, `MANAGER_EMAILS`, the archive window, the What's-new id, the
+  email templates — first copies the real value to `TEST_STASH_VALUE_<key>`,
+  or notes `TEST_STASH_ABSENT_<key>` when there was none. It is removed when
+  the test puts the value back. **If a run is stopped or times out, run
+  `cleanupTestData` (or start another run): it restores every stashed value
+  and names them in the log. Do not delete a `TEST_STASH_…` property by hand
+  — after a killed run it is the only copy of the real setting.**)* Every runner
   (`runAllTests`, `runAllTestsPartA`/`PartB`, `runSmokeTests`,
   `runSingleTest`), `setupTestEnvironment`, `cleanupTestData` and every
   `test_*` refuses unless the caller IS the script owner:

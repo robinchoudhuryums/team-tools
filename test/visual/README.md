@@ -18,7 +18,10 @@ narrower than a word (`narrowText`), a box its scenario says must be usable
 narrower than it needs (`tooNarrow`), an RPC with no fixture, or an uncaught page
 error. The workflow's `visual-layout` job installs Playwright's Chromium and keeps
 the shots as an artifact when it fails. A finding owned elsewhere goes in
-`ci-gate.cjs`'s `KNOWN` list with its reason — the list only shrinks: an entry
+`ci-gate.cjs`'s `KNOWN` list with its reason and a `match` — a piece of the
+finding's own detail line (cycle 26 F69: an entry is for ONE finding, not for
+every finding of its kind on that screen; one with no `match` excuses nothing).
+The list only shrinks: an entry
 whose finding stops firing fails the run, so remove it with the fix (it is
 EMPTY since cycle 26: its one entry, the chapter masthead's index at 390px,
 was a container query with no container). A subset
@@ -37,7 +40,10 @@ writes `tour-report.json`. CI runs it after the layout gate. The matrix seeds
 axe-core (pinned in `package.json`) over every scenario whose page is the
 handbook app, against WCAG 2.1 A and AA, after each scenario's post hook — no
 screenshots. It writes `axe-report.json` (each violation's rule, impact, count,
-first targets and failure summary) and exits non-zero on any violation, or when
+first targets and failure summary) and exits non-zero on any violation, when a
+scenario's page BROKE (its hook threw or it logged an uncaught error — the page
+was then not on the screen the scenario names, so it is reported "NOT CHECKED",
+cycle 26 F69), or when
 a filter after `--axe` matched no handbook scenario. CI runs it in the same
 job, after the layout gate and even when that failed. A new handbook screen is
 checked by giving it a scenario.

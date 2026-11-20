@@ -11,6 +11,31 @@ keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
 
+## 2026-11-20 — Cycle 26 Batch 14: Docs and tooling (F68–F71, F73) with follow-ons (FW1–FW6)
+
+**Nothing to set, and nothing a rep or manager will see.** Team Tools'
+`Tests.js` changed, so the next `clasp push -f` carries it; no New version is
+needed for this batch alone. The handbook app is not affected.
+
+- **A stopped test run no longer loses a setting.** A test that changes a
+  live Script Property (the feature toggles, the admin and manager lists, the
+  archive window) now keeps a copy first. If a run is stopped or times out,
+  run `cleanupTestData` — it puts every copied value back and says which.
+  Until then you may see `TEST_STASH_…` properties: leave them.
+- **Two new editor tests** — `suite_stashRestoresAnOverwrittenProperty` and
+  `intakeFeedback_limitRefusesPastTheCap`. The run's own `Expected:` line
+  has the new total.
+- **Docs you may act on were wrong and are corrected:** the handbook app's
+  deploy steps now sit beside Team Tools' in `.cycle/config.md`; its
+  authorisation asks for four permissions, not two (it writes its own
+  spreadsheet and can send reminder email); the walk-through steps that said
+  "Metrics → …" now say where those tabs are (Dashboard → Stats, Dashboard →
+  Spanish Inbox, Call Notes → Dept Requests).
+- **CI is stricter in three places:** a handbook screen whose page fails to
+  open now fails the accessibility check instead of passing unchecked; the
+  intake two-card panel and the Team Training view are measured on every
+  push; newer JavaScript syntax and an ungated handbook function fail a pin.
+
 ## 2026-11-20 — Cycle 26 follow-ons after Batch 13 (FV1–FV3)
 
 **Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The

@@ -4642,6 +4642,33 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the cell through the real writer (`drRecipientDomains_`), and the rule
   reads the department map's addresses instead.
 
+  **AMENDED (cycle 26 F69): the gate that checked the wrong screen.** The
+  handbook's axe run evaluates each scenario's navigation hook inside a
+  `try`, logs "post hook threw" and carries on. So when a hook names a page
+  function that has since been renamed, the page stays on Home, axe audits
+  Home, finds nothing, and the scenario — "the quiz screen" — is reported
+  clean. The run kept the console lines in its report and never read them.
+  Its pin asserted "fails on a violation or on nothing checked"; the defect
+  satisfied both. The verdict is now one function in the gate module
+  (`axeFailures`): a scenario whose page broke fails, and the log says
+  "NOT CHECKED — the page broke".
+
+  Two smaller holes in the layout gate, same file. A KNOWN waiver matched a
+  finding by scenario and kind, so the one there has been — a masthead index
+  squeezed at 390px — excused any squeezed column on that screen, including
+  the next. A waiver must now carry `match`, a piece of the finding's own
+  detail line; one without it excuses nothing and is reported. And the
+  report kept the first eight console lines, so eight `console.error`s ahead
+  of an uncaught error cut the one line the gate reads; the broken-page
+  lines are kept first, and never cut. (The waived squeeze itself, the scan's
+  F68, had already been fixed by this cycle's FP1 — the list is empty.)
+
+  The eighth direction again, F73: `assert.ok(!/opts\.signal/.test(<the body
+  of kbGetFacetGuidance>))` — a function with no `opts`. It could not fail
+  whatever the AI path did. It now asserts what must hold: the path
+  searches, never asks for the search signal, and searches `publishedOnly`.
+  Verify: the two `F69` pins.
+
 <a id="g117-a-recovery-is-not-a-prevention"></a>
 - **A recovery is not a prevention, and shipping one can make the other feel
   done (operator 2026-09-15).** The reconcile pass (g115) makes late punch data
@@ -5635,6 +5662,31 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   plus the F1 pins (the helper driven; a ratchet naming the only other
   deletes, all over TEST-only fixture stores).
 
+  **AMENDED (cycle 26 F73): a replaced value has no key to strip by.** The
+  by-key backstop works for a list a test APPENDS to: `cleanupTestData` can
+  find the test address in `MANAGER_EMAILS` and take it out. It cannot work
+  for a value a test REPLACES. `test_adminEmails_subsetOfManagersEnforced`
+  set `ADMIN_EMAILS` to one test address; `_withFeatureFlags_` (eleven
+  callers) rewrote the whole flags blob; others set the archive window to 30
+  days and the What's-new article to a fixture id. Each kept the real value
+  in a local variable and put it back in a `finally` — which a killed
+  execution never reaches. After that the real value was nowhere: every admin
+  toggle at its default, the admin tier reduced to nobody, and nothing to
+  restore from.
+
+  The original is now written to a second property before the first change
+  (`_stashProp_`, which returns the value like the `getProperty` it
+  replaces) and removed only after it has been put back (`_unstashProp_`,
+  value first, stash second). `setupTestEnvironment` and `cleanupTestData`
+  begin with `_restoreStashedProps_`. A stash that is already there is the
+  original — a re-run after a kill must not stash the test's value over it.
+  The value is stored as it is, with no wrapper, so a property at the size
+  cap still fits. What it does not cover: a test that changes a property
+  only THROUGH an endpoint and never names it, and real requests reading the
+  overridden value while the test runs. Verify: the `F73` stash pin (driven,
+  with a derived net over every literal property write in `Tests.js`) and the
+  editor test `suite_stashRestoresAnOverwrittenProperty`.
+
 <a id="g133-an-onclick-literal-cannot-carry-a-name"></a>
 
 - **An `onclick` LITERAL cannot carry a name — `esc()` has already encoded the
@@ -6321,6 +6373,20 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   owner-first by `_assertSuiteCaller_`, and the PUBLIC-GATE pin holds
   DevTools.js to the Tests.js rule (the owner check is the first statement).
 
+  **AMENDED (cycle 26 F73): the second project.** The PUBLIC-GATE net reads
+  `web-app/`'s directory. `handbook-app/` is a second deployed project whose
+  audience is the whole domain, and its public functions were held only by
+  pins that each named a handful. A helper added to `People.js` without a
+  trailing underscore would have been callable by every domain user with
+  lint, the syntax check and every pin green. The same derived net now runs
+  over every pushed file of `handbook-app/`: a public function gates with
+  `getEmployeeInfo_` or one of the four helpers that begin with it
+  (`hbAdminCall_`, `hbAuthorCall_`, `hbSavedCall_`, and the owner check
+  `hbOwnerCall_`), or is a named delegate whose callee in the generated
+  `kb_shared.js` gates, or is one of four named exceptions — the two page
+  entries and two stubs that return a constant refusal and may read no
+  store. The lists only shrink. Verify: the `F73` PUBLIC-GATE pin.
+
 <a id="g144-a-string-written-to-a-cell-is-parsed"></a>
 
 - **A string written to a cell is parsed AS IF TYPED: `=…`, and `+`/`-`/`@`
@@ -6699,6 +6765,17 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   client RPCs were photographed as "no fixture" with nothing failing. The
   walker now sees all three shapes (a bracketed ternary yields its branches,
   never its condition). Verify: the Seams F9 pin.
+
+  **AMENDED (cycle 26 FW6): the list of reads owed a fixture is a list of
+  views never drawn.** X1's ratchet names the client RPCs that have no
+  fixture "because no scenario photographs them yet". Three of them —
+  `getTrainingDashboard`, `getQuizzes`, `getQuizAnalytics` — are every read
+  the manager's Team Training view makes. With none answered, the view drew
+  its error state in the matrix and in the tour walk, and the tab sat on the
+  visual-gap list as "the manager half of Training". It has its fixtures
+  now, in the server's shape: a pin drives the three real endpoints and
+  compares their keys with what the mock answers. The scenario is in CI's
+  subset. Verify: the `FW6` pin + `training-team-light-wide`.
 
 <a id="g151-a-health-surface-that-derives-its-own-subset"></a>
 

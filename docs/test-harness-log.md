@@ -4513,3 +4513,36 @@ F53, F54, F57.**
 - **Older pins updated:** the F22 pin stands the limit in (it has its own
   pin).
 - **Bite-checks: 20 mutations (12 pure, 8 DOM), 20 bit, each on its first run.**
+
+## Cycle 26 Batch 14 — Docs and tooling: F68–F71, F73 + FW1–FW6 (2026-11-20)
+
+- **Pure harness: ten pins.** Two drive the gate module (`axeFailures`,
+  `keepErrors`, a waiver's `match`). Three hold `.cycle/config.md` to the
+  tree: the Test Command against the workflow's own commands, the Deploy
+  Command against the Subsystems list and `package.json`, the regression
+  steps against `RETIRED_TOOLS`. One holds four hand-carried lists (the
+  handbook's hand-written files, its scopes, the test twins, the README).
+  One drives `counts.mjs` (the key family; `--write`). One is the
+  PUBLIC-GATE net over `handbook-app/`. One drives the property stash over a
+  stand-in PropertiesService, with a derived net over every literal property
+  write in `Tests.js`. One drives the three real Team Training endpoints and
+  compares their keys with the mock's.
+- **Editor suite: two tests** (the stash against the real PropertiesService
+  on a key no code reads; the feedback limit against the real cache).
+- **DOM harness:** no new test. The HB4.1 viewer test's "closed before its
+  answer" step releases its answer by hand instead of waiting 80 ms for a
+  40 ms mocked delay.
+- **Visual matrix: one scenario** (`training-team-light-wide`) and three
+  fixtures; two more names in CI's subset.
+- **Tooling:** `counts.mjs --write` (two steps — see the design decision);
+  the key counter sees a prefix family; `ci-gate.cjs` gained `pageErrorsOf`,
+  `keepErrors` and `axeFailures`.
+- **Older pins updated:** the E5 waiver pin gives its entry a `match`; the
+  FP3 pin reads the axe verdict through the gate; the X1 list lost the three
+  reads that now have fixtures; the visual-gap marker lost `trainingManage`
+  (and PR3-5's floor follows); a vacuous line in the search-signal pin was
+  replaced.
+- **Found by running the new tool, not by reading:** the first `--write`
+  refused itself — a stale row made the harness red, and it would not write
+  while the harness was red.
+- **Bite-checks: 24 mutations (all pure — this batch added no DOM test), 24 bit, each on its first run. One pin was strengthened before the run: the deploy pin read a subsystem's name anywhere in the section, so a mention in passing on another line would have satisfied it; it reads each line's head now.**

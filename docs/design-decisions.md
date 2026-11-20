@@ -7649,6 +7649,54 @@ pick them up without re-deriving the context.
   - **Left:** the Intake purge (G1); a server-side check that the feedback
     sender was a recipient (deliberate); an undo for a join (Dismiss and read
     again); APIs a browser may lack, which a syntax level cannot see.
+- <a id="c26-batch-14-docs-and-tooling"></a>**Batch 14 — the commands a session reads say what CI runs and what a deploy is; hand-carried lists are held to the tree; a waiver names its finding; an overwritten setting is stashed; the block is written by a command (cycle 26 F68–F71, F73, FW1–FW6).**
+  - **Hold the fact, do not just correct it (F70, F71).** Each stale
+    statement was a hand-carried list or count outside the generated block:
+    seven files, two scopes, five twins, "NOT in CI", "runs LAST". Correcting
+    them fixes today. So each is now derived by a pin from the thing that
+    defines it — the workflow's own commands, the sync's own copy list, the
+    manifest's scopes, the suite's own properties, `RETIRED_TOOLS` — and the
+    doc states the list without a count where it can. A second generated
+    block was the alternative; pins were cheaper and say WHY in their
+    message.
+  - **The handbook app's deploy is a line of its own (F70).** The Deploy
+    Command is what every implement step reads last. It had no line for the
+    second project, and batch after batch added "the handbook app is / is
+    not affected" by hand. The line says how to tell: `handbook-sync.mjs
+    --check`.
+  - **A waiver carries `match`, required (F69).** Optional would have left
+    the one existing shape — kind only — legal. There are no waivers today,
+    so requiring it costs nothing and the next one is narrow by
+    construction.
+  - **One verdict for the axe run, in the gate module (F69).** The verdict
+    was three conditions spelled out in `shoot.mjs`. It is `axeFailures` in
+    `ci-gate.cjs`, beside the layout verdict, where the Node harness can
+    drive it — a Chromium run is not needed to test the rule.
+  - **A stash in Script Properties, not a smarter `finally` (F73).** A
+    killed execution runs no code, so anything that must survive it has to
+    be written somewhere durable BEFORE the change. The stash is two
+    prefixes (a value, or "was absent"), raw, removed on restore. It is not
+    re-entrant for one key, by choice: no test nests one.
+  - **F68 was already done.** The scan's phone-width squeeze and its waiver
+    were fixed by this cycle's FP1 (the masthead is a size container; the
+    KNOWN list is empty). Verified here by the CI subset, not re-fixed.
+  - **`--write` in two steps (FW3).** The harness that supplies two rows
+    holds the pins that compare the other rows with the tree, so a stale row
+    made the harness red and a one-step write refused itself. The rows that
+    need no harness go in first.
+  - **The follow-ons added at the operator's request** were the docs-and-
+    tooling ones that needed no decision: FW1 (a clock-delayed DOM step
+    released by the test), FW3, FW4 (an editor test for the feedback limit
+    against the real cache), FW5 (the two-card scenario in CI's subset), FW6
+    (Team Training's fixtures and scenario) and two stale facts. Two items
+    on the list turned out to be done already and were struck: the
+    resume-request test's one-minute-a-day failure (its clock was pinned in
+    an earlier pass) and the outbound tab's data stamp (F24).
+  - **Left:** product follow-ons, each small but not docs or tooling (the
+    Reference drawer's blocked-copy dialog under the drawer; the rep's Search
+    not showing its 200 cap; `archiveError` shipped and not drawn); a local
+    command equal to CI and a cycle-open script (the scan's ST1); the
+    handbook app's build stamp (ST2's other half).
 - <a id="c26-one-verdict-for-employee-docs"></a>**One verdict for Verify, the certificate and the copy; the copy email is capped and reaches only today's managers; pdf.js is checksum-checked (cycle 26 Batch 6: F13, F14, F15, F44, F56, F64).**
   - **`verified` is its own field, not "not tampered" (F13).** A check has
     three outcomes and the old flag recorded one of them. `empDocVerdict_`
