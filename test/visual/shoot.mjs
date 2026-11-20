@@ -17,13 +17,15 @@ const I3_CARD_LINES = JSON.stringify(JSON.parse(fs.readFileSync(path.join(HERE, 
 const I3_CARD_LINES_UNSURE = JSON.stringify(JSON.parse(fs.readFileSync(path.join(HERE, '..', 'client', 'i3-card-lines.json'), 'utf8'))['c-uhc/small']);
 // F21 (cycle 26): two different cards attached — the Medicare card and a plan
 // card — are two suggestions, each with its own boxes, line and buttons.
-const I3_TWO_CARDS = (function () {
+// FV1: two PLAN cards carry the "Same card as Card 1" button (the mobile shot);
+// a Medicare card beside a plan card never does (the wide one).
+const I3_TWO_CARDS = (function (first, second) {
   const all = JSON.parse(fs.readFileSync(path.join(HERE, '..', 'client', 'i3-card-lines.json'), 'utf8'));
-  return "(function(){ var L = " + JSON.stringify([all['c-medicare/clean'], all['c-humana/clean']]) + ", n = 0; window.INTAKE_OCR_ENGINE = { read: function () { return Promise.resolve(L[n++ % 2]); } }; " +
+  return "(function(){ var L = " + JSON.stringify([all[first], all[second]]) + ", n = 0; window.INTAKE_OCR_ENGINE = { read: function () { return Promise.resolve(L[n++ % 2]); } }; " +
     "var mk = function (fill, label) { var c = document.createElement('canvas'); c.width = 320; c.height = 200; var x = c.getContext('2d'); x.fillStyle = fill; x.fillRect(0, 0, 320, 200); x.fillStyle = '#fff'; x.font = '18px sans-serif'; x.fillText(label, 20, 40); return c.toDataURL('image/png'); }; " +
     "INTAKE_STATE.pmd.images = [mk('#b23a48', 'Specimen card 1'), mk('#2b7cc9', 'Specimen card 2')]; intakeRenderGallery_('pmd'); var b = document.querySelector('[data-card-read]'); if (b) b.click(); " +
     "setTimeout(function () { var p = document.getElementById('intk-card-read'); if (p) p.scrollIntoView({ block: 'center' }); }, 300); })()";
-})();
+});
 const PAGE = 'file://' + path.join(HERE, 'page.html');
 const PAGE_HB = 'file://' + path.join(HERE, 'page-handbook.html');   // HB1.4: the handbook app (opts.page: 'handbook')
 const OUT = path.join(HERE, 'shots');
@@ -321,8 +323,8 @@ const SCENARIOS = [
   // with what the real one returned for a specimen card photo.
   ['intake-card-read-light-wide', { tool: 'intake', tab: 'intakePmdAccount' }, WIDE, 'light', '', "(function(){ var L = " + I3_CARD_LINES + "; window.INTAKE_OCR_ENGINE = { read: function () { return Promise.resolve(L); } }; var c = document.createElement('canvas'); c.width = 320; c.height = 200; var x = c.getContext('2d'); x.fillStyle = '#2b7cc9'; x.fillRect(0, 0, 320, 200); x.fillStyle = '#fff'; x.font = '18px sans-serif'; x.fillText('Specimen card', 20, 40); INTAKE_STATE.pmd.images = [c.toDataURL('image/png')]; intakeRenderGallery_('pmd'); var b = document.querySelector('[data-card-read]'); if (b) b.click(); setTimeout(function () { var p = document.getElementById('intk-card-read'); if (p) p.scrollIntoView({ block: 'center' }); }, 300); })()", { wait: 700 }],
   ['intake-card-read-dark-mobile', { tool: 'intake', tab: 'intakePmdAccount' }, MOBILE, 'dark', '', "(function(){ var L = " + I3_CARD_LINES_UNSURE + "; window.INTAKE_OCR_ENGINE = { read: function () { return Promise.resolve(L); } }; var c = document.createElement('canvas'); c.width = 320; c.height = 200; var x = c.getContext('2d'); x.fillStyle = '#2b7cc9'; x.fillRect(0, 0, 320, 200); x.fillStyle = '#fff'; x.font = '18px sans-serif'; x.fillText('Specimen card', 20, 40); INTAKE_STATE.pmd.images = [c.toDataURL('image/png'), 'data:image/png;base64,AAAA']; intakeRenderGallery_('pmd'); var b = document.querySelector('[data-card-read]'); if (b) b.click(); setTimeout(function () { var p = document.getElementById('intk-card-read'); if (p) p.scrollIntoView({ block: 'center' }); }, 300); })()", { wait: 700 }],
-  ['intake-card-two-light-wide', { tool: 'intake', tab: 'intakePmdAccount' }, WIDE, 'light', '', I3_TWO_CARDS, { wait: 700 }],
-  ['intake-card-two-dark-mobile', { tool: 'intake', tab: 'intakePmdAccount' }, MOBILE, 'dark', '', I3_TWO_CARDS, { wait: 700 }],
+  ['intake-card-two-light-wide', { tool: 'intake', tab: 'intakePmdAccount' }, WIDE, 'light', '', I3_TWO_CARDS('c-medicare/clean', 'c-humana/clean'), { wait: 700 }],
+  ['intake-card-two-dark-mobile', { tool: 'intake', tab: 'intakePmdAccount' }, MOBILE, 'dark', '', I3_TWO_CARDS('c-uhc/clean', 'c-humana/clean'), { wait: 700 }],
   ['intake-pap-light-wide', { tool: 'intake', tab: 'intakePapAccount' }, WIDE, 'light', ''],
   // 25post A1: a Sent PPD's detail — each recommendation with its reason.
   ['intake-sent-detail-light-wide', { tool: 'intake', tab: 'intakeSent' }, WIDE, 'light', '', "intakeOpenSent_(document.querySelector('[data-sent-idx]')); setTimeout(function () { var g = document.querySelector('.intk-sent-grp'); if (g) g.scrollIntoView({ block: 'start' }); }, 250)"],

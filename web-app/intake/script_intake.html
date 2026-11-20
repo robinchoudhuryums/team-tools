@@ -3628,6 +3628,30 @@ function intakeCardGroup_(reads) {
   });
   return cards;
 }
+/** PURE (Node-pinned) — FV1 (cycle 26): two suggestions the rep says are ONE
+ *  card, joined. The grouping can split a card in two — a second photo whose
+ *  ID is misread by one character, a payer the list does not know printed
+ *  differently front and back — and the rep had no way to say so. The upper
+ *  card's value is kept for each field, a blank is filled from the lower one,
+ *  and a field the two DISAGREED on is marked "check this": which read was
+ *  right is the rep's to say. */
+function intakeCardJoinFields_(a, b) {
+  a = a || {}; b = b || {};
+  var out = intakeCardMerge_(a, b);
+  INTAKE_CARD_FIELDS.forEach(function (p) {
+    var k = p[0], x = String(a[k] || '').toUpperCase(), y = String(b[k] || '').toUpperCase();
+    if (x && y && x !== y && out[k]) out.unsure[k] = true;
+  });
+  return out;
+}
+/** PURE (Node-pinned) — FV1: may these two be offered as "the same card"?
+ *  Not when joining them would drop a Medicare ID one of them holds (the
+ *  merge withholds an MBI beside an Advantage read): a Medicare card and a
+ *  plan card are two cards, and one press must not lose the number. */
+function intakeCardCanJoin_(a, b) {
+  a = a || {}; b = b || {};
+  return !((a.mbi || b.mbi) && !intakeCardMerge_(a, b).mbi);
+}
 /** PURE — does a card's read hold anything to offer? */
 function intakeCardHasValue_(f) {
   return !!f && INTAKE_CARD_FIELDS.some(function (p) { return f[p[0]]; });
@@ -3735,6 +3759,10 @@ function intakeCardPanel_(form) {
   var dismiss = '<button type="button" class="intk-btn" data-card-close="1">' + esc(es ? 'Cerrar' : 'Dismiss') + '</button>';
   var section = function (x, pos) {
     var f = x.card.fields, unsure = f.unsure || (f.unsure = {});
+    // FV1: every card after the first can be joined to the one above it.
+    var above = pos > 0 ? offered[pos - 1] : null;
+    var join = (above && intakeCardCanJoin_(above.card.fields, f)) ? '<button type="button" class="intk-btn" data-card-join="1">' +
+      esc((es ? 'Es la misma tarjeta que la Tarjeta ' : 'Same card as Card ') + pos) + '</button>' : '';
     var shown = INTAKE_CARD_FIELDS.filter(function (p) { return p[0] !== 'mbi' || f.mbi || !f.memberId; });
     var imgs = x.card.images || [];
     var name = (es ? 'Tarjeta ' : 'Card ') + (pos + 1);
@@ -3754,7 +3782,7 @@ function intakeCardPanel_(form) {
       '<p class="intk-card-line"><span>' + esc(es ? 'Se escribirá:' : 'Will be written as:') + '</span> <b data-card-line>' + esc(intakeCardLine_(f)) + '</b></p>' +
       '<div class="intk-card-acts"><button type="button" class="intk-btn primary" data-card-use="8">' + esc(es ? 'Usar como seguro primario' : 'Use as primary insurance') + '</button>' +
         '<button type="button" class="intk-btn" data-card-use="9">' + esc(es ? 'Usar como seguro secundario' : 'Use as secondary insurance') + '</button>' +
-        (several ? '' : dismiss) + '</div>' +
+        join + (several ? '' : dismiss) + '</div>' +
     '</div>';
   };
   var head = !any ? (es ? 'No se encontraron datos del seguro en las imágenes — escríbalos en el formulario.' : 'No insurance details were found in the images — type them on the form.')
@@ -3792,10 +3820,35 @@ function intakeCardPanel_(form) {
     var t = e.target.closest ? e.target.closest('button') : null;
     if (!t) return;
     if (t.hasAttribute('data-card-close')) { delete INTAKE_CARD[form]; host.innerHTML = ''; intakeRenderGallery_(form); return; }
+    if (t.hasAttribute('data-card-join')) { var j = cardOf(t); if (j) intakeCardJoin_(form, j.n); return; }
     var idx = t.getAttribute('data-card-use');
     var c = idx ? cardOf(t) : null;
     if (c) intakeCardUse_(form, parseInt(idx, 10), c.n);
   };
+}
+/** FV1 (cycle 26): card `n` is the same card as the one offered above it —
+ *  join the two into the upper one (intakeCardJoinFields_), keep both cards'
+ *  images on it, and redraw. Nothing reaches the form; the joined card is
+ *  still only a suggestion, with the fields the two disagreed on marked. */
+function intakeCardJoin_(form, n) {
+  var st = INTAKE_CARD[form];
+  if (!st) return;
+  var offered = intakeCardOffered_(st), pos = -1;
+  offered.forEach(function (x, i) { if (x.n === n) pos = i; });
+  if (pos < 1) return;
+  var into = offered[pos - 1].card, from = offered[pos].card;
+  if (!intakeCardCanJoin_(into.fields, from.fields)) return;
+  into.fields = intakeCardJoinFields_(into.fields, from.fields);
+  into.images = (into.images || []).concat(from.images || []).sort(function (x, y) { return x - y; });
+  st.cards.splice(n, 1);
+  intakeCardPanel_(form);
+  // The redraw replaced the pressed button (g141): focus goes to the joined
+  // card's first marked box, or its first box.
+  var host = intakeCardHost_(form);
+  var sec = host && host.querySelector('[data-card-n="' + st.cards.indexOf(into) + '"]');
+  var box = sec && (sec.querySelector('.intk-card-unsure input') || sec.querySelector('input'));
+  if (box) { try { box.focus(); } catch (_) {} }
+  showToast('Joined into one card — check the values marked.', 'toast-success');
 }
 /** Write card `n`'s line into the primary (8) or secondary (9) insurance field —
  *  asking first when that field already holds something — then let I1 tidy

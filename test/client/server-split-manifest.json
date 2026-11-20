@@ -4901,6 +4901,21 @@
     "submitIntakeFeedback"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-20",
+   "why": "cycle 26 FV2: intakeFeedbackAllowed_ and its three constants — a per-sender hourly limit on intake feedback calls",
+   "added": [
+    "INTAKE_FEEDBACK_MAX_PER_HOUR",
+    "INTAKE_FEEDBACK_RATE_PREFIX",
+    "INTAKE_FEEDBACK_RATE_TTL_SEC",
+    "intakeFeedbackAllowed_"
+   ],
+   "removed": [],
+   "changed": [
+    "submitIntakeFeedback"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -6264,6 +6279,21 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "6d1f8cbdf44febdf"
+  },
+  "INTAKE_FEEDBACK_MAX_PER_HOUR": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "7f040a5288c242b9"
+  },
+  "INTAKE_FEEDBACK_RATE_PREFIX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "7db3f542f1a90e68"
+  },
+  "INTAKE_FEEDBACK_RATE_TTL_SEC": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "1beaedca14a1d4ad"
   },
   "INTAKE_FEEDBACK_SCAN_MAX": {
    "file": "00_config.js",
@@ -12185,6 +12215,11 @@
    "kind": "function",
    "sha": "e75df115ba3742a1"
   },
+  "intakeFeedbackAllowed_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "ae9f9b6a4d17e529"
+  },
   "intakeFeedbackCaller_": {
    "file": "60_intake.js",
    "kind": "function",
@@ -15638,7 +15673,7 @@
   "submitIntakeFeedback": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "66cd64a44768eb72"
+   "sha": "fa86605285ea765b"
   },
   "submitPunchAdjustRequests": {
    "file": "20_timeclock.js",

@@ -16759,3 +16759,57 @@ test('F67 DOM (cycle 26): in a browser that cannot compile the card patterns, Re
   h.read('intakeOcrEngine_ = window.__eng');
   delete h.window.INTAKE_OCR_ENGINE;
 });
+
+section('DOM harness — cycle 26 follow-ons after Batch 13 (FV1)');
+
+test('FV1 DOM (cycle 26): a card the reader split in two — a second photo with one character misread — is joined by "Same card as Card 1": one suggestion, both images, the disputed ID marked and focused, nothing written to the form; the first card has no such button, and a Medicare card beside a plan card is never offered one (driven, reader stood in)', async () => {
+  const { h, field } = bootAcct('pmd');
+  const lines = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '..', 'i3-card-lines.json'), 'utf8'));
+  const misread = JSON.parse(JSON.stringify(lines['c-humana/phone']).replace(/H71938642/g, 'H7193B642'));
+  const bySrc = { 'data:image/png;base64,HUM1': lines['c-humana/clean'], 'data:image/png;base64,HUMX': misread, 'data:image/png;base64,UHC1': lines['c-uhc/clean'], 'data:image/png;base64,MED1': lines['c-medicare/clean'] };
+  h.window.INTAKE_OCR_ENGINE = { read: (img) => Promise.resolve(bySrc[img.src] || []) };
+  h.read('intakeCardImage_ = function (src) { return Promise.resolve({ src: src }); }');
+  const host = () => h.$('#intk-card-read');
+  const attach = async (names) => {
+    h.window.__imgs = names.map((n) => 'data:image/png;base64,' + n);
+    h.read('INTAKE_STATE.pmd.images = window.__imgs.slice()');
+    h.read('intakeRenderGallery_')('pmd');
+    host().querySelector('[data-card-read]').click();
+    for (let i = 0; i < 10; i++) await tick();
+  };
+  const secs = () => Array.from(host().querySelectorAll('.intk-card-one'));
+  const lineOf = (s) => s.querySelector('[data-card-line]').textContent;
+  const joins = () => secs().map((s) => { const b = s.querySelector('[data-card-join]'); return b ? b.textContent : ''; });
+  // UHC, then the Humana card twice — the second Humana photo misread.
+  await attach(['UHC1', 'HUM1', 'HUMX']);
+  assert.deepStrictEqual(secs().map(lineOf), ['UnitedHealthcare · ID 912345678 · Group 0701234', 'Humana Gold Plus (HMO) · ID H71938642 · Group X1234005', 'Humana Gold Plus (HMO) · ID H7193B642 · Group X1234005'],
+    'the split: one Humana card offered twice');
+  assert.deepStrictEqual(joins(), ['', 'Same card as Card 1', 'Same card as Card 2'], 'every card after the first can be joined to the one above');
+  secs()[2].querySelector('[data-card-join]').click();
+  await tick();
+  assert.deepStrictEqual(secs().map(lineOf), ['UnitedHealthcare · ID 912345678 · Group 0701234', 'Humana Gold Plus (HMO) · ID H71938642 · Group X1234005'], 'THE POINT: one Humana suggestion — and the UHC card untouched');
+  assert.strictEqual(secs()[1].querySelector('.intk-card-which').textContent, 'Card 2 · images 2, 3', 'it carries both images');
+  const idBox = secs()[1].querySelector('[data-card-key="memberId"]');
+  assert.ok(idBox.closest('.intk-card-f').classList.contains('intk-card-unsure') && /Check this one/.test(idBox.closest('.intk-card-f').textContent), 'the ID the two photos disagreed on is marked');
+  assert.ok(!secs()[1].querySelector('[data-card-key="payer"]').closest('.intk-card-f').classList.contains('intk-card-unsure'), 'a value they agreed on is not');
+  assert.strictEqual(h.document.activeElement, idBox, 'focus is on the box to check — not lost with the pressed button');
+  assert.deepStrictEqual([field(8).value, field(9).value], ['', ''], 'a join writes nothing to the form');
+  assert.strictEqual(h.read('INTAKE_CARD.pmd.cards.length'), 2);
+  // The rep fixes the ID; the flag goes; the card is used as before.
+  idBox.value = 'H71938642';
+  idBox.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.ok(!idBox.closest('.intk-card-f').classList.contains('intk-card-unsure'));
+  secs()[1].querySelector('[data-card-use="8"]').click();
+  await tick();
+  assert.strictEqual(field(8).value, 'Humana Gold Plus (HMO) · ID H71938642 · Group X1234005');
+  assert.strictEqual(secs().length, 1, 'the UHC card is still offered');
+  assert.strictEqual(host().querySelectorAll('[data-card-join]').length, 0, 'a lone card has nothing to join');
+  host().querySelector('[data-card-close]').click();
+  // A Medicare card and a plan card: two cards, and no button that would lose the Medicare ID.
+  await attach(['MED1', 'HUM1']);
+  assert.deepStrictEqual(secs().map(lineOf), ['Medicare 1EG4TE5MK72', 'Humana Gold Plus (HMO) · ID H71938642 · Group X1234005']);
+  assert.deepStrictEqual(joins(), ['', ''], 'not offered');
+  h.read('intakeCardJoin_')('pmd', 1);
+  assert.strictEqual(secs().length, 2, 'and a direct call refuses too');
+  delete h.window.INTAKE_OCR_ENGINE;
+});

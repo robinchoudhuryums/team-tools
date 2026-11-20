@@ -531,6 +531,28 @@ function intakeFeedbackCaller_(emp, activeEmail) {
   if (e && isOrgEmail_(e)) return { id: '', name: '', email: e, onRoster: false };
   return null;
 }
+/** FV2 (cycle 26) — may this sender make another feedback call this hour?
+ *  The activity log's guard, for the same reason (FS3): cache only and
+ *  lock-free — a guard, not an accounting. EVERY identified call counts,
+ *  refused ones too, so trying submission ids is limited with the rows. A
+ *  cache that cannot be read ALLOWS the call: the limit must never be why a
+ *  recipient's feedback is lost. The first refusal of an hour writes ONE
+ *  AuditLog row (IntakeFeedbackLimited — the sender and the limit, nothing
+ *  typed). Never throws. */
+function intakeFeedbackAllowed_(who, nowMs) {
+  try {
+    const cache = CacheService.getScriptCache();
+    const key = INTAKE_FEEDBACK_RATE_PREFIX + who.email + ':' + Math.floor(nowMs / 3600000);
+    const d = activityRowDecision_(cache.get(key), INTAKE_FEEDBACK_MAX_PER_HOUR);
+    cache.put(key, String(d.next), INTAKE_FEEDBACK_RATE_TTL_SEC);
+    if (d.note) {
+      const at = new Date(nowMs);
+      writeAuditLog_(who, 'IntakeFeedbackLimited', fmtDate_(at), fmtTime_(at), false, 0,
+        'More than ' + INTAKE_FEEDBACK_MAX_PER_HOUR + ' intake feedback calls in an hour — the calls past the limit were refused', who.email);
+    }
+    return d.allow;
+  } catch (e) { return true; }
+}
 /** Callable by a roster employee or anyone signed in to an org account (F22 —
  *  the recipient of the email is one or the other). Locked (INV-01); the row
  *  is appended only when the submission actually EXISTS, so a mistyped/forged
@@ -544,6 +566,10 @@ function submitIntakeFeedback(submissionId, formType, text) {
   if (!who) {
     return { success: false, error: active ? 'Not authorized.'
       : 'Could not tell who is signed in \u2014 sign in with your work account, then open the link from the email again.' };
+  }
+  // FV2: one sender, a few an hour — refused before the lock, like the caller (F58).
+  if (!intakeFeedbackAllowed_(who, Date.now())) {
+    return { success: false, error: 'That is a lot of feedback in one hour \u2014 nothing more was sent. Try again later.' };
   }
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);

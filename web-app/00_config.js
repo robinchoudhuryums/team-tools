@@ -2273,6 +2273,14 @@ let _intakeOfferingsCache = null;
 // Intake spreadsheet (feedback may reference the patient, so it stays in the
 // PHI store — never the shared AuditLog).
 const INTAKE_FEEDBACK_HEADERS = ['Timestamp', 'SubmissionId', 'FormType', 'FromEmail', 'FromName', 'Feedback'];
+// FV2 (cycle 26): the most feedback calls ONE sender may make in an hour.
+// Since F22 the sender may be any org account, and nothing limited the rows
+// one could add (or the submission ids one could try). A person writes one or
+// two about a recommendation; past this the caller is not a person reading
+// an intake email.
+const INTAKE_FEEDBACK_MAX_PER_HOUR = 12;
+const INTAKE_FEEDBACK_RATE_PREFIX = 'intk_fb_v1:';
+const INTAKE_FEEDBACK_RATE_TTL_SEC = 7200;   // two hours — the key names its hour, so it only has to outlive it
 const INTAKE_FEEDBACK_MAX_CHARS = 4000;
 const INTAKE_FEEDBACK_SCAN_MAX = 2000;   // bounded tail — feedback is recent-biased
 // 25post B7 — how the PPD email groups and colours its answers (the client

@@ -51748,6 +51748,7 @@ test('F22 (cycle 26): intake feedback is taken from a roster employee OR anyone 
     const ctx = b10Ctx_(['isOrgEmail_', 'intakeFeedbackCaller_', 'submitIntakeFeedback'], {
       CONFIG: { ORG_EMAIL_DOMAINS: ['umsupply.com'] }, INTAKE_FORM_TYPES_: ['PPD', 'PMD', 'PAP'], INTAKE_FEEDBACK_MAX_CHARS: 4000,
       getEmployeeInfo_: () => emp, getActiveUserEmail_: () => active,
+      intakeFeedbackAllowed_: () => true,   // FV2: the hourly limit has its own pin
       LockService: { getScriptLock: () => ({ waitLock() { log.locks++; }, releaseLock() {} }) },
       getIntakeSubmissionSheet_: () => ({ getLastRow: () => 3, getRange: () => ({ getValues: () => [['SUB-1'], ['SUB-2']] }) }),
       getIntakeFeedbackSheet_: () => ({ appendRow: (r) => log.rows.push(r) }),
@@ -51796,6 +51797,117 @@ test('F23 (cycle 26): the Intake store is labelled for what happens to it — KE
   const ops = fs.readFileSync(path.join(C26_ROOT, 'docs', 'operator-state.md'), 'utf8');
   const entry = ops.slice(ops.indexOf('<a id="operator-set-script-property-intake-ss-id"></a>'), ops.indexOf('<a id="operator-intake-recipient-addresses-are-script-property-backed"></a>'));
   assert.ok(entry.length > 100 && /`IntakeFeedback`/.test(entry) && /no purge/i.test(entry), 'the operator entry names the tab and that nothing is purged');
+});
+
+// ── Cycle 26 follow-ons after Batch 13: FV1–FV3 ──────────────────────────────
+console.log('\nCycle 26 follow-ons after Batch 13 — two suggestions the reader split can be joined (FV1), a limit on feedback calls per sender (FV2), the client scripts\' syntax level (FV3)');
+
+test('FV1 (cycle 26): two suggestions the rep says are one card are JOINED — the upper value kept, a blank filled from the lower, and every field the two disagreed on marked "check this"; a join that would drop a Medicare ID is not offered (driven, and over a real read misread by one character)', () => {
+  const { ctx } = i3Ctx_();
+  ['intakeCardJoinFields_', 'intakeCardCanJoin_'].forEach((n) => vm.runInContext(extractFnFrom(fs.readFileSync(path.join(PA_WEB, 'intake/script_intake.html'), 'utf8'), n), ctx));
+  const J = (a, b) => i1J(ctx.intakeCardJoinFields_(a, b));
+  let j = J({ payer: 'Humana', memberId: 'H71938642', group: '' }, { payer: 'humana', memberId: 'H7193B642', group: 'X1234005' });
+  assert.deepStrictEqual([j.payer, j.memberId, j.group], ['Humana', 'H71938642', 'X1234005'], 'the upper card\'s value, and the lower one\'s where the upper had none');
+  assert.deepStrictEqual(j.unsure, { memberId: true }, 'THE POINT: the ID the two reads disagreed on is marked — the same payer in another case is not, nor a filled blank');
+  j = J({ memberId: 'A1', unsure: { memberId: true } }, { memberId: 'a1', group: 'G9', unsure: { group: true } });
+  assert.deepStrictEqual(j.unsure, { memberId: true, group: true }, 'a doubt each read already had travels with its value');
+  assert.deepStrictEqual(J({ payer: 'Sunrise Mutual' }, { payer: 'Sunrise Mutual Insurance Co' }).unsure, { payer: true }, 'a payer printed two ways is marked');
+  assert.deepStrictEqual(J(null, { memberId: 'Z9' }).memberId, 'Z9');
+  const can = (a, b) => ctx.intakeCardCanJoin_(a, b);
+  assert.strictEqual(can({ payer: 'Humana', memberId: 'H1' }, { payer: 'Humana', memberId: 'H2' }), true, 'two plan reads may be the same card');
+  assert.strictEqual(can({ payer: 'Medicare', mbi: '1EG4TE5MK72' }, { payer: 'Humana', memberId: 'H1', advantage: true }), false, 'a Medicare card and a plan card: joining would withhold the Medicare ID');
+  assert.strictEqual(can({ payer: 'Humana', advantage: true }, { mbi: '1EG4TE5MK72' }), false, 'in either order');
+  assert.strictEqual(can({ mbi: '1EG4TE5MK72' }, { mbi: '1EG4TE5MK73' }), true, 'two reads of a Medicare card keep an MBI');
+  assert.strictEqual(can({ mbi: '1EG4TE5MK72' }, { group: 'G1' }), true);
+  assert.strictEqual(can(null, undefined), true);
+  // The failure mode itself, on a real read: one character misread splits the card; the join puts it back.
+  const lines = JSON.parse(fs.readFileSync(path.join(__dirname, 'i3-card-lines.json'), 'utf8'));
+  const good = i1J(ctx.intakeCardParse_(ctx.intakeCardRows_(lines['c-humana/clean'])));
+  const off = i1J(ctx.intakeCardParse_(ctx.intakeCardRows_(JSON.parse(JSON.stringify(lines['c-humana/phone']).replace(/H71938642/g, 'H7193B642')))));
+  assert.strictEqual(off.memberId, 'H7193B642', 'the misread copy');
+  const cards = i1J(ctx.intakeCardGroup_([good, off]));
+  assert.strictEqual(cards.length, 2, 'the grouping splits them (Batch 13\'s recorded failure mode)');
+  assert.strictEqual(can(cards[0].fields, cards[1].fields), true);
+  const one = J(cards[0].fields, cards[1].fields);
+  assert.deepStrictEqual([ctx.intakeCardLine_(one), one.unsure], ['Humana Gold Plus (HMO) · ID H71938642 · Group X1234005', { memberId: true }]);
+});
+
+test('FV2 (cycle 26): one sender may make a few intake feedback calls an hour — past the limit the call is refused before the lock and writes nothing, the first refusal of the hour leaves ONE PHI-free audit row, refused and forged calls count, another sender and the next hour are unaffected, and a cache that cannot be read allows the call (driven)', () => {
+  const MAX = Number(/= (\d+);/.exec(b8aConst_('INTAKE_FEEDBACK_MAX_PER_HOUR'))[1]);
+  assert.ok(MAX >= 5 && MAX <= 30, 'a limit a person never meets and a script meets at once (' + MAX + ')');
+  const mk = (cacheThrows) => {
+    const log = { locks: 0, rows: [], audit: [] }, store = {};
+    let now = Date.UTC(2026, 10, 20, 15, 5, 0), active = 'sam.sales@umsupply.com';
+    const RealDate = Date;
+    function FakeDate(...a) { return a.length ? new RealDate(...a) : new RealDate(now); }
+    FakeDate.now = () => now; FakeDate.UTC = RealDate.UTC;
+    const ctx = b10Ctx_(['isOrgEmail_', 'intakeFeedbackCaller_', 'activityRowDecision_', 'intakeFeedbackAllowed_', 'submitIntakeFeedback'], {
+      Date: FakeDate, CONFIG: { ORG_EMAIL_DOMAINS: ['umsupply.com'] }, INTAKE_FORM_TYPES_: ['PPD', 'PMD', 'PAP'], INTAKE_FEEDBACK_MAX_CHARS: 4000,
+      getEmployeeInfo_: () => null, getActiveUserEmail_: () => active,
+      CacheService: { getScriptCache: () => ({ get: (k) => { if (cacheThrows) throw new Error('cache down'); return store[k] || null; }, put: (k, v) => { store[k] = v; } }) },
+      LockService: { getScriptLock: () => ({ waitLock() { log.locks++; }, releaseLock() {} }) },
+      getIntakeSubmissionSheet_: () => ({ getLastRow: () => 2, getRange: () => ({ getValues: () => [['SUB-1']] }) }),
+      getIntakeFeedbackSheet_: () => ({ appendRow: (r) => log.rows.push(r) }),
+      sheetSafeRow_: (r) => r, fmtDate_: () => '2026-11-20', fmtTime_: () => '15:05:00',
+      writeAuditLog_: (t, action, d, tm, adj, back, notes, actor) => log.audit.push([action, notes, actor]) });
+    ['INTAKE_FEEDBACK_MAX_PER_HOUR', 'INTAKE_FEEDBACK_RATE_PREFIX', 'INTAKE_FEEDBACK_RATE_TTL_SEC'].forEach((k) => vm.runInContext(b8aConst_(k), ctx));
+    return { log, store, send: (id) => b10J(ctx.submitIntakeFeedback(id || 'SUB-1', 'PMD', 'SECRET patient detail')), as: (e) => { active = e; }, later: (ms) => { now += ms; } };
+  };
+  let t = mk(false);
+  for (let i = 0; i < MAX; i++) assert.deepStrictEqual(t.send(), { success: true }, 'call ' + (i + 1) + ' is taken');
+  assert.strictEqual(t.log.rows.length, MAX);
+  const locksAtLimit = t.log.locks;
+  const over = t.send();
+  assert.ok(over.success === false && /a lot of feedback in one hour/.test(over.error), 'THE REGRESSION: nothing limited one sender\'s rows');
+  assert.deepStrictEqual([t.log.rows.length, t.log.locks], [MAX, locksAtLimit], 'refused before the lock, and no row');
+  const limited = t.log.audit.filter((a) => a[0] === 'IntakeFeedbackLimited');
+  assert.strictEqual(limited.length, 1, 'one audit row for the hour');
+  assert.ok(new RegExp('^More than ' + MAX + ' intake feedback calls in an hour').test(limited[0][1]) && limited[0][2] === 'sam.sales@umsupply.com' && !/SECRET/.test(JSON.stringify(t.log.audit)), 'it names the sender and the limit, never what was typed');
+  t.send(); t.send();
+  assert.strictEqual(t.log.audit.filter((a) => a[0] === 'IntakeFeedbackLimited').length, 1, 'later refusals add no row');
+  t.as('pat.pap@umsupply.com');
+  assert.deepStrictEqual(t.send(), { success: true }, 'another sender is not limited by the first');
+  t.as('sam.sales@umsupply.com'); t.later(3600000);
+  assert.deepStrictEqual(t.send(), { success: true }, 'the next hour starts again');
+  // Refused calls count: trying ids is limited with the rows.
+  t = mk(false);
+  for (let i = 0; i < MAX; i++) assert.ok(/Submission not found/.test(t.send('GUESS-' + i).error));
+  assert.ok(/a lot of feedback in one hour/.test(t.send('SUB-1').error) && !t.log.rows.length, 'a sender who spent the hour guessing ids is refused the real one too');
+  // A cache that cannot be read never costs a recipient their feedback.
+  t = mk(true);
+  for (let i = 0; i < MAX + 5; i++) assert.deepStrictEqual(t.send(), { success: true });
+  assert.strictEqual(t.log.audit.filter((a) => a[0] === 'IntakeFeedbackLimited').length, 0);
+  const w = stripJsComments_(extractRawFunction('Code.js', 'submitIntakeFeedback'));
+  assert.ok(w.indexOf('intakeFeedbackCaller_(') < w.indexOf('intakeFeedbackAllowed_(') && w.indexOf('intakeFeedbackAllowed_(') < w.indexOf('waitLock('), 'identified, then limited, then the lock');
+});
+
+testNeedsDeps(['acorn'], 'FV3 (cycle 26): every client script in both apps parses as ES2015 — a floor, measured and held: syntax newer than it (a lookbehind, optional chaining, async, an object spread) fails here instead of on the oldest browser someone opens the app in; raising the level is a decision about browsers, made on purpose (derived, parsed)', () => {
+  const acorn = require('acorn');
+  const LEVEL = 2015;
+  const parses = (code, v) => { try { acorn.parse(code.replace(/<\?[\s\S]*?\?>/g, 'null'), { ecmaVersion: v, sourceType: 'script', allowReturnOutsideFunction: true }); return ''; } catch (e) { return e.message; } };
+  // The parser tells the levels apart — or this pin could not fail.
+  ['var a = /(?<![a-z])b/;', 'var a = o?.b;', 'async function f() { await 1; }', 'var a = { ...o };', 'var a = 2 ** 3;', 'try { f(); } catch { g(); }', 'var a = b ?? c;'].forEach((code) => {
+    assert.ok(parses(code, LEVEL), 'newer syntax is refused at the floor: ' + code);
+    assert.strictEqual(parses(code, 2022), '', 'and is real syntax: ' + code);
+  });
+  assert.strictEqual(parses('const f = (a, b = 1) => `${a}${b}`; let c = class { m() {} }; for (const x of [1]) { f(x); }', LEVEL), '', 'ES2015 itself is accepted');
+  const failed = [], needs2015 = [];
+  let blocks = 0;
+  b13Partials_().forEach((file) => {
+    const html = fs.readFileSync(file, 'utf8');
+    const re = /<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g;
+    let m;
+    while ((m = re.exec(html))) {
+      if (/^<script[^>]*\ssrc=/.test(m[0]) || !m[1].trim()) continue;
+      blocks++;
+      const err = parses(m[1], LEVEL);
+      if (err) failed.push(path.basename(file) + ': ' + err);
+      else if (parses(m[1], 5)) needs2015.push(path.basename(file));
+    }
+  });
+  assert.ok(blocks >= 25, 'the script blocks were read (' + blocks + ')');
+  assert.deepStrictEqual(failed, [], 'THE REGRESSION: syntax newer than ES' + LEVEL + ' in a client script — rewrite it, or raise LEVEL here after deciding which browsers the app must open in');
+  assert.ok(needs2015.length >= 5, 'the level is the floor, not a stale number: these do not parse as ES5 (' + needs2015.length + ')');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
