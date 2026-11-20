@@ -704,6 +704,28 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   out (`drResolveRowLocked_`, for a caller that holds the lock) and runs
   first, under the same lock as the answer row.
 
+  **AMENDED (cycle 26 FU1 + FU2): a lease ends on its own.** A lock is held
+  until it is released; a lease is held until it is released OR its time is
+  up — that is what lets a killed save's lease free itself. The other side
+  of that: a save still RUNNING when its 60 seconds end no longer has the
+  Sheet to itself, and nothing told it. A second window could start, and the
+  two would both run a positional append (whose contract is "the caller is
+  the only writer") or one would write by row index after the other's
+  delete. The holder is now told when its lease ends (`until`), and every
+  leased function calls `cnAssertLeaseLive_` right before it writes: with
+  less than `CN_REP_LEASE_GUARD_MS` left it refuses, having written nothing.
+  The check reads nothing — the guard covers the write's own time and any
+  difference between clocks.
+
+  Batch 12 moved the Scratchpad onto a lease and, with it, onto the project
+  lock for the lease's check-and-set — a few milliseconds, but a wait behind
+  whatever holds that lock. A tag rename walks every rep's Sheet with it
+  held; for that long every pad autosave timed out. The NOTE lease needs the
+  project lock there (a holder of it must know no new note lease can start).
+  The Scratchpad's needs only a mutex, and the "user" lock is one — a single
+  lock for everyone, apart from the project lock — so its check-and-set is
+  taken under that instead.
+
 <a id="g18-normalizetype-strips-the-adj-prefix"></a>
 
 - **`normalizeType_` strips the `ADJ-` prefix.** Adjustments are
@@ -2503,6 +2525,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   text goes onto a new "Recovered text" page. The comparison uses two SERVER
   stamps — a computer clock that is off cannot decide it.
   `umsCallNotesParkedDrafts` is the parked call-note drafts (g86).
+
+  **AMENDED (cycle 26 FU3): the end of the 24 hours.** Unsaved Scratchpad
+  text (and, since FT1, text held because no page could take it) is kept in
+  `umsScratchUnsaved` for 24 hours and then removed at the next start-up —
+  without a word, so its owner found the pad without it and no explanation.
+  The removal is now said, in a notice that stays until dismissed, to the
+  account the text belonged to; another account's expired copy is removed
+  silently, as before. Nothing is kept longer.
 
 <a id="g113-read-the-server-through-serversource-never-by"></a>
 

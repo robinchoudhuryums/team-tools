@@ -11,6 +11,21 @@ keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
 
+## 2026-11-20 — Cycle 26 follow-ons after Batch 12 (FU1–FU3)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The
+handbook app is not affected.
+
+- **Scratchpad saves and long jobs (FU2):** a pad save no longer waits on the
+  project lock, so a tag rename or another long job does not make pads fail
+  to save. (Batch 12 had introduced that dependency; it never shipped.)
+- **A save that takes too long (FU1):** a note or Scratchpad save that has
+  run for about fifty seconds stops with "Lock timeout: this save took too
+  long to finish safely — nothing was written. Try again." The note stays in
+  the form.
+- **Expired unsaved Scratchpad text (FU3):** when text that was never saved
+  passes its 24 hours in the browser and is removed, a notice now says so.
+
 ## 2026-11-20 — Cycle 26 Batch 12: Server small items (F41–F43)
 
 **Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The

@@ -4451,3 +4451,18 @@ F53, F54, F57.**
   may already have a call of the same method pending — a drive that answers
   by hand flushes timers first, then every pending call of that method.
 - **Bite-checks: 51 mutations (32 pure, 19 DOM), 51 bit, each on its first run.**
+
+## Cycle 26 follow-ons after Batch 12 — FU1–FU3 (2026-11-20)
+
+- **Pure harness: one pin.** The lease margin and the refusal, driven through
+  the real lease taker on a moved clock, with a derived half: every function
+  that takes a lease (eight) checks it before its first write to the Sheet.
+- **DOM harness: one drive.** An expired copy at start-up and on opening the
+  pad, another account's, and one still inside its 24 hours.
+- **Older pins updated:** the lease test context gained a user lock (logged
+  apart from the project lock), the guard constant and the two new helpers;
+  the F42 pin holds the two lock logs — the Scratchpad lease under the user
+  lock, the note lease under the project lock — and counts the file's one
+  `getUserLock`; the mirror pin's read shape gained `mine`; two sandboxes
+  that run a leased function gained a stand-in for the check.
+- **Bite-checks: 17 mutations (12 pure, 5 DOM), 17 bit, each on its first run.**

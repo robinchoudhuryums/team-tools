@@ -7564,6 +7564,26 @@ pick them up without re-deriving the context.
   - **The leading apostrophe is left (F43).** See the amendment under g144.
     `sheetSafe_` must be idempotent, and it cannot tell its own marker from
     the author's apostrophe. Recorded so the one-line fix is not tried again.
+- <a id="c26-fu-follow-ons"></a>**The follow-ons after Batch 12 — a save checks its lease before it writes, the Scratchpad lease is guarded by the user lock, expired unsaved text is said (cycle 26 FU1–FU3).**
+  - **Refuse, do not renew (FU1).** A save near the end of its lease could
+    extend it instead. That needs a check-and-set under the lock for every
+    slow save, and a save that has taken fifty seconds is not healthy — it is
+    better stopped, with nothing written and the note still in the form,
+    than given more time. The check costs nothing: the holder knows its own
+    `until`.
+  - **The user lock as what it is (FU2).** Batch 12 took the Scratchpad off
+    the user lock because it is not per person. That same fact makes it a
+    second global mutex, separate from the project lock, and a few
+    milliseconds under it is all the Scratchpad lease's check-and-set needs.
+    The note lease stays under the project lock: writers that hold it rely on
+    no new note lease starting.
+  - **Said to its owner only (FU3).** A shared computer may hold another
+    account's expired copy; removing it is right, announcing it to whoever
+    is signed in is not.
+  - **Left:** the leading apostrophe (a decision is wanted — Batch 12); the
+    reply scan's by-domain rule, a fold's "resolve all", the kept resolve
+    answer across a reload, parked drafts between two live windows, the
+    "Handled / day" divisor — each a design choice.
 - <a id="c26-one-verdict-for-employee-docs"></a>**One verdict for Verify, the certificate and the copy; the copy email is capped and reaches only today's managers; pdf.js is checksum-checked (cycle 26 Batch 6: F13, F14, F15, F44, F56, F64).**
   - **`verified` is its own field, not "not tampered" (F13).** A check has
     three outcomes and the old flag recorded one of them. `empDocVerdict_`
