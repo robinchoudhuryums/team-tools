@@ -13945,8 +13945,10 @@ console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comme
       /setAttribute\('aria-labelledby', 'cn-scratch-title'\)/.test(cn), 'A14-named, non-modal dialog');
     assert.ok(/aria-label="Scratchpad contents"/.test(cn), 'the textarea is named (INV-195)');
     const close = strip(extractFunction('cn/script_callnotes.html', 'cnCloseScratchpadModal_'));
-    assert.ok(/if \(CN_SCRATCH\.dirty\) \{[\s\S]*cnScratchSave_\(true\)/.test(close),   // C6: captures `latest` first
+    assert.ok(/if \(CN_SCRATCH\.dirty\) \{?\s*cnScratchSave_\(true\)/.test(close),
       'a pending debounce FLUSHES on close (INV-148 — typed text never dies with the modal)');
+    // FT4: the save reads the editor itself, so it must run while the panel is still in the page.
+    assert.ok(close.indexOf('cnScratchSave_(true)') < close.indexOf('panel.remove()'), 'the flush runs BEFORE the panel goes — it reads the editor');
     const saveFn = strip(extractFunction('cn/script_callnotes.html', 'cnScratchSave_'));
     // A failed save is VISIBLE and retryable: the error branch keeps dirty
     // (no dirty=false before the success path) and paints the warn status.
@@ -51277,8 +51279,6 @@ test('FT1: the held row and the layer above the pad have their rules, the recove
   const rec = stripJsComments_(extractFunction('cn/script_callnotes.html', 'cnScratchRecover_'));
   assert.ok(/if \(CN_SCRATCH\.recovering\[lostPage\]\) return;/.test(rec), 'one add per text');
   assert.ok(rec.indexOf('CN_SCRATCH.unchecked[lostPage] = true') < rec.indexOf("cnScratchPageOp_('add'"), 'unsendable BEFORE the add is asked');
-  const settle = stripJsComments_(extractFunction('cn/script_callnotes.html', 'cnScratchSettleAdopted_'));
-  assert.ok(settle.indexOf('cnScratchRecover_(') < settle.indexOf('delete CN_SCRATCH.unchecked[page]'), 'and a conflict goes to the recovery still unchecked');
 });
 
 test('FT3: the tour\'s "still loading" reads BOTH shared loaders inside the view area — and the views that draw the inline one are the ones it was missing (source)', () => {

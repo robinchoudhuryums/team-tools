@@ -16229,6 +16229,8 @@ test('FT1 DOM: recovered Scratchpad text is HELD when the pad is full — never 
   h.window.closeOverlay(man);
   // Move while the pad is still full: the server's refusal is said, the text stays held.
   h.click(row.querySelector('[data-held-act="move"]'));
+  h.click(row.querySelector('[data-held-act="move"]'));   // an impatient second press
+  assert.strictEqual(h.run.pending('scratchpadPageOp').length, 1, 'one add runs per text — a second press does not make a second "Recovered text" page');
   h.run.flushSuccess({ error: ftFullMsg }, 'scratchpadPageOp');
   assert.ok(h.$('#toast-stack').textContent.indexOf(ftFullMsg) >= 0, 'the rep\'s own Move is answered');
   assert.deepStrictEqual([ftHeld(h), p.sent()], [keys, []]);
@@ -16250,7 +16252,7 @@ test('FT1 DOM: held Scratchpad text survives a reload without being sent or open
   const KEY = 'umsScratchUnsaved';
   const prefix = 'held~';
   assert.strictEqual(boot().read('CN_SCRATCH_HELD_PREFIX'), prefix);
-  const blob = JSON.stringify({ who: 'TEST_E1', at: Date.now(), pages: { 'held~abc1': { text: 'kept <b>text</b>', base: null } } });
+  const blob = JSON.stringify({ who: 'TEST_E1', at: Date.now(), pages: { 'held~abc1': { text: 'kept <b>text</b> &lt;i&gt;x&lt;/i&gt;', base: null } } });
   // A full pad: shown, not sent, not asked about.
   const h = bootLog();
   const p = b11Pad(h);
@@ -16261,7 +16263,7 @@ test('FT1 DOM: held Scratchpad text survives a reload without being sent or open
   assert.strictEqual(p.ed().innerHTML, 'main v0');
   assert.deepStrictEqual([h.run.pending('getMyScratchpad').length, h.run.pending('scratchpadPageOp').length, p.sent()], [0, 0, []],
     'a full pad: no read of a page that does not exist, no add the server would refuse, nothing sent');
-  assert.ok(ftRow(h) && /kept text/.test(ftRow(h).textContent) && !ftRow(h).querySelector('b'), 'the row previews it as plain text');
+  assert.ok(ftRow(h) && /kept text <i>x<\/i>/.test(ftRow(h).textContent) && !ftRow(h).querySelector('b, i'), 'the row previews it as plain text — text that looks like markup is text');
   // Discard asks first.
   h.click(ftRow(h).querySelector('[data-held-act="discard"]'));
   const dlg = h.$('.ui-dialog');
@@ -16287,7 +16289,7 @@ test('FT1 DOM: held Scratchpad text survives a reload without being sent or open
   assert.ok(ftRow(h2) && /Move puts it on a new page\./.test(ftRow(h2).textContent) && !/is full/.test(ftRow(h2).textContent));
   h2.click(ftRow(h2).querySelector('[data-held-act="move"]'));
   h2.run.flushSuccess({ success: true, pageId: 'r3', pages: b11Pages.concat([{ id: 'r3', name: 'Recovered text' }]) }, 'scratchpadPageOp');
-  assert.deepStrictEqual(p2.sent(), ['r3:kept <b>text</b>'], 'Move: its text (formatting and all) goes onto the new page');
+  assert.deepStrictEqual(p2.sent(), ['r3:kept <b>text</b> &lt;i&gt;x&lt;/i&gt;'], 'Move: its text (formatting and all) goes onto the new page');
   assert.strictEqual(p2.ed().innerHTML, 'main v0', 'the page on screen is not disturbed');
 
   // A page deleted in another window, and the add fails: held, not retried on every save.
@@ -16372,7 +16374,7 @@ test('FT3 DOM: the tour waits on a view whose INLINE loader is up (My Stats, Tea
   h.click(h.$('#tour-pop [data-tour="next"]'));
 });
 
-test('FT4 DOM: a view-as switch keeps the Spanish assignee count — once on each nav button and on its tab; and the Scratchpad reads the editor at a page switch and at close, so a change no input event announced is still saved', () => {
+test('FT4 DOM: a view-as switch keeps the Spanish assignee count — once on each nav button and on its tab; and the Scratchpad\'s save reads the editor at a page switch and at close, so a change no input event announced is still saved', () => {
   const h = boot();
   h.bootShell({ isAdmin: true, isManager: true, canSeeSpanish: true });
   h.run.drain();
