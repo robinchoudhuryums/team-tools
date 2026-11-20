@@ -249,3 +249,30 @@ date,cycle,action,estimate,estimated_hours,actual_hours,calibration_note
 2026-11-12,25post,round2,S–M-L (nine batches),30,9,0.30x.
 2026-11-12,25post,round3,S–M (four items),6.3,5.2,0.83x. Its intake-polish item was a retro estimate.
 2026-11-12,25post,round9,S,1,0.8,0.80x.
+2026-11-20,26,Batch 1 (F4 + F74),S,2,2,1.00x.
+2026-11-20,26,Batch 2 (Intake - the right patient),M,6.5,6,0.92x.
+2026-11-20,26,Batch 3 (Thread replies),M,9,7,0.78x.
+2026-11-20,26,Batch 4 (Automation health honesty),M,9.5,8,0.84x.
+2026-11-20,26,Batch 5 (Payor lookups),L,12,10,0.83x.
+2026-11-20,26,Batch 6 (Employee Docs integrity),L,14,13,0.93x.
+2026-11-20,26,Batch 7 (Handbook server),L,14,13,0.93x.
+2026-11-20,26,Batch 8 (Handbook client),L,14,12,0.86x.
+2026-11-20,26,Batch 8 follow-ons (FO1-FO11),L,15,11,0.73x.
+2026-11-20,26,Batch 8 follow-ons second pass (FP1-FP4),M,9,8,0.89x.
+2026-11-20,26,Batch 9 (Time Clock),L,10,9,0.90x.
+2026-11-20,26,Batch 10 (Stats),M,7.5,7,0.93x.
+2026-11-20,26,Batch PD (Partial Days),L,10,9,0.90x.
+2026-11-20,26,Follow-ons FQ1-FQ10,L,9,6,0.67x.
+2026-11-20,26,Decisions DQ1-DQ3,M,7,5,0.71x.
+2026-11-20,26,Follow-ons FR1-FR4,M,6,5,0.83x.
+2026-11-20,26,Decisions DS1-DS2,L,10,7,0.70x.
+2026-11-20,26,Follow-ons FS1-FS3,M,7,4,0.57x.
+2026-11-20,26,Decision DT1,S,3,2.5,0.83x.
+2026-11-20,26,Batch 11 (Shell and Call Notes),L,13,9,0.69x.
+2026-11-20,26,Follow-ons FT1-FT4,M,8,6,0.75x.
+2026-11-20,26,Batch 12 (Server small items),L,11,8,0.73x.
+2026-11-20,26,Follow-ons FU1-FU3,M,5,3.5,0.70x.
+2026-11-20,26,Batch 13 (Intake remainder),M,7,6,0.86x.
+2026-11-20,26,Follow-ons FV1-FV3,M,5,3.5,0.70x.
+2026-11-20,26,Batch 14 (Docs and tooling + FW1-FW6),L,13,9,0.69x.
+2026-11-20,26,Follow-ons FX1-FX8,M,7,4,0.57x.
