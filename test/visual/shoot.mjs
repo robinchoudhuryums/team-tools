@@ -465,6 +465,10 @@ const SCENARIOS = [
   // F62 (cycle 26): the pad's own dialogs paint ABOVE it — in the pop-out the pad covers most of the window.
   ['cn-scratchpad-newpage-light-compact', { tool: 'callNotes', tab: 'callNotes' }, COMPACT, 'light', '?compact=1', "cnOpenScratchpadModal_(); setTimeout(function () { cnScratchPageAdd_(); }, 400)"],
   ['cn-scratchpad-delete-dark-compact', { tool: 'callNotes', tab: 'callNotes' }, COMPACT, 'dark', '?compact=1', "cnOpenScratchpadModal_(); setTimeout(function () { cnScratchPageDelete_(); }, 400)"],
+  // FT1 (cycle 26 follow-ons): unsaved text with no page to go to — the held
+  // row, in the pop-out with a full pad and wide with room.
+  ['cn-scratchpad-held-light-compact', { tool: 'callNotes', tab: 'callNotes' }, COMPACT, 'light', '?compact=1', "cnOpenScratchpadModal_(); setTimeout(function () { var pg = []; for (var i = 0; i < 10; i++) pg.push({ id: i ? 'p' + i : 'main', name: i ? 'Page ' + (i + 1) : 'Notes' }); CN_SCRATCH.pages = pg; CN_SCRATCH.pending['held~demo1'] = 'Callback for the Ortiz order — ask for <b>Dana</b> at ext 4410 before 3, and confirm the delivery window'; cnScratchRenderPages_(); }, 500)"],
+  ['cn-scratchpad-held-dark-wide', { tool: 'callNotes', tab: 'callNotes' }, WIDE, 'dark', '', "cnOpenScratchpadModal_(); setTimeout(function () { CN_SCRATCH.pending['held~demo1'] = 'Callback for the Ortiz order — ask for <b>Dana</b> at ext 4410 before 3'; cnScratchRenderPages_(); }, 500)"],
   // Operator 2026-08-17 (full-width round): the new .sp-top head+chart grid
   // stacks <1024px — shoot the stacked form so the breakpoint is on camera.
   ['spanish-light-mobile', { tool: 'timeClock', tab: 'metricsSpanish' }, MOBILE, 'light', ''],

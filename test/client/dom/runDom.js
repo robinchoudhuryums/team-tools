@@ -2600,6 +2600,9 @@ test('the async prefill never overwrites what the manager already typed, ignores
   assert.strictEqual(h.document.getElementById('de-save').disabled, false, 'Save is live');
 
   // A stale response (a previous open / date) never applies — sequence, not date.
+  // (Closed first: FT2 asks before a date change loads over the Clock In typed
+  // above, and a modal cannot be opened over itself in the app.)
+  h.window.closeOverlay(h.document.getElementById('day-edit-overlay'), { discard: true });
   h.read('openDayEditModal')('E-1077', 'Nina Patel');
   const dateEl = h.document.getElementById('de-date');
   const earlier = dateEl.min;                                   // inside the picker's own bounds
@@ -16163,4 +16166,242 @@ test('F63 DOM: the punch-adjustment, Day Edit and manager time-off modals ASK be
   h.click('#mto-submit');
   h.run.flushSuccess({ success: true, status: 'Approved' }, 'managerSubmitTimeOff');
   assert.ok(!open('mgr-timeoff-overlay') && !h.$('.ui-dialog'), 'a filed request closes without a question');
+});
+
+section('DOM harness — cycle 26 follow-ons after Batch 11 (FT1–FT4)');
+
+const ftTen = Array.from({ length: 10 }, (_, i) => ({ id: i ? 'p' + i : 'main', name: i ? 'Page ' + (i + 1) : 'Notes' }));
+const ftFullMsg = 'You have the most pages a scratchpad holds (10) — delete one first.';
+const ftHeld = (h) => JSON.parse(JSON.stringify(h.read('cnScratchHeldKeys_(CN_SCRATCH.pending)')));
+const ftRow = (h) => h.document.querySelector('#cn-scratch-held .cn-sp-held');
+
+test('FT1 DOM: recovered Scratchpad text is HELD when the pad is full — never saved over the page that changed, not even by a keystroke while the new page was being made; the pad shows the page as the server has it; Move, Copy and Discard are in the pad; deleting a page gives the text its new page', async () => {
+  const KEY = 'umsScratchUnsaved';
+  const h = bootLog();
+  const p = b11Pad(h);
+  const ls = h.window.localStorage;
+  ls.setItem(KEY, JSON.stringify({ who: 'TEST_E1', at: Date.now(), pages: { main: { text: 'typed before the reload', base: 500 } } }));
+  h.read('cnOpenScratchpadModal_')();
+  assert.strictEqual(p.ed().innerHTML, 'typed before the reload');
+  p.load('saved from the other computer', 900, 'main', { pages: ftTen });
+  const add = h.run.pending('scratchpadPageOp');
+  assert.deepStrictEqual([add.length, add[0].args[0], add[0].args[2]], [1, 'add', 'Recovered text'], 'a page that changed since: a new page is asked for');
+  // The rep types while that add is on its way; the autosave fires.
+  p.type('typed before the reload, and more');
+  h.flushTimers();
+  assert.deepStrictEqual(p.sent(), [], 'THE REGRESSION (the race): a keystroke while the new page was being made armed a save that wrote the text over the changed page');
+  assert.strictEqual(h.run.pending('scratchpadPageOp').length, 1, 'and one add runs per text');
+  h.run.flushSuccess({ error: ftFullMsg }, 'scratchpadPageOp');
+  const keys = ftHeld(h);
+  assert.strictEqual(keys.length, 1, 'the text is held');
+  assert.strictEqual(h.read('cnScratchHasPending_')('main'), false, 'and no longer waits under the page it must not overwrite');
+  assert.strictEqual(h.read('CN_SCRATCH.dirty'), false, 'held text is not a save that is owed');
+  assert.strictEqual(p.ed().innerHTML, 'saved from the other computer', 'THE RULE: the pad shows the page as the server has it — not the unsaved text as if it were the page');
+  p.load('saved from the other computer', 900, 'main', { pages: ftTen });
+  h.flushTimers();
+  assert.deepStrictEqual(p.sent(), [], 'THE REGRESSION: with ten pages the text stayed pending for its own page and the next save wrote it there — over what was saved from the other computer');
+  assert.ok(/kept at the top of the Scratchpad/.test(h.$('#toast-stack').textContent), 'said');
+  const row = ftRow(h);
+  assert.ok(row && /typed before the reload, and more/.test(row.textContent) && /is full \(10 pages\)/.test(row.textContent) && /delete one, then Move/.test(row.textContent), 'the row says what is kept and what to do — ' + (row && row.textContent));
+  assert.deepStrictEqual(Array.from(row.querySelectorAll('button')).map((b) => b.getAttribute('data-held-act')), ['move', 'copy', 'discard']);
+  // The page itself is edited and saved as usual; the held text never rides a save.
+  p.type('the server copy plus a line');
+  h.read('cnScratchSave_')(true);
+  assert.deepStrictEqual(p.sent(), ['main:the server copy plus a line']);
+  p.saved(950);
+  assert.ok(/^Saved/.test(p.status()), 'the status reads Saved with held text waiting — ' + p.status());
+  assert.strictEqual(ftRow(h), row, 'and a save does not rebuild the row (a focused button keeps the focus)');
+  // It is still in the browser — a reload does not lose it.
+  h.read('cnScratchMirrorNow_')();
+  const m = JSON.parse(ls.getItem(KEY));
+  assert.deepStrictEqual([Object.keys(m.pages), m.pages[keys[0]].text], [keys, 'typed before the reload, and more'], 'the mirror keeps held text');
+  // Copy: the outcome is reported; a blocked clipboard shows the text ABOVE the pad.
+  let copied = null;
+  h.window.copyText_ = (t, done) => { copied = t; done(true); };
+  h.click(row.querySelector('[data-held-act="copy"]'));
+  assert.strictEqual(copied, 'typed before the reload, and more');
+  assert.ok(/Copied — it is still kept here/.test(h.$('#toast-stack').textContent));
+  h.window.copyText_ = (t, done) => done(false);
+  h.click(row.querySelector('[data-held-act="copy"]'));
+  const man = h.$('#manual-copy-overlay.open');
+  assert.ok(man && man.classList.contains('overlay-above-panels') && man.querySelector('#manual-copy-val').value === 'typed before the reload, and more',
+    'a blocked copy shows the text in the layer above the floating pad');
+  h.window.closeOverlay(man);
+  // Move while the pad is still full: the server's refusal is said, the text stays held.
+  h.click(row.querySelector('[data-held-act="move"]'));
+  h.run.flushSuccess({ error: ftFullMsg }, 'scratchpadPageOp');
+  assert.ok(h.$('#toast-stack').textContent.indexOf(ftFullMsg) >= 0, 'the rep\'s own Move is answered');
+  assert.deepStrictEqual([ftHeld(h), p.sent()], [keys, []]);
+  // A page is deleted: there is room, and the text gets its page without being asked.
+  h.read('cnScratchPageDelete_')();
+  h.click(h.$('.ui-dialog .ui-dialog-ok'));
+  await tick();
+  const nine = ftTen.slice(1);
+  h.run.flushSuccess({ success: true, pageId: 'p1', pages: nine }, 'scratchpadPageOp');
+  const add2 = h.run.pending('scratchpadPageOp');
+  assert.deepStrictEqual([add2.length, add2[0].args[0], add2[0].args[2]], [1, 'add', 'Recovered text'], 'THE RULE: room was made — the held text is given its new page');
+  h.run.flushSuccess({ success: true, pageId: 'r9', pages: nine.concat([{ id: 'r9', name: 'Recovered text' }]) }, 'scratchpadPageOp');
+  assert.deepStrictEqual(p.sent(), ['r9:typed before the reload, and more']);
+  assert.deepStrictEqual([ftHeld(h), !!ftRow(h)], [[], false], 'and the row is gone');
+  assert.ok(/on a new page, "Recovered text"/.test(h.$('#toast-stack').textContent));
+});
+
+test('FT1 DOM: held Scratchpad text survives a reload without being sent or opened as a page — it is retried only when the pad has room; Discard asks and removes it; a page deleted elsewhere whose add FAILS is held too, with the panel closed said in a toast that opens the pad', async () => {
+  const KEY = 'umsScratchUnsaved';
+  const prefix = 'held~';
+  assert.strictEqual(boot().read('CN_SCRATCH_HELD_PREFIX'), prefix);
+  const blob = JSON.stringify({ who: 'TEST_E1', at: Date.now(), pages: { 'held~abc1': { text: 'kept <b>text</b>', base: null } } });
+  // A full pad: shown, not sent, not asked about.
+  const h = bootLog();
+  const p = b11Pad(h);
+  h.window.localStorage.setItem(KEY, blob);
+  h.read('cnOpenScratchpadModal_')();
+  assert.deepStrictEqual(h.run.pending('getMyScratchpad').map((c) => c.args[0]), ['main'], 'THE RULE: held text is not a page to open on');
+  p.load('main v0', 100, 'main', { pages: ftTen });
+  assert.strictEqual(p.ed().innerHTML, 'main v0');
+  assert.deepStrictEqual([h.run.pending('getMyScratchpad').length, h.run.pending('scratchpadPageOp').length, p.sent()], [0, 0, []],
+    'a full pad: no read of a page that does not exist, no add the server would refuse, nothing sent');
+  assert.ok(ftRow(h) && /kept text/.test(ftRow(h).textContent) && !ftRow(h).querySelector('b'), 'the row previews it as plain text');
+  // Discard asks first.
+  h.click(ftRow(h).querySelector('[data-held-act="discard"]'));
+  const dlg = h.$('.ui-dialog');
+  assert.ok(/Discard this unsaved text\?/.test(dlg.textContent) && dlg.querySelector('.ui-dialog-ok.is-danger'), 'in the destructive tone');
+  h.click(dlg.querySelector('.ui-dialog-cancel'));
+  await tick();
+  assert.strictEqual(ftHeld(h).length, 1, 'Cancel keeps it');
+  h.click(ftRow(h).querySelector('[data-held-act="discard"]'));
+  h.click(h.$('.ui-dialog .ui-dialog-ok'));
+  await tick();
+  assert.deepStrictEqual([ftHeld(h), !!ftRow(h), h.window.localStorage.getItem(KEY)], [[], false, null], 'Discard removes it — from the pad and from the browser');
+
+  // A pad with room: the held text is given a page on open, quietly.
+  const h2 = bootLog();
+  const p2 = b11Pad(h2);
+  h2.window.localStorage.setItem(KEY, blob);
+  h2.read('cnOpenScratchpadModal_')();
+  p2.load('main v0', 100);
+  const add = h2.run.pending('scratchpadPageOp');
+  assert.deepStrictEqual([add.length, add[0].args[0]], [1, 'add'], 'room: retried at open');
+  h2.run.flushFailure(new Error('Service timed out'), 'scratchpadPageOp');
+  assert.ok(!/Service timed out|could not be put/.test(h2.$('#toast-stack').textContent), 'a quiet retry that fails says nothing new — the row is still there');
+  assert.ok(ftRow(h2) && /Move puts it on a new page\./.test(ftRow(h2).textContent) && !/is full/.test(ftRow(h2).textContent));
+  h2.click(ftRow(h2).querySelector('[data-held-act="move"]'));
+  h2.run.flushSuccess({ success: true, pageId: 'r3', pages: b11Pages.concat([{ id: 'r3', name: 'Recovered text' }]) }, 'scratchpadPageOp');
+  assert.deepStrictEqual(p2.sent(), ['r3:kept <b>text</b>'], 'Move: its text (formatting and all) goes onto the new page');
+  assert.strictEqual(p2.ed().innerHTML, 'main v0', 'the page on screen is not disturbed');
+
+  // A page deleted in another window, and the add fails: held, not retried on every save.
+  const h3 = boot();
+  const p3 = b11Pad(h3);
+  h3.read('cnOpenScratchpadModal_')();
+  p3.load('main v0', 100);
+  h3.read('cnScratchSwitchPage_')('p2');
+  p3.load('p2 v0', 200, 'p2');
+  p3.type('p2 typed');
+  h3.read('cnCloseScratchpadModal_')();                   // the close saves; the panel is gone
+  assert.deepStrictEqual(p3.sent(), ['p2:p2 typed']);
+  h3.run.flushSuccess({ pageGone: true, error: 'That page was deleted in another window.' }, 'saveMyScratchpad');
+  h3.run.flushFailure(new Error('Service timed out'), 'scratchpadPageOp');
+  assert.strictEqual(ftHeld(h3).length, 1, 'held');
+  const sticky = Array.from(h3.document.querySelectorAll('#toast-stack .toast-sticky')).find((t) => /could not be put on a new page/.test(t.textContent));
+  assert.ok(sticky && /Open Scratchpad/.test(sticky.querySelector('.toast-act').textContent), 'with the pad closed it is said where the rep will see it, with the way to it');
+  h3.read('cnScratchSave_')(true);
+  assert.deepStrictEqual([p3.sent(), h3.run.pending('scratchpadPageOp').length], [[], 0], 'THE REGRESSION: the text stayed pending under the deleted page — every later save found the page gone and asked for another new page');
+});
+
+test('FT2 DOM: Day Edit\'s date picker asks before another day is loaded over a BUTTON edit too, and a clean modal changes day at once', async () => {
+  const h = boot();
+  b9TourSeen(h);
+  h.bootShell({ isManager: true });
+  h.run.drain();
+  h.window.openDayEditModal('E-9', 'Nina Patel', '', 'America/Chicago');
+  const day = h.read('_deDate');
+  h.run.flushSuccess({ days: [{ date: day, clockIn: '08:00:00', breaks: [] }] }, 'getEmployeeTimesheetForManager');
+  h.run.drain();
+  const other = h.read('mgrAddDaysIso_')(day, -2);
+  const pick = (d) => { h.$('#de-date').value = d; h.$('#de-date').dispatchEvent(new h.window.Event('change', { bubbles: true })); };
+  // Clean: no question.
+  pick(other);
+  assert.ok(!h.$('.ui-dialog') && h.read('_deDate') === other, 'nothing edited: the day changes at once');
+  h.run.flushSuccess({ days: [{ date: other, clockIn: '08:00:00', breaks: [] }] }, 'getEmployeeTimesheetForManager');
+  h.run.drain();
+  // An edit made with a button (no input event) is asked about as well.
+  h.click('#de-break-add');
+  pick(day);
+  assert.ok(b9Ask(h) && b9Ask(h).textContent.indexOf(other) >= 0 && /Loading another day loses them/.test(b9Ask(h).textContent), 'the question names the day whose edits would be lost');
+  assert.strictEqual(h.read('_deDate'), other, 'and nothing has moved yet');
+  h.click(b9Ask(h).querySelector('.ui-dialog-cancel'));
+  await tick();
+  assert.deepStrictEqual([h.$('#de-date').value, h.read('_deDate')], [other, other], 'Keep editing: still on the edited day');
+  // Picking the SAME day back is not a change of day.
+  pick(other);
+  assert.ok(!h.$('.ui-dialog'), 'the day already being edited asks nothing');
+});
+
+test('FT3 DOM: the tour waits on a view whose INLINE loader is up (My Stats, Team Metrics, Training) — the Stats step was still skipped after ~1.9 s; a loader inside an overlay, outside the view, holds nothing', () => {
+  const h = boot();
+  b9TourSeen(h);
+  h.bootShell();
+  h.flushTimers();
+  h.run.drain();
+  const view = h.read('currentView');
+  const doc = h.document;
+  const visible = (el) => { el.getBoundingClientRect = () => ({ width: 40, height: 20, top: 10, left: 10, bottom: 30, right: 50 }); return el; };
+  const inline = visible(doc.createElement('div'));
+  inline.className = 'm-loading';
+  doc.getElementById('view-area').appendChild(inline);
+  h.window.tourVisibleSteps_ = () => [{ view: view, title: 'Stats', body: 'Your numbers.', selector: '#ft-hero' }, { view: view, title: 'Last', body: 'Done.', selector: null }];
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 1 }));
+  h.window.tourStart('full');
+  for (let i = 0; i < 40; i++) h.flushTimers();
+  assert.strictEqual(h.read('TOUR_I'), 0, 'THE REGRESSION: a view drawing the inline loader was "loaded" to the tour, and its step was skipped after ~1.9 s');
+  inline.remove();
+  const hero = visible(doc.createElement('div')); hero.id = 'ft-hero'; hero.scrollIntoView = () => {};
+  doc.getElementById('view-area').appendChild(hero);
+  h.flushTimers(); h.flushTimers();
+  assert.ok(/Your numbers/.test(h.$('#tour-pop').textContent), 'shown once the view has loaded');
+  h.click(h.$('#tour-pop [data-tour="skip"]'));
+  // A loader that is not the view's: a reader overlay still loading.
+  hero.remove();
+  const ov = visible(doc.createElement('div'));
+  ov.className = 'm-loading'; ov.setAttribute('role', 'status');
+  doc.body.appendChild(ov);
+  h.window.tourStart('full');
+  for (let i = 0; i < 40; i++) h.flushTimers();
+  assert.strictEqual(h.read('TOUR_I'), 1, 'THE RULE: only the view area\'s loaders hold a step — another surface\'s loader does not');
+  h.click(h.$('#tour-pop [data-tour="next"]'));
+});
+
+test('FT4 DOM: a view-as switch keeps the Spanish assignee count — once on each nav button and on its tab; and the Scratchpad reads the editor at a page switch and at close, so a change no input event announced is still saved', () => {
+  const h = boot();
+  h.bootShell({ isAdmin: true, isManager: true, canSeeSpanish: true });
+  h.run.drain();
+  h.read('SP_ASSIGN.count = 2');
+  h.read('spAssignPaint_')();
+  const tool = h.read('VIEW_TO_TOOL.metricsSpanish');
+  const n = (sel) => Array.from(h.document.querySelectorAll(sel)).map((b) => b.textContent);
+  assert.deepStrictEqual([n('.sb-link[data-tool="' + tool + '"] .sp-assign-badge'), n('.nav-btn[data-tool="' + tool + '"] .sp-assign-badge')], [['2'], ['2']], 'before: on both nav forms');
+  h.read('viewAsSet_')('manager');
+  h.run.drain();
+  assert.deepStrictEqual([n('.sb-link[data-tool="' + tool + '"] .sp-assign-badge'), n('.nav-btn[data-tool="' + tool + '"] .sp-assign-badge'), n('.tt-btn[data-tab="metricsSpanish"] .sp-assign-badge')],
+    [['2'], ['2'], ['2']], 'after the switch: carried on the nav, repainted on the rebuilt tab bar — one each, never two');
+  h.read('SP_ASSIGN.count = 0');
+  h.read('spAssignPaint_')();
+  assert.strictEqual(h.document.querySelectorAll('.sp-assign-badge').length, 0, 'and the carried nodes are the ones the poller still clears');
+
+  // The Scratchpad's capture.
+  const h2 = boot();
+  const p = b11Pad(h2);
+  h2.read('cnOpenScratchpadModal_')();
+  p.load('main v0', 100);
+  p.type('main typed');
+  p.ed().innerHTML = 'main typed, then changed with no event';     // e.g. an extension or a spelling replacement that fires no input
+  h2.read('cnScratchSwitchPage_')('p2');
+  assert.deepStrictEqual(p.sent(), ['main:main typed, then changed with no event'], 'the switch saves what the editor SHOWED');
+  p.saved(150);
+  p.load('p2 v0', 200, 'p2');
+  p.type('p2 typed');
+  p.ed().innerHTML = 'p2 typed, then changed with no event';
+  h2.read('cnCloseScratchpadModal_')();
+  assert.deepStrictEqual(p.sent(), ['p2:p2 typed, then changed with no event'], 'and so does the close (INV-148: read before the panel goes)');
 });

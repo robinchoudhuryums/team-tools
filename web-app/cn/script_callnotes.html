@@ -5739,9 +5739,9 @@ function cnScratchRenderHeld_() {
     var plain = cnScratchPlainText_(CN_SCRATCH.pending[key]).replace(/\s+/g, ' ');
     var preview = plain.length > 60 ? plain.slice(0, 60) + '…' : plain;
     return '<div class="cn-sp-held" role="group" aria-label="Unsaved text with no page">' +
-      '<span class="cn-sp-held-msg">Unsaved text could not go back on its page and is kept here' +
+      '<span class="cn-sp-held-msg">Unsaved text could not go back on its page' +
         (preview ? ': “' + esc(preview) + '”' : '') + '. ' +
-        (full ? 'The scratchpad has the most pages it holds (' + esc(String(CN_SCRATCH.maxPages || 10)) + ') — delete one, and Move puts this on a new page.'
+        (full ? 'The scratchpad is full (' + esc(String(CN_SCRATCH.maxPages || 10)) + ' pages) — delete one, then Move.'
           : 'Move puts it on a new page.') + '</span>' +
       '<span class="cn-sp-held-acts">' +
         '<button type="button" class="cn-sp-pg-btn" data-held-act="move" data-held="' + esc(key) + '">Move to a new page</button>' +

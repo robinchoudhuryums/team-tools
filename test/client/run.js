@@ -51236,6 +51236,72 @@ test('F63: the three static modals open guarded, their own save closes with `sav
   assert.deepStrictEqual([set('17:05', ''), set('09:00', 'Forgot'), set('', '', [{}])], [true, true, true], 'a changed time, a reason, a queued entry');
 });
 
+console.log('\nCycle 26 follow-ons after Batch 11 (FT1–FT4)');
+
+test('FT1: held Scratchpad text — a key no page has, never a save\'s next page, not a save that is owed; and the pad is "full" only once its page list has been read (driven)', () => {
+  const prefix = ftHeldPrefix();
+  const c = b11Fn('cn/script_callnotes.html', ['cnScratchIsHeld_', 'cnScratchHeldKeys_', 'cnScratchAnyPagePending_', 'cnScratchPadFull_', 'cnScratchNextPage_'], { CN_SCRATCH_HELD_PREFIX: prefix });
+  const k1 = prefix + 'aaa1', k2 = prefix + 'bbb2';
+  assert.deepStrictEqual([c.cnScratchIsHeld_(k1), c.cnScratchIsHeld_('main'), c.cnScratchIsHeld_('p' + prefix), c.cnScratchIsHeld_(''), c.cnScratchIsHeld_(null)], [true, false, false, false, false]);
+  assert.deepStrictEqual(b11J(c.cnScratchHeldKeys_({ [k2]: 'b', main: 'x', [k1]: 'a' })), [k1, k2], 'oldest first');
+  assert.deepStrictEqual(b11J(c.cnScratchHeldKeys_(null)), []);
+  // THE RULE: no save ever picks held text — on screen or off, checked or not.
+  assert.strictEqual(c.cnScratchNextPage_({ [k1]: 'a' }, 'main', {}), '', 'only held text: nothing to send');
+  assert.strictEqual(c.cnScratchNextPage_({ [k1]: 'a', main: 'x' }, 'main', {}), 'main', 'the page is sent; the held text is not "the page off screen"');
+  assert.strictEqual(c.cnScratchNextPage_({ [k1]: 'a', p2: 'y', main: 'x' }, 'main', null), 'p2');
+  // `dirty` is about pages.
+  assert.deepStrictEqual([c.cnScratchAnyPagePending_({ [k1]: 'a' }), c.cnScratchAnyPagePending_({ [k1]: 'a', main: '' }), c.cnScratchAnyPagePending_({}), c.cnScratchAnyPagePending_(null)], [false, true, false, false]);
+  // Full is KNOWN full.
+  const pages = (n) => Array.from({ length: n }, (_, i) => ({ id: 'p' + i }));
+  assert.deepStrictEqual([c.cnScratchPadFull_(pages(10), 10), c.cnScratchPadFull_(pages(9), 10), c.cnScratchPadFull_(pages(11), 10), c.cnScratchPadFull_(null, 10), c.cnScratchPadFull_(pages(10), null), c.cnScratchPadFull_(pages(3), 3)],
+    [true, false, true, false, true, true], 'an unread page list is not "full" — the add is worth trying');
+  // The prefix names no page the server can mint: ids are the main page's or 'p' + …
+  const srv = serverSource();
+  const mainId = /(?:const|var) SCRATCHPAD_MAIN_PAGE = '([^']+)';/.exec(srv);
+  assert.ok(mainId && /result = 'p' \+ Date\.now\(\)\.toString\(36\)/.test(extractFnFrom(srv, 'scratchpadPageOp')), 'the server mints page ids as main / p…');
+  assert.ok(prefix !== mainId[1] && prefix.charAt(0) !== 'p' && mainId[1].indexOf(prefix) !== 0, 'so a held key can never be a page id: ' + prefix);
+});
+
+test('FT1: the held row and the layer above the pad have their rules, the recovery marks its text unsendable while the new page is made, and one add runs per text (source)', () => {
+  const cn = fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8');
+  const css = fs.readFileSync(path.join(PA_WEB, 'styles.html'), 'utf8');
+  ['.cn-sp-held {', '.cn-sp-held-msg {', '.cn-sp-held-acts {'].forEach((r) => assert.ok(cn.indexOf('  ' + r) >= 0, 'a rule for ' + r));
+  assert.ok(!/#cn-scratch-held\s*\{/.test(cn) && !/\.cn-sp-held\[hidden\]/.test(cn), 'the host carries no rule — it is empty, not hidden (g73)');
+  const zOf = (sel) => { const m = new RegExp('([^{}\\n]*' + sel.replace(/[.]/g, '\\.') + '[^{}\\n]*)\\{\\s*z-index:\\s*(\\d+)').exec(css); return m ? Number(m[2]) : null; };
+  assert.ok(zOf('.overlay.overlay-above-panels') != null && zOf('.overlay.overlay-above-panels') === zOf('.overlay.ui-dialog'), 'the copy dialog a panel opens shares the dialogs\' layer');
+  const pad = Number(/\.cn-float-panel \{[^}]*?z-index:\s*(\d+)/.exec(cn)[1]);
+  assert.ok(zOf('.overlay.overlay-above-panels') > pad, 'which is above the floating pad');
+  const core = fs.readFileSync(path.join(PA_WEB, 'script_core.html'), 'utf8');
+  assert.ok(/extraClass: opts\.above \? 'overlay-above-panels' : ''/.test(extractFunction('script_core.html', 'manualCopyModal_')), 'and rides extraClass (g134), asked for by the caller');
+  assert.ok(core.indexOf('overlay-above-panels') === core.lastIndexOf('overlay-above-panels'), 'one writer');
+  const rec = stripJsComments_(extractFunction('cn/script_callnotes.html', 'cnScratchRecover_'));
+  assert.ok(/if \(CN_SCRATCH\.recovering\[lostPage\]\) return;/.test(rec), 'one add per text');
+  assert.ok(rec.indexOf('CN_SCRATCH.unchecked[lostPage] = true') < rec.indexOf("cnScratchPageOp_('add'"), 'unsendable BEFORE the add is asked');
+  const settle = stripJsComments_(extractFunction('cn/script_callnotes.html', 'cnScratchSettleAdopted_'));
+  assert.ok(settle.indexOf('cnScratchRecover_(') < settle.indexOf('delete CN_SCRATCH.unchecked[page]'), 'and a conflict goes to the recovery still unchecked');
+});
+
+test('FT3: the tour\'s "still loading" reads BOTH shared loaders inside the view area — and the views that draw the inline one are the ones it was missing (source)', () => {
+  const tour = fs.readFileSync(path.join(PA_WEB, 'script_tour.html'), 'utf8');
+  const m = /const TOUR_VIEW_LOADERS = '([^']+)';/.exec(tour);
+  assert.ok(m, 'TOUR_VIEW_LOADERS is declared');
+  const sels = m[1].split(',').map((x) => x.trim());
+  assert.deepStrictEqual(sels, ['#view-area .state-center[role="status"]', '#view-area .m-loading']);
+  assert.ok(sels.every((x) => x.indexOf('#view-area ') === 0), 'every loader is scoped to the view area — an overlay\'s loader is not the view\'s');
+  assert.ok(!/skel/.test(m[1]), 'a skeleton block is not a signal: a widget may keep one while its data is absent');
+  assert.ok(/tourVisibleTarget_\(TOUR_VIEW_LOADERS\)/.test(extractFunction('script_tour.html', 'tourViewLoading_')), 'visible only');
+  // The two forms are the app's: renderLoading writes the first, and the frames below write the second.
+  assert.ok(/<div class="state-center" role="status">/.test(extractFunction('script_core.html', 'renderLoading')), 'renderLoading is the full-view loader');
+  assert.ok(/id="view-area"/.test(fs.readFileSync(path.join(PA_WEB, 'script_core.html'), 'utf8')), 'and #view-area is the shell\'s view host');
+  const frames = { 'metrics/script_metrics.html': ['m-my-content', 'm-team-content'], 'train/script_training.html': ['tr-home-content', 'tr-mgr-content'] };
+  Object.keys(frames).forEach((f) => {
+    const src = fs.readFileSync(path.join(PA_WEB, f), 'utf8');
+    frames[f].forEach((id) => assert.ok(new RegExp('<div id="' + id + '"><div class="m-loading">').test(src), id + ' opens on the inline loader — the tour must read it'));
+  });
+  // A tour step targets something inside two of those frames: the step the fix is for.
+  assert.ok(/selector: '#m-my-content \.m-hero'/.test(tour), 'the Stats step waits on #m-my-content');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
