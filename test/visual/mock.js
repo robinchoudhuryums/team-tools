@@ -1222,6 +1222,34 @@ function runRecAgo(msAgo, notes) {
       { reason: 'ack', label: 'the reply only acknowledges the email', waiting: 1, resolved: 6, open: 2, answered: 8, overridePct: 75 },
       { reason: 'question', label: 'the reply asks a question', waiting: 2, resolved: 1, open: 9, answered: 10, overridePct: 10 },
       { reason: 'unattributed', label: 'the thread is shared with another request and the reply does not name this one', waiting: 1, resolved: 0, open: 0, answered: 0, overridePct: null }] },
+    // FW6 (cycle 26): Team Training (Training → Team Training). The view had no
+    // fixture for any of its three reads, so it was never photographed. Shapes
+    // are the server's own — a pin drives getTrainingDashboard, getQuizzes and
+    // trainQuizAnalytics_ and compares their keys with these (INV-185).
+    // On camera: a done, a pending and an overdue cell; a quiz with attempts;
+    // a rep waiting out the retry limit; an analytics row with no attempts yet.
+    getTrainingDashboard: {
+      items: [
+        { key: 'kb:kb-1', itemType: 'kb', itemId: 'kb-1', title: 'HIPAA refresher', assigned: 3, done: 1, overdue: 1 },
+        { key: 'quiz:quiz-1', itemType: 'quiz', itemId: 'quiz-1', title: 'CPAP resupply quiz', assigned: 3, done: 1, overdue: 0 }],
+      reps: [
+        { id: 'E-1002', name: 'Avery Blake', items: { 'kb:kb-1': 'done', 'quiz:quiz-1': 'done' }, attempts: { 'quiz:quiz-1': 2 } },
+        { id: 'E-1003', name: 'Jordan Lee', items: { 'kb:kb-1': 'overdue', 'quiz:quiz-1': 'pending' }, attempts: { 'quiz:quiz-1': 3 } },
+        { id: 'E-1004', name: 'Sam Ortiz', items: { 'kb:kb-1': 'pending', 'quiz:quiz-1': 'pending' }, attempts: {} }],
+      assignments: [
+        { assignId: 'as-2', itemType: 'quiz', itemId: 'quiz-1', title: 'CPAP resupply quiz', empId: '*', empLabel: 'All employees', assignedBy: 'manager@example.com', assignedAt: ts(daysAgo(3), '09:05:00'), dueDate: daysAgo(-6) },
+        { assignId: 'as-1', itemType: 'kb', itemId: 'kb-1', title: 'HIPAA refresher', empId: '*', empLabel: 'All employees', assignedBy: 'manager@example.com', assignedAt: ts(daysAgo(9), '09:00:00'), dueDate: daysAgo(2) }],
+      locked: [{ empId: 'E-1003', empName: 'Jordan Lee', quizId: 'quiz-1', title: 'CPAP resupply quiz', retryAtMs: Date.now() + 5 * 3600000, retryLabel: 'tomorrow, 9:15 AM' }],
+      maxAttempts: 3, lockHours: 24 },
+    getQuizzes: { quizzes: [
+      { quizId: 'quiz-1', title: 'CPAP resupply quiz', kbItemId: 'kb-1', passPct: 80, questionCount: 2, questions: [
+        { q: 'How often is a CPAP mask cushion resupplied?', options: ['Every month', 'Every three months', 'Once a year'], correct: [0] },
+        { q: 'Which of these needs a new prescription?', options: ['A filter', 'A pressure change'], correct: [1] }] },
+      { quizId: 'quiz-2', title: 'Wheelchair intake quiz', kbItemId: '', passPct: 70, questionCount: 1, questions: [
+        { q: 'A power chair order starts with…', options: ['A mobility evaluation', 'A delivery date'], correct: [0] }] }] },
+    getQuizAnalytics: { quizzes: [
+      { quizId: 'quiz-1', title: 'CPAP resupply quiz', passPct: 80, attemptCount: 5, repsAttempted: 2, repsPassed: 1, passRate: 50, avgScore: 68, avgAttemptsPerRep: 2.5 },
+      { quizId: 'quiz-2', title: 'Wheelchair intake quiz', passPct: 70, attemptCount: 0, repsAttempted: 0, repsPassed: 0, passRate: null, avgScore: null, avgAttemptsPerRep: null }] },
     getMyTraining: { items: [
       { itemId: 'kb-1', title: 'HIPAA refresher', type: 'article', itemType: 'kb', status: 'pending', dueDate: daysAgo(-6), assignedAt: ts(daysAgo(3), '09:00:00'), attempts: 0 },
       { itemId: 'quiz-1', title: 'CPAP resupply quiz', type: 'quiz', itemType: 'quiz', status: 'done', quiz: { questionCount: 5, passPct: 80 }, attempts: 2, completedAt: ts(daysAgo(1), '11:00:00') }] },

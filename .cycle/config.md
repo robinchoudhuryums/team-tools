@@ -25,16 +25,23 @@ deployment setting the outcome depends on. `runAllTestsPartA` / `PartB` split a
 run that must not hold the one project ScriptLock for six minutes; together they
 are exactly `runAllTests`.
 
-Three harnesses run OFF-platform and are the ones CI actually executes:
+Three harnesses run OFF-platform. CI runs the first two in full and a FIXED
+SUBSET of the third on every push (`.github/workflows/client-tests.yml`):
 
 | Harness | Command | What it covers |
 |---|---|---|
 | Pure | `node test/client/run.js` (or `npm test`) | Pure client helpers loaded into a `vm` sandbox with browser/GAS stubs, plus server functions lifted out of the server source by `extractRawFunction`, plus the DERIVED source scans (tripwires) that are this project's main defence against a class regressing |
 | DOM | `node test/client/dom/runDom.js` | Lifecycle and rendering in jsdom — listener rebinds, `outerHTML` patches, focus, `aria-*` bookkeeping: the failures a pure assertion cannot see |
-| Visual | `cd test/visual && node build.mjs && node shoot.mjs` | A headless-Chromium screenshot matrix (tool × width × mode) over a fixture-backed `google.script.run` mock. **Manual / on-demand, NOT in CI** — it needs a Chromium install and its findings need human eyes |
+| Visual | `cd test/visual && node build.mjs && node shoot.mjs` | A headless-Chromium screenshot matrix (tool × width × mode) over a fixture-backed `google.script.run` mock. **The full matrix is manual / on-demand** — its shots need human eyes. **Three parts of it DO run in CI** (the `visual-layout` job, cycle 25 E5 on): `node shoot.mjs --ci` shoots the subset named in `test/visual/ci-gate.cjs` and fails on a layout MEASUREMENT (sideways overflow, a runaway page, a squeezed text column, a missing fixture, a page error) or on a subset name that matches no scenario; `node tour-check.mjs` walks every onboarding-tour step's target per role; `node shoot.mjs --axe` checks every handbook screen with axe and the contrast sweep, then `node contrast-check.mjs` checks the sweep against known pairs. A renamed or removed scenario, or a new squeeze on a gated screen, fails the build |
 
-`node scripts/counts.mjs --check` runs LAST in CI and refuses a merge where the
-docs and the tree disagree about any derived figure.
+`node scripts/counts.mjs --check` runs near the end of the `client-tests` job
+and refuses a merge where the docs and the tree disagree about any derived
+figure; `node scripts/cycle-closeout.mjs --check` runs after it (the cycle's
+standing, Score History and HISTORY). Every check after the syntax step runs
+even when an earlier one failed (cycle 26 F4), so read the whole job, not its
+first red step. The pure harness runs TWICE: once before `npm ci` (a pin that
+needs a package is a visible SKIPPED there) and once after with
+`REQUIRE_DEPS=1`, where a skip is a failure.
 
 Two rules that have each cost a cycle: a visual **fixture must mirror the real
 server contract and never REIMPLEMENT server logic** (copy it in verbatim and
@@ -110,7 +117,7 @@ Manual source (build-only — never deployed; clasp pushes web-app/ only):
   read-only for manual sections),
   scripts/manual-xref-report.mjs (M5a — the export's cross-reference report; it READS the reader's scorer out of web-app/kb/script_kb.html)
 Test Suite:
-  web-app/Tests.js, test/client/harness.js, test/client/run.js, test/client/dom/boot.js, test/client/dom/runDom.js, test/visual/build.mjs, test/visual/mock.js, test/visual/manual-images.json, test/visual/manual-fixtures.mjs, test/visual/shoot.mjs, test/visual/ci-gate.cjs (cycle 25 E5 — the CI subset + KNOWN list), test/visual/chromium-path.cjs (cycle 26 F74 — the one Chromium resolver every script there imports), test/visual/a11y-names.mjs, test/visual/print-check.mjs, test/visual/a13-measure.mjs, test/visual/map-check.mjs, test/visual/settings-check.mjs, test/visual/fold-measure.mjs, test/visual/package.json, .github/workflows/client-tests.yml, scripts/cycle-context.mjs, scripts/cycle-closeout.mjs (cycle 25 E5 — the scripted close-out), scripts/counts.mjs, scripts/bite.sh, scripts/split-manifest.mjs, scripts/lint-server.mjs, test/client/server-split-manifest.json, package.json
+  web-app/Tests.js, test/client/harness.js, test/client/run.js, test/client/dom/boot.js, test/client/dom/runDom.js, test/visual/build.mjs, test/visual/mock.js, test/visual/manual-images.json, test/visual/manual-fixtures.mjs, test/visual/shoot.mjs, test/visual/ci-gate.cjs (cycle 25 E5 — the CI subset + KNOWN list), test/visual/chromium-path.cjs (cycle 26 F74 — the one Chromium resolver every script there imports), test/visual/tour-check.mjs (T1 — the tour walk CI runs), test/visual/contrast.cjs + test/visual/contrast-check.mjs (cycle 26 FP3 — the contrast sweep and its known-pairs check, both run in CI), test/visual/a11y-names.mjs, test/visual/print-check.mjs, test/visual/a13-measure.mjs, test/visual/map-check.mjs, test/visual/settings-check.mjs, test/visual/fold-measure.mjs, test/visual/package.json, .github/workflows/client-tests.yml, scripts/cycle-context.mjs, scripts/cycle-closeout.mjs (cycle 25 E5 — the scripted close-out), scripts/counts.mjs, scripts/bite.sh, scripts/split-manifest.mjs, scripts/lint-server.mjs, test/client/server-split-manifest.json, package.json
 
 ### Invariant Library
 INV-01 | All mutating server functions acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally`. DOCUMENTED EXCEPTIONS (cycle-11 seams audit): the intake send endpoints (`intakeSendPPD`/`intakeSendAcct_`) are deliberately lock-free — append-only writes (atomic in Sheets) with an in-body mail send (via `sendRepEmail_` since pilot round 1) that the M-7 no-mail-in-lock rule would otherwise force out; `kbRecordView`/`recordClientError`/`saveMyScratchpad` use the USER lock (batch K-B + pilot round 3 — diagnostics appends and a rep's own high-frequency scratchpad autosave must not queue punch writes; the user lock still serializes the rep's own double-fires) | Subsystem: Server
@@ -700,13 +707,15 @@ Run it as **Stage 1.5**, between the broad pass and the deep dives:
    pass read it rather than checking it. Edit the marker only by adding a
    scenario or by accepting a new gap deliberately:**
 
-   VISUAL-GAP-TABS: callNotesForms, callNotesSearch, trainingManage
+   VISUAL-GAP-TABS: callNotesForms, callNotesSearch
 
    Of those, `callNotesSearch` is the same card vocabulary the Log view
    already shoots (`callNotesHistory` gained its two scenarios with cycle 25
-   F35, for the all-time chip's note), and `trainingManage` is the manager half
-   of Training (`myDocs` and `docsManage` gained their scenarios with Batch H,
-   2026-11-04 — the PDF reader, its certificate and the issue form).
+   F35, for the all-time chip's note). `trainingManage`, the manager half of
+   Training, gained its scenario and its three fixtures with cycle 26 FW6 — it
+   had none, so the view had only ever drawn its error state there (`myDocs`
+   and `docsManage` gained theirs with Batch H, 2026-11-04 — the PDF reader,
+   its certificate and the issue form).
    Also uncovered and NOT tab-shaped, so the marker cannot see them: **most
    modal/overlay states** (the sched modal, the Reference reader and — since
    A4 — the Day Edit modal have `post` scenarios; the rest do not),
@@ -763,8 +772,10 @@ templates, failing on a duplicate name; **it is the ONLY coverage
 `form_public.html` has**, since that page is not built from partials and the
 matrix cannot shoot it. Run `node build.mjs` first for both.
 
-**The harness is NOT in CI** (it needs Chromium and human eyes), so nothing
-enforces this except this entry.
+**The full matrix is NOT in CI** (its shots need human eyes), so nothing
+enforces READING them except this entry. What CI does enforce is the
+measured subset, the tour walk and the handbook's axe check — see the Test
+Command's Visual row.
 
 ### Policy Configuration
 Policy threshold: 4/10
@@ -1151,7 +1162,7 @@ S40 | Multi-line auto-copy format + N/A defaulting on Transferred To | Subsystem
 
 S41 | Metrics — My Stats self-view with sparkline | Subsystem: Server, Client (Metrics views)
   Steps:
-    - As an enrolled rep, open Metrics → My Stats
+    - As an enrolled rep, open Dashboard → Stats
     - Confirm the default is the **Yesterday** preset landing on the previous WORKDAY (on a Monday it shows Friday — operator 2026-08-17; CDR data is never same-day) and the hero label reads 'Yesterday'
     - Click **Custom…** → the Day + Range inputs reveal; change the Day to a prior working day with known CDR activity
     - Click the 7D preset → confirm the aggregate hero AND that the "Trends · you vs team avg" section STAYS rendered (headed "trailing 30 days ending <previous workday>") plus Best/Worst day chips under the delta
@@ -1163,7 +1174,7 @@ S41 | Metrics — My Stats self-view with sparkline | Subsystem: Server, Client 
 
 S42 | Metrics — Team Metrics date-range + presets | Subsystem: Server, Client (Metrics views)
   Steps:
-    - As a manager, open Metrics → Team Metrics
+    - As a manager, open Dashboard → Stats → Team
     - Confirm default is today with From=To; KPI tiles + per-rep table render
     - Click the "7D" preset chip; confirm it shows PRESSED and the hidden From/To (behind **Custom…**) update; the table re-fetches with aggregated data
     - Click "30D"; confirm the table includes more data AND the hero shows a per-day sparkline over the SELECTED range with a dashed baseline and NO delta line (#8; cycle 23 MET2-1)
@@ -1179,8 +1190,8 @@ S42 | Metrics — Team Metrics date-range + presets | Subsystem: Server, Client 
 S43 | Metrics — CDR unavailable fallback | Subsystem: Server, Client (Metrics views)
   Steps:
     - Temporarily remove the CDR_SS_ID Script Property (or set it to an invalid ID)
-    - As a rep, open Metrics → My Stats
-    - As a manager, open Metrics → Team Metrics
+    - As a rep, open Dashboard → Stats
+    - As a manager, open Dashboard → Stats → Team
     - Open Call Notes → Team Notes → Stats tab
     - **(cycle 22 M7)** Rename the `DQE Historical Data` tab on the CDR Report, open the Dashboard, Team Metrics and Manage → Admin → Config → Team Members; then restore the tab and reload each
     - (cycle 23 MET-1/2/3) With the DQE tab renamed, open My Stats over a 7-day range and Team Metrics over a range; then rename it back and reload
@@ -1454,7 +1465,7 @@ S64 | KB reference drawer — mid-call lookup + usage loop | Subsystem: Server, 
     - **(T4)** If your browser blocks the clipboard (the usual case inside the Apps Script iframe), the copy must open a small **Copy it by hand** box with the figure pre-selected and say plainly that nothing was copied — it must never say "Copied" when it did not
     - **(T4)** Enter an address where an item's two verdicts AGREE → ONE verdict line reading **Through insurance or out of pocket**; find an item whose state limit LIFTS out of pocket (e.g. an `FL, GA, NC` item from a TX address) → still TWO labelled lines. The disagreement should be the one that catches your eye
     - As an enrolled rep, open Call Notes → Log; press **Ctrl/⌘+K** → confirm the drawer slides in from the right and focuses its search box; press Ctrl/⌘+K again (or Esc, or the X) → closes
-    - Confirm the vertical "Reference" edge tab shows on Call Notes / Intake views, NOT on Time Clock / Metrics / Manager views, and not in compact mode
+    - Confirm the vertical "Reference" edge tab shows on Call Notes / Intake views, NOT on Dashboard / Stats / Manage views, and not in compact mode
     - Type 2+ chars → matching SECTIONS render inline as chunk cards grouped by doc (readable without opening anything); a chunk's "Open ¶" opens the full article scrolled to that section; the Back button returns to the results
     - Click an EMBED result → an open-in-new-tab card (no iframe in the drawer)
     - Type some text into the note's Issue field (words that appear INSIDE an article body, not its title), open the drawer → a "Suggested" section first lists any title matches with a "Searching article content…" hint, then swaps to the content-matched sections (¶ heading shown; click jumps into the article); toggle "suggest" off → section explains it's off; re-check after reload (persists via umsKbPanel)
@@ -1613,7 +1624,7 @@ S74 | Department-request tracking end to end (INV-131/138; the tracker had NO sc
     - As an enrolled rep, send a department email from a saved call note (Save & Compose → pick a department → Preview → Send)
     - Confirm the SENT email body ends with a "✓ Mark this request resolved" link, and that a `DeptRequests` row was appended (dept label + update category + `noteId`, `ToEmail` holding the recipient DOMAIN only — and, since operator note 6 (2026-09-10), the capped patient & TRX in the trailing `PatientTrx` column; the email BODY still never enters the row)
     - Re-send the SAME note to the SAME department → confirm NO second row is appended and the CTA reuses the first row's token (the audit row is annotated `resend`, INV-131)
-    - Open **Metrics → Dept Requests** as the sending rep → the request appears under "Mine" as an OPEN-toned (`st-pending` amber) status card with an elapsed time; the KPI strip counts it under Open
+    - Open **Call Notes → Dept Requests** as the sending rep → the request appears under "Mine" as an OPEN-toned (`st-pending` amber) status card with an elapsed time; the KPI strip counts it under Open
     - **(operator rounds 2–3)** Click the Open / Resolved status chips → the list filters in place (no refetch); with requests to 2+ departments, click a department chip → only that dept's cards remain and the section label reads "N of M"; click "All departments" → the filter clears (the default view shows every dept)
     - Age a request past its SLA (or hand-set CreatedAt) → its card tones `st-overdue` (red) with "Overdue · Xh SLA"; at ≥75% of the SLA it tones `st-atrisk`
     - Click "Mark resolved" in-app → **only that CARD shows a loader** (dimmed + pulsing, button reads "Resolving…", a second click is inert) — the list must NOT blank and re-fetch; the card then swaps to its resolved tone in place, the KPI strip updates, every other card keeps its scroll position, and re-opening confirms the elapsed figure FROZE at the resolution time rather than continuing to grow
@@ -1624,7 +1635,7 @@ S74 | Department-request tracking end to end (INV-131/138; the tracker had NO sc
     - **(operator 2026-08-31)** Read a request created on a FRIDAY AFTERNOON: its elapsed time must count only 8 AM–5 PM weekday minutes (a weekend adds nothing), the KPI strip must carry the note "Elapsed time and SLA bands count business hours only — weekends and US holidays excluded", and hovering a card's status text must show the wall-clock gap in a tooltip. Then confirm the DAILY SLA DIGEST agrees with the screen — a request reading on-time here must not appear in the overdue reminder email. Finally, resolve a request in place and confirm the business-hours note appears exactly ONCE.
     - **(cycle-16 F8, the two defects this scenario exists to catch)** In the `DeptRequests` sheet, hand-edit one resolved row's Status cell to `" resolved "` (padded) and BLANK another resolved row's `ResolvedAt`; reload the tracker
     - **(operator notes 2/3, 2026-09-10)** Resolve one request through the EMAILED link and another with the in-app "Mark resolved"; read both cards, the KPI median's sub-line and the manager table; hand-blank a resolved row's `ResolvedVia` cell (a legacy row) and reload
-    - **(cycle 22 A3)** Set `DEPT_REQUESTS_SS_ID` to an id the deployer cannot open, send a department email, open Metrics → Dept Requests and Storage Health; restore the id
+    - **(cycle 22 A3)** Set `DEPT_REQUESTS_SS_ID` to an id the deployer cannot open, send a department email, open Call Notes → Dept Requests and Storage Health; restore the id
     - **(operator note 6, 2026-09-10)** Read a card's subject; press **Expand** on it, then **Collapse**, then Expand again with the Network tab open; resolve an EXPANDED card in place; as a rep who is neither the sender, a manager nor a member of the receiving dept, call `google.script.run...getDeptRequestDetail('<id>')` from the console, and once more with a made-up id; find a request whose sender has since been offboarded (or a pre-NoteId legacy row) and Expand it
     - **(cycle 22 M6/M11)** Read the tracker: the SLA pills read "N working days SLA" (default 2) and the business-hours note says "weekends and company holidays excluded"; in Admin → Config → Dept-Request SLA targets, a pre-M6 map shows the "set in hours — shown converted" note until Save; enter 1.5 for a department → saves; 0.2 or 31 → refused
     - **(22post A-6/A-7)** Change the sort to Oldest and Longest open and set a date range (a preset and Custom), on Mine, Incoming and the team list; as a MANAGER, read the order of the page; narrow to the pop-out width
@@ -1699,7 +1710,7 @@ S77 | Team Members panel paints instantly; readiness reads as a column (operator
 S78 | Pop-out has no repeated header strip (operator 2026-08-11) | Subsystem: Client (shell), Client (Call Notes views)
   Steps:
     - Pop out Call Notes; confirm the note template starts at the top with only the tab bar above it — no phone icon + "Call Notes" strip
-    - Repeat for Metrics, Reference, Training, Intake, Dept Requests, Manage Time, and Time / PTO
+    - Repeat for Stats, Reference, Training, Intake, Dept Requests, Manage Time, and Time / PTO
     - In the Manage Time pop-out, click the refresh control and confirm the dashboard reloads
     - Shrink the pop-out as far as it will go and confirm nothing needs scrolling past to do it
   Expected: No tool renders the retired `.compact-header`. The pop-out window's own title already names the tool and the tab bar names the view, so the strip was pure repetition at the top of the smallest window in the app. The manager refresh button survived the retirement on its own right-aligned row and still works. The Call Notes pop-out self-sizes ~44px shorter than before.
@@ -1720,7 +1731,7 @@ S79 | Pay statement — own-data self-check with estimated gross | Subsystem: Se
 S80 | Spanish Inbox — resolution-share chart | Subsystem: Server, Client (Metrics views)
   Steps:
     - Ensure `SPANISH_INBOX_MEMBERS` lists ≥2 members, at least one of whom has resolved nothing in the window
-    - As a manager (or listed member), open Metrics → Spanish Inbox
+    - As a manager (or listed member), open Dashboard → Spanish Inbox
     - Read the "Resolution share" card between the KPI strip and the request list
     - Mark a pending request resolved manually and refresh after the cache TTL
     - Switch the window (Last 7 / 30 / 90 days)
@@ -1921,11 +1932,11 @@ S92 | Approved punch adjustment catches up on the rep's screen | Subsystem: Serv
 S93 | Response times count business hours | Subsystem: Server, Client (Metrics views), Client (Time Clock views)
   Steps:
     - Have a Spanish request arrive Friday afternoon and be answered Monday morning (or hand-set the stamps)
-    - As a manager or bilingual member, open Metrics → Spanish Inbox
+    - As a manager or bilingual member, open Dashboard → Spanish Inbox
     - Read the Avg time and Median cells, their sub-lines, and the note beneath the strip
     - Hover a resolved card's green duration
     - Open the Dashboard and read the Spanish card's "median reply"
-    - Open Metrics → Dept Requests and walk the business-hours step in S74
+    - Open Call Notes → Dept Requests and walk the business-hours step in S74
     - Check the daily SLA reminder email against what the tracker shows
     - Set a request's stamps so the pair is unusable (reverse them, or blank one)
     - **(operator notes 2/3, 2026-09-10)** Mark one Spanish request resolved MANUALLY and resolve one Dept Request in the APP; read both strips again after the 5-min Spanish cache rolls
@@ -2108,7 +2119,7 @@ S104 | Drive capability — the Admin signal and the folder error that names its
 S105 | Spanish Inbox — manager auto-assign of unclaimed requests | Subsystem: Server, Client (Metrics views)
   Steps:
     - Ensure `SPANISH_INBOX_MEMBERS` lists ≥2 members and the window holds ≥3 pending requests (one already claimed, one a voicemail card **whose 8x8 `Duration:` is AT OR ABOVE `SPANISH_VM_MIN_SECONDS` (default 5s) — since 2026-09-16 a shorter one is suppressed from the pending list and is therefore not auto-assignable, so a 1-second fixture would silently stop covering the voicemail case**)
-    - As a listed MEMBER who is not a manager, open Metrics → Spanish Inbox and look beside the filter strip
+    - As a listed MEMBER who is not a manager, open Dashboard → Spanish Inbox and look beside the filter strip
     - As a MANAGER, open the same tab; read the button's label; hover it while the list is still loading, and again with every request claimed
     - Press it → read the confirm; Cancel; press again → Confirm; watch the Network tab and the cards
     - Clear `SPANISH_INBOX_MEMBERS` (save an empty list from the Admin card) and reload
@@ -2124,11 +2135,11 @@ S105 | Spanish Inbox — manager auto-assign of unclaimed requests | Subsystem: 
 S110 | Company holidays — the morning after a holiday, "Yesterday" is the last real workday | Subsystem: Server, Client (Metrics views)
   Steps:
     - On the CDR Report workbook, confirm the `Company Holidays` tab exists (call-data-reporting's `setup()` creates it) and holds a row for the most recent company holiday (e.g. `2026-09-07` Labor Day); wait for the one-hour `cdr_holidays_v1` cache to lapse or clear it from the editor
-    - As any rep, on the first workday AFTER that holiday, open Metrics → My Stats
+    - As any rep, on the first workday AFTER that holiday, open Dashboard → Stats
     - Read the single-day hero label and the date it shows; open the 30-day trend and count the points across the holiday week
     - Open Manage → Coverage for the week containing the holiday, then Manage → Punctuality for the same week
     - On the dashboard side, remove the row (or park it with `Active = FALSE`) and repeat step 2 after the cache lapses
-    - As a manager, on that same first workday after the holiday, read the Metrics sidebar badge's tooltip (hover) and open Manage → Admin → System; open the CDR Report row's chevron (Batch 3)
+    - As a manager, on that same first workday after the holiday, read the Dashboard sidebar badge's tooltip (hover) and open Manage → Admin → System; open the CDR Report row's chevron (Batch 3)
     - **(cycle 22 M2)** On that same morning, and on any Monday, open the Dashboard and read the Yesterday chip on both cards
     - **(cycle 23 TC2-8)** In the week after a holiday, open Manage → Manage Time and read the live-status sparklines and the Punch Activity / missed-punch trends
   Expected: step 3 shows "Yesterday" pointing at the last real workday BEFORE the holiday (Friday for a Monday holiday), never the holiday itself, with non-zero KPIs; the trend has no point on the holiday (it is not a workday, not a zero). Step 4 marks the holiday as a holiday in both planners with the LABEL from the tab (the legend and chips read "Company holiday", not "US holiday"), and Columbus / Veterans Day are NOT marked once the tab holds any row (the federal list is only the fallback). Step 5 restores the pre-H1 behaviour for that date — and within the hour Admin → System shows the warn finding "Company Holidays tab is empty" (or "No Company Holidays tab") naming that the US-federal list is in use; with the row back, the row's detail reads `Company Holidays: sheet · N in <year>` and the finding is an ok fact. Step 6: the badge (if any) is dated the last real workday, its tooltip says "Previous workday (date)" and names the Dashboard Standards target (never 85). A `CDR_SS_ID` the deployer cannot read degrades every surface to the federal list with a Logger line, never an error — and the CDR row's own fail finding covers it (the probes run only on a reachable store). **Cycle 22 (M2):** the Dashboard's Yesterday card shows the last real workday too, labelled by its date (e.g. "Fri Sep 4"), never an empty holiday or Sunday. **(cycle 23 TC2-8)** No bar falls on the holiday — each walks the last N workdays from the company calendar, so the run steps over it.
@@ -2136,7 +2147,7 @@ S110 | Company holidays — the morning after a holiday, "Yesterday" is the last
 S111 | One answer rate, one standard — a rep and their manager see the same verdict | Subsystem: Server, Client (Metrics views, Time Clock views)
   Steps:
     - On the dashboard side, confirm the CDR Report workbook has a `Dashboard Standards` tab with a row for this team's dashboard dept (CSR: 92 / 2 on a seed install) and a `*` row; note the Team Avg Excludes names
-    - As a CSR rep, open Metrics → My Stats for a day with calls; note the % Answered figure, the "target N%" chip, and the colour of the team table's % Ans cell for yourself under Team Metrics
+    - As a CSR rep, open Dashboard → Stats for a day with calls; note the % Answered figure, the "target N%" chip, and the colour of the team table's % Ans cell for yourself under Team Metrics
     - As the CSR manager on the Department Dashboard, open My Department for the same day and read the same agent's Answer % and its tint
     - Back in team-tools open the Dashboard (Time Clock) card's % Answered KPI and the manager sidebar badge
     - On the dashboard side, park the team's row AND the `*` row (or rename the tab), clear this app's `cdr_standards_v1:*` cache from the editor, and reload My Stats
@@ -2308,7 +2319,7 @@ S121 | Spanish Inbox — an assignment tells the assignee (22post C-8) | Subsyst
 S122 | Dept Requests — a department's reply resolves, a question marks it for a look (22post D) | Subsystem: Server, Client (Metrics views)
   Steps:
     - After the deploy, send a department email from a saved note; check the sent email's Reply-To and the DeptRequests row's ThreadId
-    - From a department member's mailbox, reply "Can you send the TRX?"; wait for the hourly run (or run `runHourlyJobs` from the editor) and open Metrics → Dept Requests
+    - From a department member's mailbox, reply "Can you send the TRX?"; wait for the hourly run (or run `runHourlyJobs` from the editor) and open Call Notes → Dept Requests
     - Reply again from the department with "Done, shipped today."; wait for the next run
     - Mark the request unresolved; wait for another run with no new reply
     - Send a second request and have its ONLY reply be an out-of-office auto-reply, and a third answered only by the sending agent
@@ -2443,7 +2454,7 @@ S135 | Intake drafts belong to their author (cycle 23 INT2-3) | Subsystem: Clien
 S136 | A Spanish request that comes back — a follow-up, a click, a thank-you (cycle 23 SP-2 + follow-up) | Subsystem: Server, Client (Metrics views), Client (Time Clock views)
   Steps:
     - From an outside address, email the Spanish group inbox; as member A, claim it; as member A, reply in the thread
-    - From the requester address, reply "Gracias!" in the same thread; reload Metrics → Spanish Inbox
+    - From the requester address, reply "Gracias!" in the same thread; reload Dashboard → Spanish Inbox
     - From the requester address, reply with a new question; reload; read the card, Expand it, and open member A's Dashboard Needs-you list
     - As member B, claim the card; then, as a manager, Mark it resolved; from the requester address, reply once more with a question; reload
     - After the 5-minute stats cache, read the KPI strip, the Resolved list and the Resolution-share chart
@@ -2493,7 +2504,7 @@ S141 | The handbook loop — a suggested edit reaches the queue and the export, 
 S142 | Request triage — a held department reply is answered from the tab and counted; a Spanish request escalates at 7 days (cycle 25 E4, ST1 + G5) | Subsystem: Server, Client (Metrics views), Client (Time Clock views), Client (Call Notes views)
   Steps:
     - On the DEV instance (deptReplyResolve on), send a department email from Call Notes; reply from the department address "Received." and wait for the hourly scan (or run scanDeptRequestReplies from the editor)
-    - Open Metrics → Dept Requests; press Still open on the row; run the scan again; then reply "Can you confirm the address?" and run it again; press Resolved
+    - Open Call Notes → Dept Requests; press Still open on the row; run the scan again; then reply "Can you confirm the address?" and run it again; press Resolved
     - Open Manage → Admin → System → Dept Request reply check
     - In the Spanish inbox, leave a TEST request unanswered for 7+ days (or back-date a test thread), claim it, open the Spanish Inbox tab and the Dashboard; run sendSpanishEscalationDigest from the editor (or wait for 8am); open Admin → System → Email deliveries
   Expected: The row appears at the top under "Replies to check · 1", saying "Held back because the reply only acknowledges the email." Still open removes the row and the card reads plainly open; the next scan does NOT bring the same reply back; the question brings it back saying "asks a question"; Resolved closes the request ("marked in app"). The report lists "only acknowledges" with 1 Still open and "asks a question" with 1 Resolved (100% overridden, not amber until 5 answers). The escalated request shows "Escalated · N days" with a red stripe on the tab, "1 escalated" on the Dashboard card, and the claimant's Needs-you Spanish item reads overdue with "1 waiting 7+ days". The managers' email lists it with its age, "with <claimant>" and an "open in Gmail" link, and no subject or text; Email deliveries shows the Spanish escalation digest as sent (or "Nothing to send" on a morning with none). Pinned by INV-380.
@@ -2564,7 +2575,7 @@ S150 | Script Property consolidation — the PTO accrual ledger tab, the one run
 S151 | Spanish Inbox — the assignee badge and toast, Resolve selected, grouping and received dates (Batch C, operator 2026-11-02) | Subsystem: Server, Client (Metrics views)
   Steps:
     - As a manager, assign a pending request to a member (the Assign select, or Auto-assign) while that member has Team Tools open in another browser
-    - In the member's window, wait up to three minutes; press Open on the toast; read the Spanish Inbox tab and the Metrics sidebar link (and, at phone width, the bottom nav)
+    - In the member's window, wait up to three minutes; press Open on the toast; read the Spanish Inbox tab and the Dashboard sidebar link (and, at phone width, the bottom nav)
     - As the member, Claim another request yourself, then reload the page
     - Tick three pending cards and press Resolve selected; confirm
     - With more than 15 pending requests in the window (widen the Window select if needed), switch Group by between Date received and Department; close one group, press Select all shown
@@ -2572,7 +2583,7 @@ S151 | Spanish Inbox — the assignee badge and toast, Resolve selected, groupin
   Expected: The member sees one toast — "A Spanish Inbox request was assigned to you by <manager>" — with Open, and a count on the tab and the Metrics link equal to their open requests; their own claim raises the count but never toasts, and a reload does not toast again. Resolve selected moves the three to Resolved in one step (the toast says how many; anything it could not resolve stays ticked with the reason). Grouped, every request is in one group; Department groups are largest first with Other and Voicemail last; Select all shown leaves the closed group's cards unticked; the choice survives the reload. Every card shows the date it arrived. Pinned by INV-392.
 S152 | Metrics folded into the Dashboard and Call Notes — the Stats switch, the moved tabs, and every old link (Batch E, operator 2026-11-02) | Subsystem: Client (shell), Client (Metrics views)
   Steps:
-    - Before deploying, open Team Tools on the Metrics → Spanish Inbox tab and leave the window open; deploy; reload when the app asks
+    - Before deploying, open Team Tools on the Dashboard → Spanish Inbox tab and leave the window open; deploy; reload when the app asks
     - Read the sidebar and (at phone width) the bottom nav; open Dashboard → Stats, press Team, then Me; refresh on Team
     - Open Call Notes → Dept Requests; open a Dept Request email's link, and a `?tool=metricsSpanish` link
     - On the Dashboard press My Stats / Team Metrics on the call-metrics cards, the Spanish card's link and the Dept Requests card's link, and a Needs-you Spanish item
@@ -3043,5 +3054,6 @@ S208 | Joining a split card; the feedback limit (cycle 26 FV1 + FV2) | Subsystem
 
 ### Deploy Command
 Server: `cd web-app && clasp push -f`, then Apps Script editor → Deploy → Manage deployments → Edit current deployment → Version: **New version** → Deploy. Web app picks up the change on next page load — and since 2026-08-27 open windows notice on their own: the deploy-version beacon shows each open tab a sticky "reload to get the latest version" prompt within ~20 minutes of the New version (see the beacon Key Design Decision).
-Client (shell), Client (Time Clock views), Client (Call Notes views), Client (Metrics views), Client (Intake views), Client (Reference views), Client (Training views), Client (QA views), Client (public forms): same single `clasp push -f` ships all HTML partials alongside `Code.js`; same New-version deploy step.
+Client (shell), Client (Time Clock views), Client (Call Notes views), Client (Metrics views), Client (Intake views), Client (Reference views), Client (Training views), Client (QA views), Client (public forms): the same single `clasp push -f` ships every HTML partial alongside the fourteen server files `web-app/.clasp.json`'s `filePushOrder` names; same New-version deploy step. **A change to a file the handbook app COPIES is two deploys** — the files `scripts/handbook-sync.mjs` copies whole (`CLIENT_COPIES`: the shared reader, the manual's diagrams, the icons, the design tokens, `styles.html`), the parts of `script_core.html` and `kb/script_kb.html` its page shell is extracted from, and the server readers it walks into `kb_shared.js`: after the Team Tools push, deploy the Handbook app too (next line), or it keeps the old reader.
+Handbook app: `npm run handbook:sync` (rewrites `handbook-app/`'s copies from `web-app/`; CI fails until they are committed), commit, then `npm run handbook:push` (checks the copies and pushes with the script id from `HANDBOOK_SCRIPT_ID`, `handbook-app/.clasp.local.json` or `.clasp.json`), then in ITS Apps Script editor Deploy → Manage deployments → Edit → Version: **New version** → Deploy. `node scripts/handbook-sync.mjs --check` says whether a batch changed a copy at all — when it reports the copies current and no hand-written `handbook-app/` file changed, the handbook app needs no deploy.
 Test Suite: same `clasp push -f`. Tests don't ship to end users — run them from the editor with `runSmokeTests()` (safe on prod) or `runAllTests()` (writes TEST_ rows, cleans up at end). Smoke on prod, full on dev nightly; `runAllTests` on prod is the exception, not the routine. `runAllTestsPartA` / `runAllTestsPartB` split a full run across two executions when one would run too long; the summary prints the DERIVED expected count.

@@ -13549,11 +13549,16 @@ test('HB4.1 DOM: when pdf.js cannot load, or the form cannot be read, the viewer
   hb41PdfJs_(r.w);
   r.w.hbOpenForm_('form-eaa'); await r.settleAll();
   assert.ok(/The form could not be loaded: That form is not in the library/.test(r.d.getElementById('hb-fv-body').textContent));
-  const slow = await hbBoot_({ answers: { hbListForms: HB41_FORMS(), hbGetForm: { __delay: 40, value: { success: true, dataUri: 'data:application/pdf;base64,' + HB41_PDF_B64 } } } });
+  // (Cycle 26 FW1: the answer is RELEASED by the test, as the two-form case below does. It was a 40 ms
+  // mocked delay read after an 80 ms wait — on a slow runner the answer had not landed yet, and "drew
+  // nothing" passed without the late answer ever having arrived.)
+  const held = {};
+  const slow = await hbBoot_({ answers: { hbListForms: HB41_FORMS(), hbGetForm: () => ({ __hold: held, value: { success: true, dataUri: 'data:application/pdf;base64,' + HB41_PDF_B64 } }) } });
   const got = hb41PdfJs_(slow.w);
   slow.w.hbOpenForm_('form-eaa');
   slow.w.closeOverlay(slow.d.getElementById('hb-form-ov'));
-  await new Promise((res) => setTimeout(res, 80)); await slow.settleAll();
+  assert.strictEqual(typeof held.release, 'function', 'the form was asked for, and its answer is still on its way');
+  held.release(); await new Promise((res) => setTimeout(res, 40)); await slow.settleAll();
   assert.strictEqual(got.length, 0, 'the late answer drew nothing');
   assert.ok(!slow.d.getElementById('hb-form-ov'));
   // Close one form and open another before the first answer lands: the first

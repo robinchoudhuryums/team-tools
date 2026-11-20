@@ -1,7 +1,9 @@
 # Team Tools
 
-Internal tooling for the UMS CSR team. Each tool is a separate Apps
-Script project synced via [clasp](https://github.com/google/clasp).
+Internal tooling for the UMS CSR team: two Apps Script projects synced via
+[clasp](https://github.com/google/clasp). Every Team Tools module is part of
+ONE project (`web-app/`); the second project is the handbook app
+(`handbook-app/`).
 
 ## Projects
 
@@ -56,10 +58,10 @@ Script project synced via [clasp](https://github.com/google/clasp).
     are a separate two-stage flow with preview gate. Three flag
     types (action / training / review) with EOD reminders for
     unresolved action flags and weekly manager digests. A department
-    email's send tags its note (a Close Order by reason). A manager
-    Admin tab adds tag taxonomy + a weekly tag-trend panel (which
-    issue types are spiking), department/tax config, and compliance
-    audit. The **Dept Requests** tab tracks inter-department requests
+    email's send tags its note (a Close Order by reason). The
+    admin-only Admin tab (under Manage) adds tag taxonomy + a weekly
+    tag-trend panel (which issue types are spiking), department/tax
+    config, and compliance audit. The **Dept Requests** tab tracks inter-department requests
     with SLA status, a sort and a date range; a department's reply
     resolves a request unless it asks a question, any request can be
     reopened, and open requests for one TRX # to one department fold into
@@ -216,9 +218,11 @@ the form-generator port shipped. Both live in git history.
 | [`docs/test-harness-log.md`](docs/test-harness-log.md) | What each batch added to each harness; the editor-test hazards; the fixture rules |
 
 `CLAUDE.md` opens with a Doc map that says which of these a given update
-belongs in. Numbers live in exactly one place — the generated block — so no
-file above should restate one; `node scripts/counts.mjs --check` enforces that
-in CI.
+belongs in. The derived counts live in exactly one place — the generated block
+— so no file above should restate one. Two checks hold that in CI:
+`node scripts/counts.mjs --check` compares the block with the tree, and a pin
+in the pure harness refuses a restated count in the live docs. A number that
+is not one of the block's rows is not covered by either.
 
 ## Development
 
@@ -255,10 +259,14 @@ answer questions a screenshot cannot: `print-check.mjs`, `a11y-names.mjs`,
 `a13-measure.mjs` and `fold-measure.mjs`. A GitHub Action
 (`.github/workflows/client-tests.yml`) runs a `node --check` of every server file /
 `Tests.js` / `DevTools.js` and the dependency-free pure harness FIRST, then
-`npm ci` + the DOM harness, the server identifier lint, the browser-free
+`npm ci`, the server identifier lint, the pure harness AGAIN with
+`REQUIRE_DEPS=1` (a pin that needed a package was a visible skip the first
+time), the check that the handbook app's copies are current
+(`scripts/handbook-sync.mjs --check`), the DOM harness, the browser-free
 handbook build, the counts block and the cycle close-out check
 (`scripts/cycle-closeout.mjs --check`), on every push and PR; a second job runs
-the visual subset above. These are the project's only automated checks — a
+the visual subset above, walks the onboarding tour and checks every handbook
+screen with axe and the contrast sweep. These are the project's only automated checks — a
 batch is green when the run on its pushed commit is. (The zero-install steps
 deliberately run before `npm ci`: a registry or jsdom-resolution failure must
 not stop the only checks that need no dependencies from running at all.)

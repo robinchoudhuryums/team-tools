@@ -634,7 +634,7 @@ Test-only twins: `TEST_CDR_SS_ID`, `TEST_INTAKE_SS_ID`, `TEST_HRDOCS_SS_ID`,
 `TEST_KB_SS_ID` (cycle-10 M-9 — the KB fixture `_withTestKb_` provisions),
 `TEST_FORMS_SS_ID` and `TEST_QA_SS_ID` (2026-09-16 — `_withTestForms_` /
 `_withTestQa_`; before them the forms tests wrote to the LIVE forms store,
-which is the ADP/payroll sheet when `FORMS_SS_ID` is unset). All five are
+which is the ADP/payroll sheet when `FORMS_SS_ID` is unset). All six are
 auto-provisioned on first use and reported by the suite's `── Suite
 environment ──` block; delete one to force a fresh fixture.
 Auto-managed diagnostics: `ACTIVITY_LOG_FAILS` (cycle 26 F30 — `{count, firstMs, lastMs, lastError}`, an ActivityLog row that could not be written; on the health dot and digest for 48 hours after the latest, and named on Day Edit / Team Punches for a day it touches; delete to reset) `DIGEST_DELIVERY_LOG_FAILS` (cycle 25 E1 follow-ups — `{count, firstMs, lastMs, lastError}`, a delivery-log row that could not be written; named on Admin → System → Email deliveries while its latest failure is inside the view window; delete to reset) `WITNESS_AUDIT_FAILS` (cycle-10 C4 — the
@@ -964,16 +964,16 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1800 | `node test/client/run.js` |
+| Pure harness tests | 1810 | `node test/client/run.js` |
 | DOM harness tests | 505 | `node test/client/dom/runDom.js` |
-| Visual matrix scenarios | 320 | `shoot.mjs`'s `SCENARIOS` |
-| Editor suite registrations | 355 | `Tests.js`; a run prints its own `Expected:` line |
+| Visual matrix scenarios | 321 | `shoot.mjs`'s `SCENARIOS` |
+| Editor suite registrations | 357 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 62 | `'Admin access required.'` in the server source |
 | Manager-gated endpoints | 112 | `'Manager access required.'` or `assertManagerCaller_` in the server source |
 | QA-gated endpoints (`canSeeQa_`) | 17 | `'QA access required.'` in the server source |
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 14 | `TRIGGER_GROUPS` |
-| localStorage keys | 26 | `ums…` literals in `web-app/` |
+| localStorage keys | 27 | `ums…` literals in `web-app/` (a per-tool key family counts once) |
 | Invariant library entries | 439 | `.cycle/config.md` |
 | Regression scenarios (S*) | 203 | `.cycle/config.md` |
 

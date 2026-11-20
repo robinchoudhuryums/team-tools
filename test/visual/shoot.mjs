@@ -343,6 +343,9 @@ const SCENARIOS = [
   ['reference-search-signal-dark-mobile', { tool: 'reference', tab: null }, MOBILE, 'dark', '', E6_SIGNAL_SCROLL],
   ['training-light-wide',   { tool: 'develop',   tab: null },         WIDE, 'light', ''],
   ['coaching-light-wide',   { tool: 'develop',   tab: 'coaching' },   WIDE, 'light', ''],
+  // FW6 (cycle 26): Team Training — the manager's assignment matrix had no scenario, which is how its
+  // fixture came to render the error state unseen.
+  ['training-team-light-wide', { tool: 'develop', tab: 'trainingManage' }, WIDE, 'light', ''],
   ['clock-light-compact',   { tool: 'timeClock', tab: 'clock' },      COMPACT, 'light', '?compact=1'],
   ['cn-log-light-compact',  { tool: 'callNotes', tab: 'callNotes' },  COMPACT, 'light', '?compact=1'],
   ['cn-log-dark-compact',   { tool: 'callNotes', tab: 'callNotes' },  COMPACT, 'dark',  '?compact=1'],
@@ -897,7 +900,7 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
     const res = await page.evaluate((tags) => window.axe.run(document, { runOnly: { type: 'tag', values: tags }, resultTypes: ['violations'] })
       .then((r) => r.violations.map((v) => ({ id: v.id, impact: v.impact, help: v.help, nodes: v.nodes.length,
         targets: v.nodes.slice(0, 4).map((n) => n.target.join(' ')), summary: (v.nodes[0] && v.nodes[0].failureSummary || '').split('\n').slice(0, 3).join(' ') }))), AXE_TAGS);
-    axeReport.push({ name, viewport: vp.width + 'x' + vp.height, mode, violations: res, contrast: swept, errors: Array.from(new Set(errors)).slice(0, 4) });
+    axeReport.push({ name, viewport: vp.width + 'x' + vp.height, mode, violations: res, contrast: swept, errors: gate.keepErrors(errors, 4) });
     await ctx.close();
     continue;
   }
@@ -986,7 +989,7 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
     tooNarrow,
     mode,
     contrast: swept,
-    errors: Array.from(new Set(errors)).slice(0, 8),
+    errors: gate.keepErrors(errors, 8),   // F69: the broken-page lines are never the ones cut
   });
   await ctx.close();
 }
@@ -998,8 +1001,13 @@ if (AXE) {
   // Chromium build — a PASS here was not CI's, three times. The sweep measures
   // the pair itself, so this command fails here where CI's axe would.
   const faint = axeReport.filter((r) => gate.contrastFindings(r).length);
-  const bad = axeReport.filter((r) => r.violations.length || gate.contrastFindings(r).length);
+  // F69 (cycle 26): a scenario whose page broke — its hook threw, or an
+  // uncaught error — was not on the screen it names, so "no violations" says
+  // nothing about that screen. It fails the run, by name.
+  const broke = axeReport.filter((r) => gate.pageErrorsOf(r.errors).length);
+  const bad = axeReport.filter((r) => gate.axeFailures(r).length);
   console.log('AXE (' + axeReport.length + ' handbook scenarios, WCAG 2.1 A + AA): ' + (bad.length ? 'FAIL' : 'PASS'));
+  broke.forEach((r) => gate.pageErrorsOf(r.errors).forEach((e) => console.log('  ' + r.name + '  NOT CHECKED — the page broke: ' + String(e).slice(0, 160))));
   axeReport.filter((r) => r.violations.length).forEach((r) => r.violations.forEach((v) => console.log('  ' + r.name + '  ' + v.id + ' (' + v.impact + ', ' + v.nodes + ')  ' + v.targets.join(' | '))));
   console.log('CONTRAST SWEEP (' + axeReport.reduce((n, r) => n + (r.contrast ? r.contrast.checked : 0), 0) + ' text elements measured, ' +
     axeReport.reduce((n, r) => n + (r.contrast ? r.contrast.unchecked : 0), 0) + ' over an image and not judged): ' + (faint.length ? 'FAIL' : 'PASS'));
@@ -1057,7 +1065,7 @@ if (CI) {
   const v = gate.ciVerdict(report, gate.CI_SCENARIOS, gate.KNOWN);
   console.log('\nCI GATE (' + gate.CI_SCENARIOS.length + ' scenarios): ' + (v.ok ? 'PASS' : 'FAIL'));
   v.failures.forEach((f) => console.log('  ' + f.scenario + '  ' + f.kind + '  ' + f.detail));
-  v.stale.forEach((k) => console.log('  KNOWN entry no longer fires — remove it from ci-gate.cjs: ' + k.scenario + ' ' + k.kind));
+  v.stale.forEach((k) => console.log('  KNOWN entry ' + (k.match ? 'no longer fires — remove it from ci-gate.cjs' : 'has no `match`, so it excuses nothing — name the finding it is for') + ': ' + k.scenario + ' ' + k.kind));
   v.unshot.forEach((n) => console.log('  not shot: ' + n));
   if (!v.ok) process.exit(1);
 }

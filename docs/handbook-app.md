@@ -83,14 +83,18 @@ under the "handbook app" entries.
 
 ## How it is built
 
-Only seven files are written by hand:
+These files are written by hand (a pin holds this table to the tree: every
+`.js` in `handbook-app/` except the generated `kb_shared.js`, and the three
+page files — a file missing from it would be read as generated, "never edit"):
 
 | File | Holds |
 |---|---|
 | `Handbook.js` | The server's environment (who is asking, the spreadsheet, today) and its public endpoints |
 | `People.js` | The Handbook spreadsheet's People tab: profiles, managers, confirmations (HB2.1) |
 | `Quiz.js` | Taking a quiz: reads ManualQuizzes, records attempts and resets (HB3.2) |
-| `Training.js` | Training plans, team quizzes and read marks (HB3.3) |
+| `Training.js` | Training plans, team quizzes and read marks (HB3.3); sign-offs and team progress (HB3.4) |
+| `Reminders.js` | Training reminder emails, off until switched on, and each run's recorded outcome (HB3.4, cycle 26 F54) |
+| `Saved.js` | Bookmarks and synced notes: the Bookmarks and Notes tabs (HB2.2) |
 | `index.html` | The page template |
 | `script_handbook.html` | The page: the reader's host (all 18 `MANUAL_HOST` hooks), contents, home, search, the people view, the browser copy, links |
 | `styles_handbook.html` | The frame's styles |

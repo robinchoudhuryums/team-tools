@@ -15584,8 +15584,8 @@ test('T2: a value the panel COLOURS is a value it can EXPLAIN — the tone and t
 const X1_NO_FIXTURE_READS = [   // reads no scenario photographs yet — each is owed a fixture when one does
     'adminScanStoredFormulas', 'exportAdpRange', 'exportCallNotesRange', 'getCallNoteAuditHistory', 'getDeployStamp',
     'getFormByToken', 'getFormCatalog', 'getFormSubmission',
-    'getIntakeAgents', 'getMySentForms', 'getQuiz', 'getQuizAnalytics',
-    'getQuizzes', 'getTrainingDashboard', 'intakePreviewPAP',
+    'getIntakeAgents', 'getMySentForms', 'getQuiz',
+    'intakePreviewPAP',
     'intakePreviewPMD', 'intakePreviewPPD', 'kbGetFacetGuidance', 'kbGetImageData', 'kbGetRevisions',
     'kbGetSearchConfig', 'kbMapDistances', 'managerGetFormSubmission', 'managerGetShiftStats', 'managerSearchCallNotes',
     'searchMyCallNotes', 'verifyDocSignature',
@@ -20955,7 +20955,7 @@ test('PR3-5: fixtures + scenarios — getCoveragePlan is a FUNCTION whose keys m
   const gapLine = /VISUAL-GAP-TABS:\s*([a-zA-Z0-9,\s]*)\n/.exec(configDoc_());
   assert.ok(gapLine, '.cycle/config.md carries a VISUAL-GAP-TABS marker line for this pin to check');
   const gapTabs = gapLine[1].split(',').map((t) => t.trim()).filter(Boolean);
-  assert.ok(gapTabs.length >= 3, 'the marker lists the uncovered tabs (got ' + gapTabs.length + ')');
+  assert.ok(gapTabs.length >= 2, 'the marker lists the uncovered tabs (got ' + gapTabs.length + ')');   // three until cycle 26 FW6 gave Team Training its scenario
   assert.ok(!gapTabs.includes('coverage'), 'coverage left the VISUAL-GAP-TABS marker (VIS-COVER derives the rest)');
 });
 
@@ -39920,7 +39920,7 @@ test('E5 (cycle 25, ST4): ciVerdict — overflow, a runaway past 200px, squeezed
 });
 
 test('E5 (cycle 25, ST4): ciVerdict — a KNOWN finding passes only while it fires (the list shrinks), and a subset name the report lacks is a failure, never a vacuous pass', () => {
-  const known = [{ scenario: 'a', kind: 'narrowText', reason: 'owned elsewhere' }];
+  const known = [{ scenario: 'a', kind: 'narrowText', match: 'In this chapter list', reason: 'owned elsewhere' }];   // F69: a waiver names its finding
   const sq = Object.assign(e5Clean_('a'), { narrowText: [{ tag: 'td', w: 30, text: 'In this chapter list' }] });
   assert.strictEqual(E5_GATE.ciVerdict([sq, e5Clean_('b')], ['a', 'b'], known).ok, true, 'the known finding is excused');
   const gone = E5_GATE.ciVerdict([e5Clean_('a'), e5Clean_('b')], ['a', 'b'], known);
@@ -40178,7 +40178,14 @@ test('E6 (cycle 25, G4): searchReference records ONLY a typed search (opts.signa
   const body = (fn) => stripJsComments_(extractFunction('kb/script_kb.html', fn));
   assert.ok(/\.searchReference\(q, \{ signal: true \}\)/.test(body('kbDoSearch_')) && /\.searchReference\(q, \{ signal: true \}\)/.test(body('kbDrawerSearch_')), 'the Reference box and the drawer');
   assert.ok(!/signal/.test(body('kbDrawerFetchSuggest_')) && !/signal/.test(body('kbHbStripRefresh_')), 'the Issue-text paths never count (they carry what the rep typed about a caller)');
-  assert.ok(!/opts\.signal/.test(stripJsComments_(extractRawFunction('Code.js', 'kbGetFacetGuidance'))));
+  // F73 (cycle 26): this line read `!/opts\.signal/` over kbGetFacetGuidance — a function with no `opts`
+  // at all, so it could not fail whatever the AI path did. What must hold: the path SEARCHES, never asks
+  // for the signal, and searches publishedOnly — under which searchReference refuses to count (above).
+  const fg = stripJsComments_(extractRawFunction('Code.js', 'kbGetFacetGuidance'));
+  const fgSearches = [...fg.matchAll(/\bsearchReference\(([^;]*)\);/g)].map((m) => m[1]);
+  assert.ok(fgSearches.length >= 1, 'the AI guidance path does search — there is a call for this to hold over');
+  assert.ok(!/kbRecordSearchSignal_\(/.test(fg) && fgSearches.every((x) => !/signal\s*:/.test(x) && /publishedOnly:\s*true/.test(x)),
+    'the AI guidance path never counts a search: no signal option, no direct record, and publishedOnly on every search');
 });
 
 test('E6 (cycle 25, G4): kbSearchSignalReport_ — the window, the threshold, terms that found nothing first, unknown rows ignored, and the below-threshold count (driven)', () => {
@@ -48986,7 +48993,8 @@ test('FP3 (cycle 26): the sweep is KEPT and it gates — every scenario\'s repor
   const shoot = fs.readFileSync(path.join(HB_ROOT, 'test/visual/shoot.mjs'), 'utf8');
   assert.strictEqual((shoot.match(/await page\.evaluate\(contrast\.SWEEP\)/g) || []).length, 2, 'measured in the axe run and in the shoot');
   assert.ok(/axeReport\.push\(\{ name, viewport: vp\.width \+ 'x' \+ vp\.height, mode, violations: res, contrast: swept,/.test(shoot) && /\n    contrast: swept,\n/.test(shoot));
-  assert.ok(/const bad = axeReport\.filter\(\(r\) => r\.violations\.length \|\| gate\.contrastFindings\(r\)\.length\);/.test(shoot), 'a low pair fails the axe run');
+  assert.ok(/const bad = axeReport\.filter\(\(r\) => gate\.axeFailures\(r\)\.length\);/.test(shoot) &&
+    /return out\.concat\(contrastFindings\(r\)\);/.test(fs.readFileSync(path.join(HB_ROOT, 'test/visual/ci-gate.cjs'), 'utf8')), 'a low pair fails the axe run (through the gate\'s one verdict since F69)');
   assert.ok(/process\.exit\(bad\.length \? 1 : 0\);/.test(shoot));
   const gate = require(path.join(HB_ROOT, 'test/visual/ci-gate.cjs'));
   const low = { el: 'span.kb-co-kick', ratio: 3.34, need: 4.5, fg: '#bd5261', bg: '#311f2a', text: 'CRITICAL' };
@@ -51908,6 +51916,351 @@ testNeedsDeps(['acorn'], 'FV3 (cycle 26): every client script in both apps parse
   assert.ok(blocks >= 25, 'the script blocks were read (' + blocks + ')');
   assert.deepStrictEqual(failed, [], 'THE REGRESSION: syntax newer than ES' + LEVEL + ' in a client script — rewrite it, or raise LEVEL here after deciding which browsers the app must open in');
   assert.ok(needs2015.length >= 5, 'the level is the floor, not a stale number: these do not parse as ES5 (' + needs2015.length + ')');
+});
+
+// ── Cycle 26 Batch 14 (the /broad-scan of 2026-11-13): F69, F70, F71, F73 + FW ─
+console.log('\nCycle 26 Batch 14 — Docs and tooling: the axe gate and the waiver (F69), the commands every session reads (F70), stale facts held to the tree (F71), three test nets (F73), and the follow-ons added to it (FW)');
+const B14_ROOT = path.join(__dirname, '../..');
+const b14Read_ = (rel) => fs.readFileSync(path.join(B14_ROOT, rel), 'utf8');
+const b14Section_ = (doc, heading) => {
+  const i = doc.indexOf('\n' + heading);
+  if (i < 0) throw new Error('no section ' + heading);
+  const j = doc.indexOf('\n### ', i + heading.length + 1);
+  return doc.slice(i, j < 0 ? doc.length : j);
+};
+
+test('F69 (cycle 26): the axe gate fails a scenario whose page BROKE — its hook threw, or an uncaught error — instead of checking the screen it was left on; and the report keeps a broken-page line however many console lines came first (driven)', () => {
+  const gate = require(path.join(B14_ROOT, 'test/visual/ci-gate.cjs'));
+  const clean = { name: 'handbook-quiz-light-wide', violations: [], contrast: { low: [], checked: 40, unchecked: 0 }, errors: [] };
+  assert.deepStrictEqual(gate.axeFailures(clean), [], 'a clean scenario has nothing against it');
+  const threw = Object.assign({}, clean, { errors: ['post hook threw: hbGoQuizzes_ is not defined'] });
+  assert.deepStrictEqual(gate.axeFailures(threw).map((f) => f.kind), ['pageError'],
+    'THE REGRESSION: the hook threw, the page stayed on Home, axe found nothing there, and the scenario passed');
+  assert.deepStrictEqual(gate.axeFailures(Object.assign({}, clean, { errors: ['enterTool threw: x'] })).map((f) => f.kind), ['pageError'], 'the navigation call too');
+  assert.deepStrictEqual(gate.axeFailures(Object.assign({}, clean, { errors: ['PAGEERROR: boom'] })).map((f) => f.kind), ['pageError']);
+  assert.deepStrictEqual(gate.axeFailures(Object.assign({}, clean, { errors: ['Failed to load resource: net::ERR_FAILED'] })), [], 'console noise alone is not a broken page');
+  assert.deepStrictEqual(gate.axeFailures(Object.assign({}, clean, { violations: [{ id: 'label', impact: 'critical', nodes: 2, targets: ['#q'] }] })).map((f) => f.kind), ['axe']);
+  assert.deepStrictEqual(gate.axeFailures(Object.assign({}, clean, { contrast: null })).map((f) => f.kind), ['contrast'], 'not measured is still a finding');
+  // The slice: eight console lines used to push the page error out of the report the gate reads.
+  const noise = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+  const kept = gate.keepErrors(noise.concat(['PAGEERROR: late', 'post hook threw: late']), 8);
+  assert.deepStrictEqual(kept.slice(0, 2), ['PAGEERROR: late', 'post hook threw: late'], 'THE REGRESSION: first come, first kept — the broken-page lines were the ones cut');
+  assert.strictEqual(kept.length, 8, 'the cap still holds');
+  assert.strictEqual(gate.keepErrors(Array.from({ length: 12 }, (_, i) => 'PAGEERROR: ' + i), 4).length, 12, 'and never cuts a broken-page line to meet it');
+  assert.deepStrictEqual(gate.keepErrors(['x', 'x', 'y'], 8), ['x', 'y'], 'duplicates are one line');
+  assert.deepStrictEqual(gate.keepErrors(undefined, 8), []);
+  assert.deepStrictEqual(gate.findingsOf({ overflowPx: 0, errors: kept }).map((f) => f.kind), ['pageError', 'pageError'], 'the layout gate reads the same lines');
+  // shoot.mjs uses them: both reports through keepErrors, the axe verdict through axeFailures, and says which screen was not checked.
+  const shoot = b14Read_('test/visual/shoot.mjs');
+  assert.strictEqual((shoot.match(/errors: gate\.keepErrors\(errors, \d\)/g) || []).length, 2, 'the axe report and the layout report');
+  assert.ok(!/Array\.from\(new Set\(errors\)\)\.slice\(/.test(shoot), 'no report slices the raw console any more');
+  assert.ok(/const bad = axeReport\.filter\(\(r\) => gate\.axeFailures\(r\)\.length\);/.test(shoot) && /process\.exit\(bad\.length \? 1 : 0\)/.test(shoot));
+  assert.ok(/NOT CHECKED — the page broke: /.test(shoot), 'named, so the log says which screen axe never saw');
+});
+
+test('F69 (cycle 26): a KNOWN waiver names the finding it is for — it excuses that one, not every finding of its kind on the screen, and an entry with no `match` excuses nothing (driven)', () => {
+  const gate = require(path.join(B14_ROOT, 'test/visual/ci-gate.cjs'));
+  const base = { name: 'a', overflowPx: 0, verticalRunawayPx: 0, narrowText: [], missing: [], errors: [] };
+  const index = { tag: 'a', w: 37, text: 'In this chapter' }, other = { tag: 'td', w: 22, text: 'Member ID' };
+  const known = [{ scenario: 'a', kind: 'narrowText', match: 'In this chapter', reason: 'the masthead index' }];
+  assert.strictEqual(gate.ciVerdict([Object.assign({}, base, { narrowText: [index] })], ['a'], known).ok, true, 'the finding it names is excused');
+  const both = gate.ciVerdict([Object.assign({}, base, { narrowText: [index, other] })], ['a'], known);
+  assert.deepStrictEqual([both.ok, both.failures.map((f) => f.detail)], [false, ['td 22px "Member ID"']],
+    'THE REGRESSION: the one waiver excused ANY squeezed column on its screen — the next one included');
+  const onlyOther = gate.ciVerdict([Object.assign({}, base, { narrowText: [other] })], ['a'], known);
+  assert.ok(!onlyOther.ok && onlyOther.failures.length === 1 && onlyOther.stale.length === 1, 'a different squeeze fails, and the waiver that did not fire is stale');
+  const bare = gate.ciVerdict([Object.assign({}, base, { narrowText: [index] })], ['a'], [{ scenario: 'a', kind: 'narrowText', reason: 'no match given' }]);
+  assert.ok(!bare.ok && bare.failures.length === 1 && bare.stale.length === 1, 'an entry with no match excuses nothing and is reported');
+  assert.deepStrictEqual(gate.KNOWN.filter((k) => !k.match), [], 'every entry in the real list names its finding');
+  assert.ok(/has no `match`, so it excuses nothing/.test(b14Read_('test/visual/shoot.mjs')), 'and the run says which kind of stale it is');
+});
+
+test('F70 (cycle 26): the Test Command names what CI really runs — every script the workflow invokes is in the section a session reads, the harness is not called "NOT in CI", and nothing "runs LAST" that does not (derived from the workflow)', () => {
+  const wf = b14Read_('.github/workflows/client-tests.yml');
+  const cfg = b14Read_('.cycle/config.md');
+  const testCmd = b14Section_(cfg, '### Test Command');
+  const subsystems = b14Section_(cfg, '### Subsystems');
+  const visualJob = wf.slice(wf.indexOf('\n  visual-layout:'));
+  assert.ok(visualJob.length > 200, 'the visual job was found');
+  const visualRuns = [...visualJob.matchAll(/node ((?:shoot|tour-check|contrast-check)\.mjs(?: --[a-z]+)?)/g)].map((m) => m[1]);
+  assert.ok(visualRuns.indexOf('shoot.mjs --ci') >= 0 && visualRuns.indexOf('shoot.mjs --axe') >= 0 && visualRuns.indexOf('tour-check.mjs') >= 0, 'the workflow shoots, walks the tour and runs axe (' + visualRuns.join(', ') + ')');
+  Array.from(new Set(visualRuns)).forEach((cmd) => assert.ok(testCmd.indexOf('node ' + cmd) >= 0, 'THE REGRESSION: CI runs `node ' + cmd + '` and the Test Command did not say so (it said the harness was NOT in CI)'));
+  assert.ok(!/NOT in CI\*\* — it\s+needs/.test(testCmd) && !/Manual \/ on-demand, NOT in CI/.test(cfg), 'the whole harness is no longer called "NOT in CI"');
+  assert.ok(!/\*\*The harness is NOT in CI\*\*/.test(cfg), 'nor in the Visual Audit Stage');
+  // "runs LAST": whatever the section says about order must be true of the job.
+  const clientJob = wf.slice(wf.indexOf('\n    steps:'), wf.indexOf('\n  visual-layout:'));
+  const iCounts = clientJob.indexOf('counts.mjs --check'), iClose = clientJob.indexOf('cycle-closeout.mjs --check');
+  assert.ok(iCounts > 0 && iClose > iCounts, 'in the job, the close-out check comes after the counts check');
+  assert.ok(!/counts\.mjs --check` runs LAST/.test(testCmd) && /cycle-closeout\.mjs --check` runs after it/.test(testCmd), 'and the section says so');
+  assert.ok(/REQUIRE_DEPS=1/.test(clientJob) && /REQUIRE_DEPS=1/.test(testCmd), 'the second pure run is named too');
+  // Every script CI executes is in a Subsystems list, so a subsystem-scoped audit reads it.
+  const ran = Array.from(new Set([...wf.matchAll(/node ((?:scripts|test)\/[\w./-]+\.(?:mjs|cjs|js))/g)].map((m) => m[1])
+    .concat([...visualJob.matchAll(/node ([\w-]+\.mjs)/g)].map((m) => 'test/visual/' + m[1]))));
+  assert.ok(ran.length >= 8, 'the scripts the workflow runs (' + ran.length + ')');
+  assert.deepStrictEqual(ran.filter((f) => subsystems.indexOf(f) < 0), [], 'a script CI runs that no Subsystems list names');
+  ran.forEach((f) => assert.ok(fs.existsSync(path.join(B14_ROOT, f)), f + ' exists'));
+});
+
+test('F70 (cycle 26): the Deploy Command covers every deployed subsystem — the handbook app has its line, the commands it names are real npm scripts, and no line ships a file that does not exist (derived)', () => {
+  const cfg = b14Read_('.cycle/config.md');
+  const deploy = b14Section_(cfg, '### Deploy Command');
+  const subsystems = b14Section_(cfg, '### Subsystems');
+  // A heading is a line that starts at the margin and ends with a colon. "Client (shell)" is a name with
+  // its parentheses; any other heading's parenthesis is a note about it ("Handbook app (HB1.2 — …)").
+  const names = subsystems.split('\n').filter((l) => /^[A-Z][^\n]*:\s*$/.test(l) && !/^###/.test(l))
+    .map((l) => (/^Client \([^)]*\)/.exec(l) || [l.replace(/\s*\(.*$/, '').replace(/:\s*$/, '')])[0].trim());
+  const uniq = Array.from(new Set(names));
+  assert.ok(uniq.indexOf('Server') >= 0 && uniq.indexOf('Handbook app') >= 0 && uniq.indexOf('Test Suite') >= 0 && uniq.length >= 10, 'the subsystem names were read (' + uniq.join(' | ') + ')');
+  const notDeployed = ['Manual source'];   // build-only: the import carries it, clasp never does
+  const missing = uniq.filter((n) => notDeployed.indexOf(n) < 0 && deploy.indexOf(n) < 0);
+  assert.deepStrictEqual(missing, [], 'THE REGRESSION: a subsystem with no deploy line — the handbook app had none, so a change to a file it copies shipped to Team Tools only');
+  assert.ok(!/`Code\.js`/.test(deploy), 'no line ships `Code.js` (it was split into the fourteen server files in Batch F2)');
+  const scripts = JSON.parse(b14Read_('package.json')).scripts;
+  const named = [...deploy.matchAll(/`npm run ([\w:-]+)`/g)].map((m) => m[1]);
+  assert.ok(named.indexOf('handbook:sync') >= 0 && named.indexOf('handbook:push') >= 0, 'the handbook line names its two commands');
+  named.forEach((n) => assert.ok(scripts[n], '`npm run ' + n + '` is a script in package.json'));
+  // The files it says the handbook app copies are the ones the sync copies.
+  const sync = b14Read_('scripts/handbook-sync.mjs');
+  assert.ok(/export const CLIENT_COPIES = \[/.test(sync) && /export const SHELL_SOURCES = \['script_core\.html', 'kb\/script_kb\.html'\]/.test(sync) && /export const SERVER_OUT = 'kb_shared\.js'/.test(sync));
+  ['CLIENT_COPIES', 'script_core.html', 'kb/script_kb.html', 'kb_shared.js'].forEach((t) => assert.ok(deploy.indexOf(t) >= 0, 'the deploy line names ' + t));
+});
+
+test('F70 (cycle 26): no regression step walks through a tool that no longer exists — derived from RETIRED_TOOLS, over every scenario', () => {
+  const core = b14Read_('web-app/script_core.html');
+  const m = /const RETIRED_TOOLS = \{([^\n]*)\};/.exec(core);
+  assert.ok(m, 'RETIRED_TOOLS was read');
+  const retired = [...m[1].matchAll(/(\w+):\s*\{/g)].map((x) => x[1]);
+  assert.deepStrictEqual(retired, ['metrics'], 'the retired tools (a new one needs its scenario steps rewritten too)');
+  const scen = b14Section_(b14Read_('.cycle/config.md'), '### Regression Scenarios');
+  const steps = scen.split('\n').filter((l) => /^\s+- /.test(l));
+  assert.ok(steps.length > 800, 'the scenario steps were read (' + steps.length + ')');
+  retired.forEach((key) => {
+    const label = key.charAt(0).toUpperCase() + key.slice(1);
+    const bad = steps.filter((l) => new RegExp('\\b' + label + ' →|\\bopen ' + label + '\\b(?! [a-z])|\\b' + label + ' sidebar|the ' + label + ' tool\\b|\\b' + label + ' \\/ |, ' + label + ',|Repeat for ' + label + '\\b').test(l));
+    assert.deepStrictEqual(bad.map((l) => l.trim().slice(0, 90)), [], 'THE REGRESSION: a step opens the retired ' + label + ' tool — the walker cannot perform it');
+  });
+  assert.ok(steps.filter((l) => /Dashboard → Stats/.test(l)).length >= 5 && steps.filter((l) => /Call Notes → Dept Requests/.test(l)).length >= 3 && steps.filter((l) => /Dashboard → Spanish Inbox/.test(l)).length >= 3,
+    'the steps name where those tabs live now');
+  const tabs = /metricsMyStats:\s*\{ label: 'Stats'/.test(core) && /metricsSpanish:\s*\{ label: 'Spanish Inbox'/.test(core) && /metricsDeptReq:\s*\{ label: 'Dept Requests'/.test(core);
+  assert.ok(tabs, 'and those are the tabs\' real labels');
+});
+
+test('F71 (cycle 26): the hand-carried facts are held to the tree — the handbook app\'s hand-written files, its scopes, the test twins, the two projects (derived)', () => {
+  // (1) The hand-written files: everything top-level in handbook-app/ the sync does not write.
+  const sync = b14Read_('scripts/handbook-sync.mjs');
+  const copies = [.../export const CLIENT_COPIES = \[([\s\S]*?)\];/.exec(sync)[1].matchAll(/'([^']+)'/g)].map((x) => path.basename(x[1]));
+  const generated = copies.concat([/export const SERVER_OUT = '([^']+)'/.exec(sync)[1], /export const SHELL_OUT = '([^']+)'/.exec(sync)[1]]);
+  const HB = path.join(B14_ROOT, 'handbook-app');
+  const hand = fs.readdirSync(HB, { withFileTypes: true }).filter((e) => e.isFile() && /\.(js|html)$/.test(e.name) && generated.indexOf(e.name) < 0).map((e) => e.name).sort();
+  assert.ok(hand.length >= 9 && hand.indexOf('Reminders.js') >= 0 && hand.indexOf('Saved.js') >= 0, 'the hand-written files (' + hand.join(', ') + ')');
+  const doc = b14Read_('docs/handbook-app.md');
+  const tableAt = doc.indexOf('These files are written by hand');
+  assert.ok(tableAt > 0 && !/Only seven files are written by hand/.test(doc), 'the table no longer carries a count');
+  const table = doc.slice(tableAt, doc.indexOf('Everything else is a **copy**', tableAt));
+  const rows = [...table.matchAll(/^\| `([\w.]+)` \|/gm)].map((x) => x[1]).sort();
+  assert.deepStrictEqual(rows, hand, 'THE REGRESSION: the table omitted Reminders.js and Saved.js — a file not in it reads as generated, "never edit"');
+  const claude = b14Read_('CLAUDE.md');
+  const sentence = /hand-written files are ([^\n]*?)\); the rest are/.exec(claude.replace(/\n/g, ' '));
+  assert.ok(sentence, 'CLAUDE.md names them too');
+  hand.forEach((f) => assert.ok(sentence[1].indexOf(f.replace(/\.(js|html)$/, '')) >= 0, 'CLAUDE.md names ' + f));
+  // (2) The scopes the operator is told to expect are the manifest's.
+  const scopes = JSON.parse(b14Read_('handbook-app/appsscript.json')).oauthScopes.map((s) => s.replace('https://www.googleapis.com/auth/', ''));
+  const SAY = { 'spreadsheets': /see, edit, create and\s+delete your spreadsheets/, 'userinfo.email': /see your email address/, 'script.send_mail': /send email as you/, 'script.scriptapp': /manage triggers/ };
+  assert.deepStrictEqual(scopes.filter((s) => !SAY[s]), [], 'a scope the manifest asks for that the operator entry has no words for');
+  const ops = b14Read_('docs/operator-state.md');
+  const entry = ops.slice(ops.indexOf('<a id="operator-the-handbook-app-hb1-2"></a>'));
+  scopes.forEach((s) => assert.ok(SAY[s].test(entry.slice(0, 4000)), 'the entry describes ' + s));
+  assert.ok(!/Authorise the two scopes/.test(ops) && !/serves the handbook read-only to anyone/.test(ops), 'THE REGRESSION: "two scopes (read spreadsheets…)" for an app that writes and sends mail');
+  // (3) The test twins: every TEST_*_SS_ID property the suite provisions is named, and the count word is right.
+  const tests = b14Read_('web-app/Tests.js');
+  const twins = Array.from(new Set([...tests.matchAll(/setProperty\('(TEST_[A-Z]+_SS_ID)'/g)].map((x) => x[1]))).sort();
+  assert.ok(twins.length >= 6, 'the twins the suite provisions (' + twins.join(', ') + ')');
+  const para = claude.slice(claude.indexOf('Test-only twins:'), claude.indexOf('Auto-managed diagnostics:'));
+  twins.forEach((t) => assert.ok(para.indexOf('`' + t + '`') >= 0, 'CLAUDE.md names ' + t));
+  const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+  const said = /All (\w+) are\s+auto-provisioned/.exec(para);
+  assert.ok(said && said[1] === WORDS[twins.length], 'THE REGRESSION: "All five" beside six names — it says "' + (said && said[1]) + '" for ' + twins.length);
+  // (4) README: two projects, not one per tool; the Admin tab's real gate; what really enforces the count rule.
+  const readme = b14Read_('README.md');
+  assert.ok(!/Each tool is a separate Apps\s+Script project/.test(readme) && /`web-app\/`/.test(readme) && /`handbook-app\/`/.test(readme), 'two projects');
+  assert.ok(/adminOnly: true/.test(b14Read_('web-app/script_core.html')) && /admin-only Admin tab/.test(readme) && !/A manager\s+Admin tab/.test(readme), 'the Admin tab is admin-only');
+  assert.ok(/a pin\s+in the pure harness refuses a restated count/.test(readme), 'the restatement ban is the pin\'s, not counts --check\'s');
+  ['handbook-sync.mjs --check', 'REQUIRE_DEPS=1', 'cycle-closeout.mjs --check', 'axe', 'onboarding tour'].forEach((t) => assert.ok(readme.indexOf(t) >= 0, 'README\'s CI paragraph names ' + t));
+  assert.ok(/devScrubRosterForMe`\/`runAllTests`/.test(b14Read_('docs/deployment.md')), 'the deployment doc names the function that can be run');
+});
+
+test('F71 + FW3 (cycle 26): the key count sees a per-tool key FAMILY and not a window name; `counts.mjs --write` exists and refuses to write a block it could not fill (driven through the script)', () => {
+  const cp = require('child_process');
+  const out = JSON.parse(cp.execFileSync('node', [path.join(B14_ROOT, 'scripts/counts.mjs'), '--static', '--json'], { encoding: 'utf8' }));
+  const src = b14Read_('scripts/counts.mjs');
+  assert.ok(/keys\.add\(pre \+ '…'\)/.test(src), 'a family is named by its prefix');
+  const core = b14Read_('web-app/script_core.html');
+  assert.ok(/localStorage\.getItem\('umsPopoutGeom_' \+ tool\)/.test(core) && /window\.open\(url, 'umsTeamToolsCompact_' \+ tool/.test(core), 'the family, and the window name of the same shape, are both in the code');
+  const whole = new Set([...b13Partials_().filter((f) => f.indexOf(path.join(B14_ROOT, 'web-app') + path.sep) === 0 || f.indexOf(PA_WEB + path.sep) === 0)
+    .map((f) => fs.readFileSync(f, 'utf8')).join('\n').matchAll(/'(ums[A-Za-z0-9]+)'/g)].map((x) => x[1]));
+  assert.strictEqual(out.localStorageKeys, whole.size + 1, 'THE REGRESSION: the per-tool pop-out geometry was counted only by its legacy key — the family is one more, the window name none');
+  const row = /\| localStorage keys \| (\d+) \|/.exec(b14Read_('CLAUDE.md'));
+  assert.strictEqual(Number(row[1]), out.localStorageKeys, 'and the block carries it');
+  // --write: refuses a static run (two rows would be blank), and writes through the same renderer --check compares.
+  const r = cp.spawnSync('node', [path.join(B14_ROOT, 'scripts/counts.mjs'), '--static', '--write'], { encoding: 'utf8' });
+  assert.ok(r.status === 1 && /needs the harness totals/.test(r.stderr), 'a --static --write refuses rather than blank the harness rows');
+  const wb = /function writeBlock\(\) \{[\s\S]*?\n\}/.exec(src)[0];
+  assert.ok(/fs\.writeFileSync\(file, claude\.replace\(have, \(\) => want\)\)/.test(wb) && /const after = renderBlock\(c\);/.test(wb), 'it writes the block --check would accept');
+  // Two steps: the pins that compare the block's static rows with the tree are IN the harness whose totals
+  // the block needs — written in one step, a stale row made the harness red and the write refused itself.
+  assert.ok(wb.indexOf('derive({ withHarness: false })') > 0 && wb.indexOf('derive({ withHarness: false })') < wb.indexOf('derive({ withHarness: true })'), 'the rows that need no harness go in before the harness is run');
+  assert.ok(/the rows that need no harness are written; the two harness totals are not/.test(wb), 'and a harness red for another reason says how far it got');
+  assert.ok(/Regenerate with: node scripts\/counts\.mjs --write/.test(src), 'and a failed --check names it');
+});
+
+test('F73 (cycle 26): PUBLIC-GATE over the handbook app — every google.script.run-reachable function in every pushed file of the second project gates its caller, is a named delegate whose callee does, or is a named exception (derived from the directory)', () => {
+  const HB = path.join(B14_ROOT, 'handbook-app');
+  assert.ok(!fs.existsSync(path.join(HB, '.claspignore')), 'a .claspignore now narrows what clasp pushes — teach this pin to honour it');
+  const pushed = fs.readdirSync(HB).filter((f) => /\.(js|gs)$/i.test(f)).sort();
+  assert.ok(pushed.indexOf('kb_shared.js') >= 0 && pushed.indexOf('People.js') >= 0 && pushed.length >= 7, 'the generated file and the hand-written ones (' + pushed.join(', ') + ')');
+  const all = {};
+  pushed.forEach((f) => { all[f] = fs.readFileSync(path.join(HB, f), 'utf8'); });
+  const bodyOf = (src, idx) => { const s = src.indexOf('{', idx); let d = 0, k = s; for (; k < src.length; k++) { if (src[k] === '{') d++; else if (src[k] === '}' && --d === 0) break; } return src.slice(s, k + 1); };
+  const fnBody = (name) => { for (const f of pushed) { const i = all[f].search(new RegExp('^function ' + name + '\\(', 'm')); if (i >= 0) return stripJsComments_(bodyOf(all[f], i)); } return ''; };
+  // A gate is a call that IDENTIFIES the caller: the app's own getEmployeeInfo_, or a helper that begins with one.
+  const HELPERS = ['hbAdminCall_', 'hbAuthorCall_', 'hbSavedCall_', 'hbOwnerCall_'];
+  HELPERS.forEach((h) => assert.ok(/getEmployeeInfo_\(\)|Session\.getActiveUser\(\)/.test(fnBody(h)), h + ' itself identifies the caller'));
+  assert.ok(/active === effective/.test(fnBody('hbOwnerCall_').replace(/\s+/g, ' ')), 'the owner helper admits only the script owner');
+  const GATES = [/\bgetEmployeeInfo_\(/].concat(HELPERS.map((h) => new RegExp('\\b' + h + '\\(')));
+  const ALLOW = {
+    doGet: 'the web-app entry — the deployment is domain-only; not a google.script.run target',
+    include: 'returns a bundled HTML partial by name — the same source every page already serves',
+    kbGetImageData: 'a constant refusal (Drive images are not served here) — reads nothing',
+    kbMapDistances: 'a constant refusal (distances are not served here) — reads nothing',
+  };
+  const DELEGATE = { getManualMeta: 'ttGetManualMeta_', getManualPart: 'ttGetManualPart_', getManualImages: 'ttGetManualImages_',
+    getKbImages: 'ttGetKbImages_', getReferenceItem: 'ttGetReferenceItem_', searchReference: 'ttSearchReference_' };
+  const bad = [], seen = [];
+  pushed.forEach((f) => {
+    const re = /^function ([A-Za-z0-9_]*[A-Za-z0-9])\s*\(/gm; let m;
+    while ((m = re.exec(all[f])) !== null) {
+      const name = m[1]; seen.push(name);
+      const body = stripJsComments_(bodyOf(all[f], m.index));
+      if (ALLOW[name]) {
+        if (/constant refusal/.test(ALLOW[name]) && /SpreadsheetApp|PropertiesService|getHandbookSS_|getKbSS_|\btt[A-Z]\w+_\(/.test(body)) bad.push(f + ' ' + name + ' — listed as a constant refusal but reads a store');
+        continue;
+      }
+      if (DELEGATE[name]) {
+        const callee = DELEGATE[name];
+        if (body.indexOf(callee + '(') < 0) { bad.push(f + ' ' + name + ' — no longer calls its listed gate ' + callee); continue; }
+        if (!GATES.some((t) => t.test(fnBody(callee)))) bad.push(f + ' ' + name + ' — delegate ' + callee + ' carries no gate');
+        continue;
+      }
+      if (!GATES.some((t) => t.test(body))) bad.push(f + ' ' + name);
+    }
+  });
+  assert.ok(seen.length >= 40 && seen.indexOf('hbMarkRead') >= 0 && seen.indexOf('searchReference') >= 0, 'the scan found the public surface (' + seen.length + ')');
+  Object.keys(ALLOW).concat(Object.keys(DELEGATE)).forEach((n) => assert.ok(seen.indexOf(n) >= 0, n + ' is listed but no longer public — remove it; the lists only shrink'));
+  assert.deepStrictEqual(bad, [], 'THE POINT: a public function in handbook-app/ with no gate of its own — every domain user can call it:\n  ' + bad.join('\n  '));
+  // Non-vacuity, driven on the rule itself: a helper added without a trailing underscore would be caught.
+  const probe = 'function hbPeopleDump() { return hbPeopleRead_(getHandbookSS_(), false); }';
+  assert.ok(!GATES.some((t) => t.test(stripJsComments_(bodyOf(probe, 0)))), 'an ungated reader is what the rule refuses');
+});
+
+test('F73 (cycle 26): a live Script Property the editor suite overwrites is STASHED first — a killed run\'s value is restored by setup and cleanup, an absent property goes back to absent, and a re-run never stashes a test\'s value over the original (driven + derived)', () => {
+  const tests = b14Read_('web-app/Tests.js');
+  const store = {};
+  const props = { getProperty: (k) => (Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null), setProperty: (k, v) => { store[k] = String(v); },
+    deleteProperty: (k) => { delete store[k]; }, getKeys: () => Object.keys(store) };
+  const ctx = vm.createContext({ String, Object, Array, JSON, PropertiesService: { getScriptProperties: () => props }, Logger: { log() {} } });
+  ['TEST_STASH_VALUE_PREFIX', 'TEST_STASH_ABSENT_PREFIX'].forEach((k) => vm.runInContext('var ' + k + ' = ' + new RegExp('^const ' + k + ' = ([^;]+);', 'm').exec(tests)[1] + ';', ctx));
+  ['_stashRead_', '_stashProp_', '_unstashProp_', '_restoreStashedProps_'].forEach((n) => vm.runInContext(extractRawFunction('Tests.js', n), ctx));
+  // A test in a run that is killed: stash, overwrite — and no finally.
+  store.CN_FEATURE_FLAGS = '{"enablePtoTracking":true}';
+  assert.strictEqual(ctx._stashProp_('CN_FEATURE_FLAGS'), '{"enablePtoTracking":true}', 'the stash hands back the value, like the getProperty it replaces');
+  assert.strictEqual(ctx._stashProp_('WHATSNEW_KB_ID'), null, 'and null for a property that is not set');
+  delete store.CN_FEATURE_FLAGS; store.CN_FEATURE_FLAGS = '{"employeeImmediateAdjust":true}'; store.WHATSNEW_KB_ID = 'kb-test';
+  // THE REGRESSION: here the real values existed only in two local variables.
+  // The re-run reaches the same test first:
+  assert.strictEqual(ctx._stashProp_('CN_FEATURE_FLAGS'), '{"enablePtoTracking":true}', 'a second stash returns the ORIGINAL — it does not stash the test\'s value over it');
+  const restored = JSON.parse(JSON.stringify(ctx._restoreStashedProps_())).sort();
+  assert.deepStrictEqual(restored, ['CN_FEATURE_FLAGS', 'WHATSNEW_KB_ID'], 'the backstop names what it restored');
+  assert.deepStrictEqual(store, { CN_FEATURE_FLAGS: '{"enablePtoTracking":true}' }, 'the real value is back, the absent one is absent, and no stash is left');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx._restoreStashedProps_())), [], 'nothing to restore twice');
+  // The normal path: unstash restores and drops, in that order.
+  ctx._stashProp_('ADMIN_EMAILS'); store.ADMIN_EMAILS = 'test@example.invalid';
+  assert.strictEqual(ctx._unstashProp_('ADMIN_EMAILS'), true);
+  assert.deepStrictEqual(store, { CN_FEATURE_FLAGS: '{"enablePtoTracking":true}' }, 'ADMIN_EMAILS did not exist and does not again');
+  const un = stripJsComments_(extractRawFunction('Tests.js', '_unstashProp_'));
+  assert.ok(un.indexOf('props.setProperty(key, kept.value)') < un.indexOf('props.deleteProperty(TEST_STASH_VALUE_PREFIX + key)'), 'the value goes back BEFORE the stash is dropped — a kill between leaves the stash');
+  // A value with no JSON wrapper: a property at the size cap still fits its stash.
+  store.CN_EMAIL_TEMPLATES = 'x'.repeat(9000);
+  ctx._stashProp_('CN_EMAIL_TEMPLATES');
+  assert.strictEqual(store.TEST_STASH_VALUE_CN_EMAIL_TEMPLATES.length, 9000, 'stored as it is — nothing added to a value already at the cap');
+  ctx._unstashProp_('CN_EMAIL_TEMPLATES');
+  // Derived: every function in Tests.js that writes a LIVE property by its literal name stashes it first.
+  const fnRe = /^function ([A-Za-z0-9_]+)\s*\(/gm;
+  const starts = []; let m;
+  while ((m = fnRe.exec(tests)) !== null) starts.push([m[1], m.index]);
+  const BACKSTOPS = ['setupTestEnvironment', 'cleanupTestData'];   // the by-key strips of test ADDRESSES (g132) — they restore, they do not override
+  const unstashed = [], stashedKeys = new Set();
+  starts.forEach(([name, at], i) => {
+    const body = stripJsComments_(tests.slice(at, i + 1 < starts.length ? starts[i + 1][1] : tests.length));
+    const writes = [...body.matchAll(/\b\w*[pP]rops\.(?:setProperty|deleteProperty)\('([A-Z][A-Z0-9_]*)'/g)].map((x) => ({ key: x[1], at: x.index }))
+      .filter((w) => !/^TEST_/.test(w.key));
+    writes.forEach((w) => {
+      if (BACKSTOPS.indexOf(name) >= 0) return;
+      const st = body.indexOf("_stashProp_('" + w.key + "')");
+      if (st < 0 || st > w.at) unstashed.push(name + ' writes ' + w.key + ' with no stash before it');
+      else stashedKeys.add(w.key);
+    });
+  });
+  assert.deepStrictEqual(unstashed, [], 'THE REGRESSION: a live property rewritten with only a `finally` to put it back');
+  ['CN_FEATURE_FLAGS', 'TIMESHEET_ARCHIVE_DAYS', 'WHATSNEW_KB_ID', 'ADMIN_EMAILS', 'MANAGER_EMAILS'].forEach((k) => assert.ok(stashedKeys.has(k), 'the net saw ' + k + ' being written'));
+  assert.strictEqual((tests.match(/_stashProp_\('/g) || []).length, (tests.match(/_unstashProp_\('/g) || []).length, 'every stash in a test has its unstash');
+  const setup = stripJsComments_(extractRawFunction('Tests.js', 'setupTestEnvironment')), clean = stripJsComments_(extractRawFunction('Tests.js', 'cleanupTestData'));
+  assert.ok(/_restoreStashedProps_\(\);/.test(setup) && setup.indexOf('_restoreStashedProps_();') < setup.indexOf("getProperty('ADMIN_EMAILS')"), 'setup restores before it reads the admin list');
+  assert.ok(clean.indexOf('_restoreStashedProps_();') > 0 && clean.indexOf('_restoreStashedProps_();') < clean.indexOf('getAdpSS_()'), 'cleanup restores first');
+});
+
+test('FW6 (cycle 26): the Team Training fixtures have the SERVER\'s shape — the real endpoints are driven and their keys compared with what the mock answers; the view is in the matrix and in CI\'s subset (driven, INV-185)', () => {
+  const win = x1MockWindow_();
+  const ask = (n) => { let got = null; win.google.script.run.withSuccessHandler((r) => { got = r; })[n](); return JSON.parse(JSON.stringify(got)); };
+  const fx = { dash: ask('getTrainingDashboard'), quizzes: ask('getQuizzes'), analytics: ask('getQuizAnalytics') };
+  assert.ok(fx.dash && fx.dash.items && fx.quizzes && fx.quizzes.quizzes && fx.analytics && fx.analytics.quizzes, 'THE REGRESSION: all three reads answered "no fixture", so the view only ever drew its error state in the matrix');
+  // The real functions, over a small world.
+  const H = 3600000, NOW = Date.now();
+  const fail = (emp, ms) => ({ quizId: 'q1', empId: emp, submittedAt: b11Stamp_(ms), scorePct: 40, passed: false });
+  const quizMap = { q1: { title: 'Safety', kbItemId: 'kb-1', passPct: 80, questionCount: 1, questions: [{ q: 'Q', options: ['a', 'b'], correct: [0] }] } };
+  const attempts = [fail('E-1', NOW - 3 * H), fail('E-1', NOW - 2 * H), fail('E-1', NOW - H)];
+  const ctx = b10Ctx_(['trainEffectiveForEmp_', 'trainDeriveStatus_', 'trainAttemptStats_', 'trainQuizLockout_', 'coachParseTs_', 'trainQuizAttemptList_', 'trainQuizLockState_',
+    'getTrainingDashboard', 'getQuizzes', 'trainQuizAnalytics_', 'getQuizAnalytics'], {
+    CONFIG: { TIMEZONE: 'UTC' }, TRAIN_QUIZ_MAX_ATTEMPTS: 3, TRAIN_QUIZ_LOCK_HOURS: 24, KB_STATUS_DRAFT: 'draft', EMP: { ID: 0, NAME: 1 },
+    Utilities: { formatDate: (d) => 'WHEN ' + d.toISOString() },
+    getEmployeeInfo_: () => ({ id: 'M-1', isManager: true }), empTz_: () => 'UTC', trainTodayIso_: () => '2026-10-05',
+    trainReadAssignments_: () => [{ assignId: 'a1', itemType: 'quiz', itemId: 'q1', empId: '*', assignedBy: 'm@x', assignedAt: '2000-01-01 00:00:00', dueDate: '2026-10-01' }],
+    trainReadCompletions_: () => [], trainKbTitles_: () => ({}), trainReadQuizzes_: () => quizMap, trainReadAttempts_: () => attempts, trainReadQuizResets_: () => ({}),
+    getEmployeeRosterRows_: () => [['h'], ['E-1', 'Ana'], ['E-2', 'Ben']], empRosterEmail_: () => 'x@y',
+  });
+  const real = { dash: b10J(ctx.getTrainingDashboard()), quizzes: b10J(ctx.getQuizzes()), analytics: b10J(ctx.getQuizAnalytics()) };
+  assert.ok(!real.dash.error && real.dash.locked.length === 1 && real.dash.reps.length === 2, 'the real dashboard answered: ' + JSON.stringify(real.dash).slice(0, 120));
+  const keys = (o) => Object.keys(o).sort();
+  assert.deepStrictEqual(keys(fx.dash), keys(real.dash), 'the dashboard\'s keys');
+  [['items', 0], ['reps', 0], ['assignments', 0], ['locked', 0]].forEach(([k]) => assert.deepStrictEqual(keys(fx.dash[k][0]), keys(real.dash[k][0]), 'a row of dashboard.' + k));
+  const statuses = new Set(['done', 'overdue', 'pending']);
+  ['x', '', '2020-01-01'].forEach((due) => [true, false].forEach((done) => assert.ok(statuses.has(ctx.trainDeriveStatus_(done, due, '2026-10-05')), 'the real statuses')));
+  const cells = [].concat.apply([], fx.dash.reps.map((r) => Object.keys(r.items).map((k) => r.items[k])));
+  assert.deepStrictEqual(cells.filter((c) => !statuses.has(c)), [], 'every fixture cell is a status the server produces');
+  assert.deepStrictEqual(Array.from(new Set(cells)).sort(), ['done', 'overdue', 'pending'], 'and all three are on camera');
+  fx.dash.reps.forEach((r) => Object.keys(r.items).forEach((k) => assert.ok(fx.dash.items.some((it) => it.key === k), 'a cell\'s key is one of the items')));
+  assert.deepStrictEqual(keys(fx.quizzes.quizzes[0]), keys(real.quizzes.quizzes[0]), 'a quiz row');
+  assert.deepStrictEqual(keys(fx.quizzes.quizzes[0].questions[0]), keys(real.quizzes.quizzes[0].questions[0]), 'a question');
+  assert.deepStrictEqual(keys(fx.analytics.quizzes[0]), keys(real.analytics.quizzes[0]), 'an analytics row');
+  assert.ok(fx.analytics.quizzes.some((q) => q.attemptCount === 0 && q.passRate === null && q.avgScore === null), 'a quiz nobody has taken is null, not zero — as the server sends it');
+  // In the matrix, and gated.
+  const shoot = b14Read_('test/visual/shoot.mjs');
+  assert.ok(/\['training-team-light-wide', \{ tool: 'develop', tab: 'trainingManage' \}/.test(shoot), 'the scenario');
+  const gate = require(path.join(B14_ROOT, 'test/visual/ci-gate.cjs'));
+  ['training-team-light-wide', 'intake-card-two-dark-mobile'].forEach((n) => {
+    assert.ok(gate.CI_SCENARIOS.indexOf(n) >= 0, n + ' is in CI\'s subset');
+    assert.ok(shoot.indexOf("['" + n + "'") >= 0, n + ' is a scenario the matrix has');
+  });
+  assert.strictEqual(new Set(gate.CI_SCENARIOS).size, gate.CI_SCENARIOS.length, 'no name twice');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

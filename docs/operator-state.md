@@ -339,7 +339,8 @@ entry says which it is.
 - **Set Script Property `CDR_SS_ID`** to the CDR Report spreadsheet
   ID (the same spreadsheet backing the `call-data-reporting`
   Department Dashboard). `getCdrSS_()` reads this before CONFIG.
-  Without it, the Metrics tool and the shift-stats CDR enrichment
+  Without it, Stats (Dashboard → Stats — the Metrics tool until Batch E,
+  2026-11-02), the Dashboard's call cards and the shift-stats CDR enrichment
   will show "No call data found" or gracefully degrade (the CDR
   overlay in `managerGetShiftStats` is best-effort). The deployer
   account must have at least Viewer access to this spreadsheet.
@@ -3026,8 +3027,12 @@ entry says which it is.
 
 <a id="operator-the-handbook-app-hb1-2"></a>
 - **The handbook app (`handbook-app/`, HB1.2, operator 2026-10-28).** A second
-  Apps Script project that serves the handbook read-only to anyone signed in to
-  the domain. One-time setup, from the repo root:
+  Apps Script project that serves the handbook to anyone signed in to the
+  domain. The handbook's TEXT is read-only there (it is imported, never
+  authored in the app); the app itself WRITES — its own Handbook spreadsheet
+  (People, quiz attempts, plans, read marks, bookmarks, notes) and three tabs
+  of the KB spreadsheet (feedback, content requests, its search signal).
+  One-time setup, from the repo root:
   1. Create the project in a scratch folder (so clasp cannot overwrite the
      committed manifest): `mkdir /tmp/hb && cd /tmp/hb && clasp create --type
      standalone --title "UMS Handbook"`. Copy the `scriptId` from
@@ -3044,9 +3049,12 @@ entry says which it is.
      `HANDBOOK_KB_SS_ID` = the KB spreadsheet's id (the same id as Team Tools'
      `KB_SS_ID`). Unset, every page says so by name.
   4. Deploy → New deployment → Web app: Execute as **Me**, Who has access
-     **Anyone within the organisation**. Authorise the two scopes (read
-     spreadsheets, see your email address). Open the URL: it should list the
-     chapters and the version.
+     **Anyone within the organisation**. Authorise the scopes it asks for —
+     the ones `handbook-app/appsscript.json` lists: see, edit, create and
+     delete your spreadsheets; see your email address; send email as you (the
+     training reminders, off by default); and manage triggers (installing the
+     reminder trigger). A push that adds a scope asks again. Open the URL: it
+     should list the chapters and the version.
 
   **The account you deploy as must be able to open the KB spreadsheet** — the
   app reads it as you. (HB7.1 moves it to a shared account.) **Whenever** the

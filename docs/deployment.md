@@ -42,7 +42,7 @@ So isolating data + email = the separate dev project pointed at copies + your in
 ## Prerequisites (one-time)
 
 The `git` / `npm` / push steps run in a shell; everything else (Drive copies,
-Script Properties, cutting versions, running `devScrubRoster_`/`runAllTests`) is
+Script Properties, cutting versions, running `devScrubRosterForMe`/`runAllTests`) is
 in the browser.
 
 **Do this on a machine with a normal web browser (your laptop), NOT in Google

@@ -290,15 +290,77 @@ function _withTestKb_(fn) {
  *  affects getFlag_ reads (the pre-flag-migration test idiom). */
 function _withFeatureFlags_(overrides, fn) {
   const props = PropertiesService.getScriptProperties();
-  const saved = props.getProperty('CN_FEATURE_FLAGS');
+  const saved = _stashProp_('CN_FEATURE_FLAGS');
   let base = {};
   if (saved) { try { base = JSON.parse(saved) || {}; } catch (e) { base = {}; } }
   props.setProperty('CN_FEATURE_FLAGS', JSON.stringify(Object.assign({}, base, overrides)));
   try { return fn(); }
-  finally {
-    if (saved == null) props.deleteProperty('CN_FEATURE_FLAGS');
-    else props.setProperty('CN_FEATURE_FLAGS', saved);
-  }
+  finally { _unstashProp_('CN_FEATURE_FLAGS'); }
+}
+
+// ── A live Script Property a test overwrites is STASHED first (cycle 26 F73) ──
+// A test that rewrites a deployment setting — the feature flags, the admin
+// list, the archive window — kept the real value in a LOCAL variable and put
+// it back in a `finally`. An execution the platform kills (a full run is
+// minutes long) never reaches that `finally`, and the value was then nowhere:
+// every admin toggle back at its default, ADMIN_EMAILS holding one test
+// address, the archive window at 30 days. g132's by-key backstop cannot help —
+// it can strip a test address out of a list, but it cannot know what a
+// replaced VALUE used to be.
+//
+// So the original is written to a second property BEFORE the first change,
+// and removed only once it has been put back. setupTestEnvironment and
+// cleanupTestData restore whatever a killed run left stashed. A stash that is
+// already there IS the original: a re-run must never stash a test's value
+// over it.
+const TEST_STASH_VALUE_PREFIX = 'TEST_STASH_VALUE_';     // the property held this value
+const TEST_STASH_ABSENT_PREFIX = 'TEST_STASH_ABSENT_';   // the property did not exist
+
+/** PURE over a properties object — { found, value } for `key`'s stash; value
+ *  is null when the property did not exist before the suite touched it. */
+function _stashRead_(props, key) {
+  if (props.getProperty(TEST_STASH_ABSENT_PREFIX + key) !== null) return { found: true, value: null };
+  const v = props.getProperty(TEST_STASH_VALUE_PREFIX + key);
+  return v === null ? { found: false, value: null } : { found: true, value: v };
+}
+/** Stash `key` (once) and return the value it had before the suite touched it
+ *  — the drop-in for `props.getProperty(key)` at the top of a test. */
+function _stashProp_(key) {
+  const props = PropertiesService.getScriptProperties();
+  const kept = _stashRead_(props, key);
+  if (kept.found) return kept.value;
+  const cur = props.getProperty(key);
+  if (cur === null) props.setProperty(TEST_STASH_ABSENT_PREFIX + key, '1');
+  else props.setProperty(TEST_STASH_VALUE_PREFIX + key, cur);
+  return cur;
+}
+/** Put `key` back as it was stashed, THEN drop the stash — in that order, so
+ *  a kill between the two leaves the stash for the backstop. true when there
+ *  was one. NOT re-entrant for one key: an inner stash of a key already
+ *  stashed returns the original, and its unstash ends the outer's override. */
+function _unstashProp_(key) {
+  const props = PropertiesService.getScriptProperties();
+  const kept = _stashRead_(props, key);
+  if (!kept.found) return false;
+  if (kept.value === null) props.deleteProperty(key);
+  else props.setProperty(key, kept.value);
+  props.deleteProperty(TEST_STASH_VALUE_PREFIX + key);
+  props.deleteProperty(TEST_STASH_ABSENT_PREFIX + key);
+  return true;
+}
+/** The backstop: restore every property a killed run left stashed. Returns the
+ *  keys it restored. Never throws. */
+function _restoreStashedProps_() {
+  const restored = [];
+  try {
+    PropertiesService.getScriptProperties().getKeys().forEach(function (k) {
+      const key = k.indexOf(TEST_STASH_VALUE_PREFIX) === 0 ? k.slice(TEST_STASH_VALUE_PREFIX.length)
+        : (k.indexOf(TEST_STASH_ABSENT_PREFIX) === 0 ? k.slice(TEST_STASH_ABSENT_PREFIX.length) : '');
+      if (key && restored.indexOf(key) < 0 && _unstashProp_(key)) restored.push(key);
+    });
+  } catch (e) { Logger.log('_restoreStashedProps_ skipped: ' + e.message); }
+  if (restored.length) Logger.log('Restored ' + restored.length + ' Script Propert' + (restored.length === 1 ? 'y' : 'ies') + ' a killed run had left overwritten: ' + restored.join(', '));
+  return restored;
 }
 
 /** Resets the session-level CDR in-memory caches (name-map + column-validation
@@ -534,6 +596,7 @@ function setupTestEnvironment() {
   _assertSuiteCaller_('setupTestEnvironment');   // S1 — WHO, before assertNotProdInstance_'s WHERE
   try { _suiteEnvCheck_(); } catch (e) { Logger.log('_suiteEnvCheck_ skipped: ' + e.message); }
   assertNotProdInstance_('setupTestEnvironment');   // blue-green guard (see runAllTests)
+  _restoreStashedProps_();   // F73: a killed run's overwritten settings, before anything reads them
   _TEST_DATE_FUTURE = _testWorkdayOnOrAfter_(_TEST_DATE_FUTURE);   // TC-03 — past a company holiday too
   const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
 
@@ -829,6 +892,9 @@ function _setupTestIntakeFixture_() {
 
 function cleanupTestData() {
   _assertSuiteCaller_('cleanupTestData');
+  // F73: FIRST — the stash holds the real values; the by-key backstops below
+  // then strip test addresses out of what was put back.
+  _restoreStashedProps_();
   const ss = getAdpSS_();
 
   // Timesheet (headers in rows 1-2, data from row 3)
@@ -1679,6 +1745,8 @@ function _registerIntegrationB_() {
   // ── Operator testing note 10: presence stamp + activeNotIn (INV-24 amendment)
   _integrationTest('presence_stampAndFlag',                   test_presence_stampAndFlag);
   _integrationTest('activity_rowLimitRefusesPastTheCap',      test_activity_rowLimitRefusesPastTheCap);
+  _integrationTest('intakeFeedback_limitRefusesPastTheCap',   test_intakeFeedback_limitRefusesPastTheCap);
+  _integrationTest('suite_stashRestoresAnOverwrittenProperty', test_suite_stashRestoresAnOverwrittenProperty);
   // ── Pilot round 2: scheduled-call reminders flow ──────────────────────────
   _integrationTest('scheduledCalls_flow',                     test_scheduledCalls_flow);
   // ── Pilot round 3: scratchpad + Reference comments ────────────────────────
@@ -2825,7 +2893,7 @@ function test_recordPunch_immediateAdjustGatedByFlag() {
   _assertSuiteCaller_();
   _clearTestState(_TEST_PH_ID);
   const props = PropertiesService.getScriptProperties();
-  const saved = props.getProperty('CN_FEATURE_FLAGS');
+  const saved = _stashProp_('CN_FEATURE_FLAGS');
   try {
     props.deleteProperty('CN_FEATURE_FLAGS');   // flag off (default)
     let r1;
@@ -2837,8 +2905,7 @@ function test_recordPunch_immediateAdjustGatedByFlag() {
     _asUser(_TEST_PH_EMAIL, () => { r2 = recordPunch('ClockOut', { date: _TEST_DATE_RECENT, time: '17:00', reason: '' }); });
     _assertSuccess(r2);
   } finally {
-    if (saved == null) props.deleteProperty('CN_FEATURE_FLAGS');
-    else props.setProperty('CN_FEATURE_FLAGS', saved);
+    _unstashProp_('CN_FEATURE_FLAGS');
   }
 }
 
@@ -2940,7 +3007,7 @@ function test_reconcileCallNotes_backfillsHandEntered() {
   // run, restored after. (The roster gate that the test manager satisfies is no
   // longer the reconcile gate — cycle-6 F1/F2 fix.)
   const props = PropertiesService.getScriptProperties();
-  const prevMgr = props.getProperty('MANAGER_EMAILS');
+  const prevMgr = _stashProp_('MANAGER_EMAILS');
   props.setProperty('MANAGER_EMAILS', (prevMgr ? prevMgr + ',' : '') + _TEST_MGR_EMAIL);
   try {
     let res;
@@ -2956,7 +3023,7 @@ function test_reconcileCallNotes_backfillsHandEntered() {
     const after2 = sheet.getRange(appended, 1, 1, CN_HEADERS.length).getValues()[0];
     _assertEq(String(after2[CN.NOTE_ID]).trim(), String(after[CN.NOTE_ID]).trim(), 'noteId stable on re-run (idempotent)');
   } finally {
-    if (prevMgr === null) props.deleteProperty('MANAGER_EMAILS'); else props.setProperty('MANAGER_EMAILS', prevMgr);
+    _unstashProp_('MANAGER_EMAILS');
     sheet.deleteRow(appended);   // tidy within the run (cleanupTestData also wipes the test Notes tab)
   }
 }
@@ -5641,7 +5708,7 @@ function test_creditPtoAccrual_seedCreditIdempotent() {
   const prevQ = qCell.getValue(), prevR = rCell.getValue(), prevPto = ptoCell.getValue();
   const balBefore = parseFloat(balCell.getValue()) || 0;
   const props = PropertiesService.getScriptProperties();
-  const prevMgr = props.getProperty('MANAGER_EMAILS');
+  const prevMgr = _stashProp_('MANAGER_EMAILS');
   props.setProperty('MANAGER_EMAILS', (prevMgr ? prevMgr + ',' : '') + _TEST_MGR_EMAIL);
   try {
     const nowYm = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM');
@@ -5717,7 +5784,7 @@ function test_creditPtoAccrual_seedCreditIdempotent() {
     _assertEq(accrualStampYm_(rCell.getValue()), backYm, 'disabled rep stamp frozen');
   } finally {
     _clearRowsByEmp(getAdpSS_().getSheetByName(CONFIG.ADP_TAB), _TEST_INDIA_ID, ADP.EMP_ID, 3);
-    if (prevMgr === null) props.deleteProperty('MANAGER_EMAILS'); else props.setProperty('MANAGER_EMAILS', prevMgr);
+    _unstashProp_('MANAGER_EMAILS');
     qCell.setValue(prevQ === null || prevQ === undefined ? '' : prevQ);
     rCell.setValue(prevR === null || prevR === undefined ? '' : prevR);
     ptoCell.setValue(prevPto === null || prevPto === undefined ? '' : prevPto);
@@ -5750,7 +5817,7 @@ function test_previewPtoAccrual_predictsTheCredit() {
   const prevQ = qCell.getValue(), prevR = rCell.getValue(), prevPto = ptoCell.getValue();
   const balBefore = parseFloat(balCell.getValue()) || 0;
   const props = PropertiesService.getScriptProperties();
-  const prevMgr = props.getProperty('MANAGER_EMAILS');
+  const prevMgr = _stashProp_('MANAGER_EMAILS');
   props.setProperty('MANAGER_EMAILS', (prevMgr ? prevMgr + ',' : '') + _TEST_MGR_EMAIL);
   try {
     const nowYm = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM');
@@ -5854,7 +5921,7 @@ function test_previewPtoAccrual_predictsTheCredit() {
       'the ZERO audit row is written and carries the reason, got: ' + zeroNote);
   } finally {
     _clearRowsByEmp(getAdpSS_().getSheetByName(CONFIG.ADP_TAB), _TEST_INDIA_ID, ADP.EMP_ID, 3);
-    if (prevMgr === null) props.deleteProperty('MANAGER_EMAILS'); else props.setProperty('MANAGER_EMAILS', prevMgr);
+    _unstashProp_('MANAGER_EMAILS');
     qCell.setValue(prevQ === null || prevQ === undefined ? '' : prevQ);
     rCell.setValue(prevR === null || prevR === undefined ? '' : prevR);
     ptoCell.setValue(prevPto === null || prevPto === undefined ? '' : prevPto);
@@ -5897,8 +5964,8 @@ function test_accrualReconcile_topsUpLateData() {
   const prevQ = qCell.getValue(), prevR = rCell.getValue();
   const balBefore = parseFloat(balCell.getValue()) || 0;
   const props = PropertiesService.getScriptProperties();
-  const prevMgr = props.getProperty('MANAGER_EMAILS');
-  const prevRec = props.getProperty('PTO_ACCRUAL_RECONCILE');
+  const prevMgr = _stashProp_('MANAGER_EMAILS');
+  const prevRec = _stashProp_('PTO_ACCRUAL_RECONCILE');
   props.setProperty('MANAGER_EMAILS', (prevMgr ? prevMgr + ',' : '') + _TEST_MGR_EMAIL);
   try {
     const nowYm = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM');
@@ -5971,8 +6038,8 @@ function test_accrualReconcile_topsUpLateData() {
     _assertTrue(res.shortfalls >= 1, 'it is reported instead, got ' + res.shortfalls);
   } finally {
     _clearRowsByEmp(getAdpSS_().getSheetByName(CONFIG.ADP_TAB), _TEST_INDIA_ID, ADP.EMP_ID, 3);
-    if (prevMgr === null) props.deleteProperty('MANAGER_EMAILS'); else props.setProperty('MANAGER_EMAILS', prevMgr);
-    if (prevRec === null) props.deleteProperty('PTO_ACCRUAL_RECONCILE'); else props.setProperty('PTO_ACCRUAL_RECONCILE', prevRec);
+    _unstashProp_('MANAGER_EMAILS');
+    _unstashProp_('PTO_ACCRUAL_RECONCILE');
     qCell.setValue(prevQ === null || prevQ === undefined ? '' : prevQ);
     rCell.setValue(prevR === null || prevR === undefined ? '' : prevR);
     balCell.setValue(balBefore);   // ABSOLUTE restore — safe on any partial failure
@@ -5987,7 +6054,7 @@ function test_accrualReconcile_topsUpLateData() {
 function test_timesheetArchive_windowFloorAndDefault() {
   _assertSuiteCaller_();
   const props = PropertiesService.getScriptProperties();
-  const prev = props.getProperty('TIMESHEET_ARCHIVE_DAYS');
+  const prev = _stashProp_('TIMESHEET_ARCHIVE_DAYS');
   try {
     props.deleteProperty('TIMESHEET_ARCHIVE_DAYS');
     _assertEq(getTimesheetArchiveDays_(), 0, 'unset property + CONFIG 0 → disabled');
@@ -6000,8 +6067,7 @@ function test_timesheetArchive_windowFloorAndDefault() {
     props.setProperty('TIMESHEET_ARCHIVE_DAYS', '-5');
     _assertEq(getTimesheetArchiveDays_(), 0, 'negative → disabled');
   } finally {
-    if (prev == null) props.deleteProperty('TIMESHEET_ARCHIVE_DAYS');
-    else props.setProperty('TIMESHEET_ARCHIVE_DAYS', prev);
+    _unstashProp_('TIMESHEET_ARCHIVE_DAYS');
   }
 }
 
@@ -6142,7 +6208,7 @@ function test_whatsNew_propertyGateAndDraftHidden() {
 }
 function _test_whatsNew_propertyGateAndDraftHidden_() {
   const props = PropertiesService.getScriptProperties();
-  const prev = props.getProperty('WHATSNEW_KB_ID');
+  const prev = _stashProp_('WHATSNEW_KB_ID');
   let kbId = null;
   try {
     props.deleteProperty('WHATSNEW_KB_ID');
@@ -6167,8 +6233,7 @@ function _test_whatsNew_propertyGateAndDraftHidden_() {
     _assertContains(String(live.bodyMd || ''), 'TESTWHATSNEWTOKEN', 'body delivered');
     _assertTrue(!!String(live.stamp || ''), 'edit stamp present (drives the client seen-flag)');
   } finally {
-    if (prev == null) props.deleteProperty('WHATSNEW_KB_ID');
-    else props.setProperty('WHATSNEW_KB_ID', prev);
+    _unstashProp_('WHATSNEW_KB_ID');
     if (kbId) {
       _asUser(_TEST_MGR_EMAIL, function () { try { kbDeleteItem(kbId); } catch (e) {} });
     }
@@ -7396,6 +7461,62 @@ function test_activity_rowLimitRefusesPastTheCap() {
   }
 }
 
+// FW4 (cycle 26): the per-sender limit on intake feedback calls (FV2), against
+// the REAL cache — the Node pin drives it over a stand-in. The count for this
+// hour is set one under the cap, so no feedback row is written: the test asks
+// the limit, which is what the endpoint does. The sender carries the TEST_ id,
+// so the one audit row is swept with the rest.
+function test_intakeFeedback_limitRefusesPastTheCap() {
+  _assertSuiteCaller_();
+  const who = { id: _TEST_INDIA_ID, name: _TEST_INDIA_NAME, email: _TEST_INDIA_EMAIL, onRoster: true };
+  const cache = CacheService.getScriptCache();
+  const now = Date.now();
+  const hour = Math.floor(now / 3600000);
+  const key = INTAKE_FEEDBACK_RATE_PREFIX + who.email + ':' + hour;
+  const before = _countAuditRows(who.id, 'IntakeFeedbackLimited');
+  try {
+    cache.put(key, String(INTAKE_FEEDBACK_MAX_PER_HOUR - 1), INTAKE_FEEDBACK_RATE_TTL_SEC);
+    _assertEq(intakeFeedbackAllowed_(who, now), true, 'the last call under the cap is allowed');
+    _assertEq(Number(cache.get(key)), INTAKE_FEEDBACK_MAX_PER_HOUR, 'and counted');
+    _assertEq(intakeFeedbackAllowed_(who, now), false, 'the next one is refused');
+    _assertEq(intakeFeedbackAllowed_(who, now), false, 'and the one after');
+    _assertEq(Number(cache.get(key)), INTAKE_FEEDBACK_MAX_PER_HOUR + 1, 'the count stops one past the cap');
+    _assertEq(_countAuditRows(who.id, 'IntakeFeedbackLimited'), before + 1, 'exactly one audit row for the hour');
+    _assertEq(intakeFeedbackAllowed_(who, now + 3600000), true, 'the next hour starts again');
+  } finally {
+    cache.remove(key);
+    cache.remove(INTAKE_FEEDBACK_RATE_PREFIX + who.email + ':' + (hour + 1));
+  }
+}
+
+// F73 (cycle 26): the stash, against the REAL PropertiesService, on a key no
+// code reads. It plays the killed run: a value overwritten with no `finally`,
+// then the backstop.
+function test_suite_stashRestoresAnOverwrittenProperty() {
+  _assertSuiteCaller_();
+  const props = PropertiesService.getScriptProperties();
+  const KEY = 'TEST_STASH_PROBE', GONE = 'TEST_STASH_PROBE_ABSENT';
+  try {
+    props.setProperty(KEY, 'the real value');
+    props.deleteProperty(GONE);
+    _assertEq(_stashProp_(KEY), 'the real value', 'the stash returns what the property held');
+    _assertEq(_stashProp_(GONE), null, 'and null for a property that did not exist');
+    props.setProperty(KEY, 'a test value');
+    props.setProperty(GONE, 'a test value');
+    // …the execution is killed here: no finally runs. A re-run stashes again:
+    _assertEq(_stashProp_(KEY), 'the real value', 'a second stash keeps the ORIGINAL, not the test value');
+    const restored = _restoreStashedProps_();
+    _assertTrue(restored.indexOf(KEY) >= 0 && restored.indexOf(GONE) >= 0, 'the backstop names what it restored: ' + restored.join(', '));
+    _assertEq(props.getProperty(KEY), 'the real value', 'the overwritten value is back');
+    _assertEq(props.getProperty(GONE), null, 'a property that did not exist is gone again');
+    _assertEq(_stashRead_(props, KEY).found, false, 'and no stash is left behind');
+    _assertEq(_unstashProp_(KEY), false, 'nothing to restore twice');
+  } finally {
+    [KEY, GONE, TEST_STASH_VALUE_PREFIX + KEY, TEST_STASH_ABSENT_PREFIX + KEY, TEST_STASH_VALUE_PREFIX + GONE, TEST_STASH_ABSENT_PREFIX + GONE]
+      .forEach(function (k) { props.deleteProperty(k); });
+  }
+}
+
 // ── Pilot round 2 — scheduled-call reminders (create → list → status) ───────
 // Runs against the LIVE forms store (the public-form tests' posture): rows are
 // keyed by the TEST_ EmpId, per-test finally deletes them, and cleanupTestData
@@ -7745,7 +7866,7 @@ function _test_kb_draftLifecycleAndRevisions_() {
 function test_adminEmails_subsetOfManagersEnforced() {
   _assertSuiteCaller_();
   const props = PropertiesService.getScriptProperties();
-  const prev = props.getProperty('ADMIN_EMAILS');
+  const prev = _stashProp_('ADMIN_EMAILS');
   try {
     // List ONLY the non-manager India rep.
     props.setProperty('ADMIN_EMAILS', _TEST_INDIA_EMAIL);
@@ -7764,8 +7885,7 @@ function test_adminEmails_subsetOfManagersEnforced() {
     props.setProperty('ADMIN_EMAILS', _TEST_MGR_EMAIL);
     _assertTrue(empIsAdmin_(_TEST_MGR_EMAIL, true), 'listed manager is an admin');
   } finally {
-    if (prev === null) props.deleteProperty('ADMIN_EMAILS');
-    else props.setProperty('ADMIN_EMAILS', prev);
+    _unstashProp_('ADMIN_EMAILS');
     invalidateRosterCache_();
   }
 }
@@ -7781,7 +7901,7 @@ function test_adminEmails_subsetOfManagersEnforced() {
 function test_adminConfig_propertySizeGuardRefusesOversize() {
   _assertSuiteCaller_();
   const props = PropertiesService.getScriptProperties();
-  const prev = props.getProperty('CN_EMAIL_TEMPLATES');
+  const prev = _stashProp_('CN_EMAIL_TEMPLATES');
   try {
     // Five maximum-length bodies: every field is legal, the blob is not.
     const fat = [];
@@ -7804,8 +7924,7 @@ function test_adminConfig_propertySizeGuardRefusesOversize() {
     _assertNotNull(b, 'and a budget for the key just written');
     _assertTrue(b.bytes > 0 && b.bytes <= b.max, 'the budget reports real bytes under the cap: ' + JSON.stringify(b));
   } finally {
-    if (prev === null) props.deleteProperty('CN_EMAIL_TEMPLATES');
-    else props.setProperty('CN_EMAIL_TEMPLATES', prev);
+    _unstashProp_('CN_EMAIL_TEMPLATES');
   }
 }
 

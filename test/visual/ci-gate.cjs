@@ -42,6 +42,8 @@ const CI_SCENARIOS = [
   'spanish-light-mobile',
   'deptreq-looks-light-mobile',
   'intake-light-mobile',
+  'intake-card-two-dark-mobile',    // cycle 26 F21 + FV1: two card suggestions, each with its own boxes and buttons, at 390px
+  'training-team-light-wide',       // cycle 26 FW6: Team Training — it had no fixture, so it was never shot
   'reference-light-mobile',
   'reference-drawer-light-compact',
   'reference-manual-light-wide',
@@ -59,7 +61,31 @@ const CI_SCENARIOS = [
 // Findings that are KNOWN and owned elsewhere, each with its reason. The list
 // only shrinks: an entry whose finding no longer fires fails the run too, so a
 // fix cannot leave a stale excuse behind for the next regression to hide under.
+//
+// An entry is { scenario, kind, match, reason }. `match` is REQUIRED (cycle 26
+// F69): a piece of the finding's own detail line — the element and its text.
+// Entries were matched by scenario and kind alone, so the one there has been
+// (a masthead index squeezed at 390px) excused ANY squeezed column on that
+// screen, including the next one. An entry with no `match` excuses nothing and
+// is reported stale.
 const KNOWN = [];   // cycle 26: the one entry (the masthead index at 390px) is fixed — the masthead is a size container now
+
+// The lines of a page's console that are a broken page, not noise: an uncaught
+// error, or a harness hook (enterTool, a scenario's post hook) that threw —
+// after which the page is NOT on the screen the scenario names.
+const BROKEN_PAGE = /^PAGEERROR: |threw: /;
+function pageErrorsOf(errors) {
+  return (errors || []).filter((e) => BROKEN_PAGE.test(String(e)));
+}
+// What a report keeps of a page's console, at most `max` lines — the broken-
+// page lines FIRST (F69). They were sliced with the rest, first come first
+// kept, so eight console.error lines ahead of an uncaught error cut the one
+// line the gate reads, and the scenario passed.
+function keepErrors(errors, max) {
+  const all = Array.from(new Set(errors || []));
+  const broken = pageErrorsOf(all);
+  return broken.concat(all.filter((e) => !BROKEN_PAGE.test(String(e)))).slice(0, Math.max(max, broken.length));
+}
 
 function findingsOf(r) {
   const out = [];
@@ -69,7 +95,7 @@ function findingsOf(r) {
   // Cycle 26 F65: a box its scenario says must be usable (shoot.mjs `minWidth`) is narrower than it needs, or gone.
   (r.tooNarrow || []).forEach((n) => out.push({ kind: 'tooNarrow', detail: n.sel + ' ' + (n.w === null ? 'not found' : n.w + 'px') + ' (needs ' + n.min + 'px)' }));
   (r.missing || []).forEach((m) => out.push({ kind: 'missingFixture', detail: m }));
-  (r.errors || []).filter((e) => /^PAGEERROR: |threw: /.test(e)).forEach((e) => out.push({ kind: 'pageError', detail: e.slice(0, 160) }));
+  pageErrorsOf(r.errors).forEach((e) => out.push({ kind: 'pageError', detail: e.slice(0, 160) }));
   return out;
 }
 
@@ -94,7 +120,7 @@ function ciVerdict(report, subset, known) {
     const r = byName.get(name);
     if (!r) return;
     findingsOf(r).forEach((f) => {
-      const k = known.findIndex((x) => x.scenario === name && x.kind === f.kind);
+      const k = known.findIndex((x) => x.scenario === name && x.kind === f.kind && !!x.match && f.detail.indexOf(x.match) >= 0);
       if (k >= 0) fired.add(k);
       else failures.push({ scenario: name, kind: f.kind, detail: f.detail });
     });
@@ -103,4 +129,14 @@ function ciVerdict(report, subset, known) {
   return { ok: !failures.length && !stale.length && !unshot.length, failures, stale, unshot };
 }
 
-module.exports = { RUNAWAY_PX, CI_SCENARIOS, KNOWN, findingsOf, ciVerdict, contrastFindings };
+// The axe run's verdict for one scenario (F69): its violations and contrast
+// findings — and a page that broke. A scenario whose navigation hook threw
+// stayed on Home; axe then checked Home, found nothing, and the scenario the
+// report names was called clean without having been drawn.
+function axeFailures(r) {
+  const out = pageErrorsOf(r && r.errors).map((e) => ({ kind: 'pageError', detail: String(e).slice(0, 160) }));
+  ((r && r.violations) || []).forEach((v) => out.push({ kind: 'axe', detail: v.id + ' (' + v.impact + ', ' + v.nodes + ')  ' + (v.targets || []).join(' | ') }));
+  return out.concat(contrastFindings(r));
+}
+
+module.exports = { RUNAWAY_PX, CI_SCENARIOS, KNOWN, findingsOf, ciVerdict, contrastFindings, pageErrorsOf, keepErrors, axeFailures };
