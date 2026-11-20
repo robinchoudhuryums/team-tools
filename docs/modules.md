@@ -599,6 +599,14 @@ on a "Recovered text" page if it was changed elsewhere. **F59:** an unsaved
 call note from another window that the rep answered "Not now" to is kept and
 offered again, instead of being replaced by the next keystroke.
 
+**Cycle 26 follow-ons (FT1): recovered text when the pad is full.** A
+scratchpad holds ten pages. If unsaved text has to go to a "Recovered text"
+page and there is no room (or the page could not be made), the text is kept
+in a row at the top of the pad — never written over the page that changed —
+with **Move to a new page**, **Copy it** and **Discard**. Deleting a page
+moves it by itself. It stays in the browser for up to 24 hours, like other
+unsaved text.
+
 The server allowlist and the client sanitizer were widened together. A link
 keeps only an http(s) href.
 

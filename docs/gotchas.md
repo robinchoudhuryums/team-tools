@@ -3126,6 +3126,17 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   while the view is NOT showing its loader; a view still loading at 20 s is
   given up on, and that run is not stamped.
 
+  **AMENDED (cycle 26 FT3): which loader.** F60's "is the view still
+  loading" read one thing — `renderLoading`'s full-view
+  `.state-center[role=status]`. The app has a second shared loader: My
+  Stats, Team Metrics and Training draw their frame at once and put the
+  inline `.m-loading` inside it. The tour's Stats step targets something
+  inside that frame, so the cold read F60 was written about was still given
+  the plain ~1.9 s and skipped. `TOUR_VIEW_LOADERS` names both, each scoped
+  to `#view-area` — a reader or quiz overlay's own loader is not the view's.
+  Skeleton blocks are deliberately not a signal: a Dashboard widget may keep
+  one for as long as its data is absent, and a step would wait out the cap.
+
 <a id="g82-cnrendersubforms-is-shape-keyed-via-host-dataset"></a>
 
 - **`cnRenderSubforms_` is shape-keyed via `host.dataset.shapeKey`.**
@@ -3270,6 +3281,27 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   B replaced A's waiting text outright. Unsaved text is now `pending`, by
   page id, kept until a save of exactly that text lands; the editor is read
   only as the page it shows; a save sends an off-screen page first.
+
+  **AMENDED (cycle 26 FT1): recovered text with nowhere to go.** F58 sends
+  unsaved text whose page changed elsewhere (or was deleted) to a NEW page,
+  "Recovered text", rather than over what is there. A scratchpad holds ten
+  pages. With ten already, the add was refused, the refusal reached only the
+  status line, and the text stayed pending under the page it could not go
+  back onto — so the next save wrote it there: the overwrite the recovery
+  exists to prevent. (For a DELETED page it was every later save finding the
+  page gone and asking for another new page.) A narrower race had the same
+  end without a full pad: the text became sendable the moment the conflict
+  was seen, and a keystroke in the second the add took armed a save.
+
+  The text is now HELD: moved in `pending` to a key no page has (`held~…` —
+  page ids are `main` and `p…`), which the browser mirror keeps across a
+  reload and no save ever picks (`cnScratchNextPage_` skips it by its key).
+  The pad goes back to showing the page as the server has it, and a row
+  above the toolbar says what is kept, with Move to a new page, Copy and
+  Discard. It is given its page without being asked as soon as there is room
+  — after a page is deleted, or at the next open — and never asks the server
+  for a page the pad is known not to have room for. While the new page is
+  being made the text is not sendable, and one add runs per text.
 
 <a id="g87-voice-dictation-routes-audio-outside-the-baa"></a>
 
@@ -7222,6 +7254,15 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   input event and is marked through `deMarkTouched_`. A hook-less modal
   closing after its own save passes `{ saved: true }` — it has nothing to
   discard.
+
+  **AMENDED (cycle 26 FT2): the way out F63 left.** F63 made Escape, Cancel
+  and the backdrop ask before Day Edit's unsaved edits are lost, and noted
+  that the date picker "loads another day and clears the mark". That was the
+  one way left to lose them without a word: a manager fixing a clock-out who
+  then picks another date. The picker's change now asks the same question
+  (naming the day whose edits would go) when the modal is dirty; "Keep
+  editing" puts the picker back on the day being edited and loads nothing.
+  A clean modal, and a pick of the day already shown, ask nothing.
 
 <a id="g167-a-vocabulary-built-from-user-text-is-user-text"></a>
 

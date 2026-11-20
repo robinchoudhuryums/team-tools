@@ -11,6 +11,23 @@ keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
 
+## 2026-11-20 — Cycle 26 follow-ons after Batch 11 (FT1–FT4)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version) and
+`npm run handbook:push` (its copies of the shell and the stylesheet changed).
+
+- **Scratchpad, a full pad (FT1):** unsaved text that has to go to a
+  "Recovered text" page is no longer written over the changed page when the
+  scratchpad already has ten pages. It is kept in a row at the top of the
+  pad with Move to a new page, Copy it and Discard, and moves by itself when
+  a page is deleted.
+- **Edit Day (FT2):** picking another date with unsaved changes asks
+  "Discard changes?" first; "Keep editing" puts the date back.
+- **Tour (FT3):** it now waits for My Stats, Team Metrics and Training to
+  finish loading too — the Stats step was still being skipped on a slow
+  load.
+- **No new browser storage key and no server change.**
+
 ## 2026-11-19 — Cycle 26 Batch 11: Shell and Call Notes client (F58–F63)
 
 **Nothing to set.** Deploy Team Tools (`clasp push -f` + New version) and

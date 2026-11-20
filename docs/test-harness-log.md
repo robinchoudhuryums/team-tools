@@ -4394,3 +4394,32 @@ F53, F54, F57.**
   a clean tour run after one that gave up; the waiting card's 1.5 s threshold;
   and a pure pin whose lazy regex ran past its function to the next match in
   the file (the DOM drive had caught the same mutation).
+
+## Cycle 26 follow-ons after Batch 11 — FT1–FT4 (2026-11-20)
+
+- **Pure harness: three pins.** Held text driven (the key, the next-page
+  rule, `dirty`, "full" only once the page list is read) with the prefix
+  checked against the ids the server mints; the held row's rules and the
+  layer its copy dialog asks for; the tour's two loaders, scoped, with the
+  frames that draw the inline one read from their partials.
+- **DOM harness: five drives.** Two for held text (a conflict on a full pad,
+  through the race, Copy, a refused Move, a page delete; then a reload, a
+  quiet retry, Discard, and a deleted page whose add fails with the pad
+  closed); Day Edit's picker over a button edit; the tour on an inline
+  loader, and a loader outside the view; the Spanish assignee count across
+  view-as with the Scratchpad's save reading the editor.
+- **Older pins updated:** the next-page pin's sandbox and the dialog-layer
+  regex (pure); the F60 drive's loader moved into the view area, the F63 and
+  DQ3 drives answer the picker's question, the stale-prefill drive closes
+  the modal before it reopens it, and the INV-148 pin reads the close as it
+  now stands (and holds that the flush comes before the panel is removed).
+- **A NO BITE that removed code.** The drive written to pin the Scratchpad's
+  two editor captures (switch, close) could not fail without them: the save
+  they precede reads the editor first. Both were deleted — and Batch 11's
+  note that they mattered "after a URL was auto-linked on keyup" was wrong,
+  since that path fires the input handler itself.
+- **Visual:** two scenarios — the held row in the 480×800 pop-out with a
+  full pad (light) and wide with room (dark); both read. The row costs the
+  pop-out's editor most of its height at the default panel size; the panel
+  resizes.
+- **Bite-checks: 53 mutations (16 pure, 37 DOM), 53 bit. Three bit only after a pin or a drive was strengthened: a pin whose ordering check passed when the line was missing (index −1), a pin where a missing page limit read as zero, and the drive that holds the held row is not rebuilt (nothing in it redrew the row).**

@@ -7496,6 +7496,39 @@ pick them up without re-deriving the context.
   - **Chosen dirt for the three static modals (F63).** See the amendment
     under g166 — "any input" would have asked about a date pick or the time
     the Adjust modal opens with.
+- <a id="c26-ft-follow-ons"></a>**The follow-ons after Batch 11 — recovered text is held when no page can take it, Day Edit's date picker asks, the tour reads both loaders (cycle 26 FT1–FT4).**
+  - **Held, not "last write wins" (FT1).** Batch 11 recorded that a pad
+    already at ten pages cannot take a "Recovered text" page, and that the
+    text then "stays pending for its own page". That is an overwrite of what
+    another computer saved — the recovery's whole purpose undone at the
+    limit. The alternatives were to raise the limit for a recovered page (a
+    server change, and an eleventh page nobody can add to) or to write the
+    text into an existing page (which one?). Holding it changes nothing on
+    the server: the text waits in the browser mirror, in plain sight, until
+    the rep makes room, copies it or discards it. It is not retried against
+    a pad known to be full — the server would refuse, and the row already
+    says what to do.
+  - **The picker asks; it does not keep two days (FT2).** Remembering each
+    day's unsaved edits while the manager moves between dates would be a
+    second copy of the form to keep honest. The modal already has one
+    question for unsaved work, and the picker now asks it.
+  - **Two loaders, named; skeletons left out (FT3).** A view's "loading" is
+    not one signal in this app, and the tour reads the two SHARED ones. A
+    skeleton is not a promise that data is coming, so it is not a reason to
+    hold a step for twenty seconds and then leave the tour unstamped.
+  - **A capture removed (FT4).** `cnScratchSwitchPage_` and the close each
+    read the editor into `pending` and then called the save, whose first act
+    is the same read. Batch 11 kept the two captures "for the case of a URL
+    auto-linked on keyup" — but that path calls the input handler itself.
+    The drive that was written to pin the captures showed they could be
+    deleted, so they were; what is pinned is that the save reads the editor
+    while it still shows the page, and before the panel goes.
+  - **Left as they are:** two live Call Notes windows still offer each other
+    their parked drafts (a per-window slot, or a liveness check between
+    windows, is a design change to F40(e)); "Handled / day" still divides by
+    the days a rep took inbound calls (whether an outbound-only day counts is
+    the Department Dashboard's rule to set); the Scratchpad's session copy is
+    still one page.
 - <a id="c26-one-verdict-for-employee-docs"></a>**One verdict for Verify, the certificate and the copy; the copy email is capped and reaches only today's managers; pdf.js is checksum-checked (cycle 26 Batch 6: F13, F14, F15, F44, F56, F64).**
   - **`verified` is its own field, not "not tampered" (F13).** A check has
     three outcomes and the old flag recorded one of them. `empDocVerdict_`
