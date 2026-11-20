@@ -836,8 +836,8 @@ carries the same number. `/cycle-status` surfaces it.
 - `.cycle/metrics.csv` — per-cycle metrics appended by `/reflect` / synthesis.
   Header: `date,cycle,subsystem,phase,net_score,prod_fixes,new_failure_modes,category_d_ratio,axis_b_lowest,notes,defensive_count`
   **Local convention:** the canonical `/reflect` leaves `category_d_ratio` +
-  `axis_b_lowest` blank (a separate `/synthesis` step fills them), but this
-  project has no `/synthesis` command, so fill both at reflect time (cycles 1–3
+  `axis_b_lowest` blank (Health Synthesis fills them), but this project does
+  not synthesize (`/health-synthesis` is installed, unused), so fill both at reflect time (cycles 1–3
   did) — `category_d_ratio` = the Category-D/Low share of the cycle's findings,
   `axis_b_lowest` = the weakest Axis-B horizontal category that cycle.
 - `.cycle/estimates.csv` — estimate-vs-actual calibration, appended by `/reflect`.
@@ -873,10 +873,10 @@ carries the same number. `/cycle-status` surfaces it.
   one.
 - `PROJECT_HEALTH.md` (repo root) — Current Standing + Score History.
 
-**Command templates: synced to `claude-workflow-tools` v1.43.0 (2026-10-13).** The 1.33.0 → 1.43.0 sync updated nine commands: the three audits (`/broad-scan`, `/audit`, `/targeted-audit`) now OPEN the cycle themselves (CYCLE OPEN: Cycle +1, Phase audit, unless Phase is already audit) and every implement/resume/reflect step sets Phase but never touches Cycle; `/broad-scan` numbers findings F1…, gaps G1–G5 and suggestions ST1–ST5, reports dead artifacts only when misleading (SAFE / PROPOSE), and adds an EXPANSION PLAN (E-batches) beside the fix batches; `/broad-implement` takes a batch name and a `New capabilities (G/ST):` field that `/reflect` counts from; `/cycle-init` starts at Cycle 0. `/pr-review` is still not installed, and `scripts/cycle-context.mjs` keeps its local estimate reminder (the template's indented-INV count fix was not ported). Previously synced to v1.33.0 (2026-09-09).
-`.claude/commands/` carries 19 of the template's 20 commands, verified
-byte-identical at sync time; `/pr-review` is the one not installed (it sits
-under the template's separate "Per-Change Review" heading). Record the version
+**Command templates: synced to `claude-workflow-tools` v1.51.0 (2026-11-20).** The 1.43.0 → 1.51.0 sync replaced all 19 files and added five: every command file now opens with a frontmatter block (a description, and an argument hint where it takes arguments — the picker lists commands by what they do); `Phase` is a closed set (audit, implement, reflect, idle); CYCLE OPEN treats `Phase: audit` as the same round only within 7 days and says when it leaves a reflected cycle unverified; the first implement CHECKPOINT of a cycle rolls STATE and a block name already taken gets a batch number; `/reflect` numbers candidates past unpromoted ones under `.cycle/blocks/` and does not edit the library; `/sync-docs` has six checks (invariant candidates and roadmap currency added); `/cycle-status` picks its next action from the phase; `/roadmap` reads and updates a roadmap file (this project keeps none). NEW: `/verify`, `/seams-audit`, `/health-synthesis`, `/cycle-close` and `/pr-review`. **Local notes:** the close-out here is still `scripts/cycle-closeout.mjs` (CI checks its output) — `/cycle-close` does the same move by hand, so prefer the script; this project does not synthesize (`metrics.csv` has no synthesis row), so `/verify` and `/health-synthesis` are unused until that changes, and `scripts/verification-pack.mjs` is not copied; `scripts/cycle-context.mjs` keeps its local estimate reminder (the template's `CLAUDE_PROJECT_DIR` rooting of the hook, v1.45.0, was not ported). Previously synced to v1.43.0 (2026-10-13), and v1.33.0 (2026-09-09) before it.
+`.claude/commands/` carries all 24 of the template's commands, verified
+byte-identical at sync time against the template's own generated files
+(`/pr-review` was left out until the v1.51.0 sync). Record the version
 here on every `/sync-commands` — before this line existed the previous version
 had to be INFERRED from which features were missing (it was ≤1.18.0, five
 releases of command semantics behind: R18's interface lens and R19's block
@@ -921,7 +921,7 @@ copied — add it if you want the metrics sparkline report.
 
 ## Current
 Cycle: [N — single source of truth; increments only when a new audit cycle begins]
-Phase: [audit | plan | implement | regression | verify | reflect | idle]
+Phase: [audit | implement | reflect | idle]
 Scope: [subsystem(s) or "broad"]
 Test Command: [from Cycle Workflow Config]
 Estimates: [per batch — "P: S (~2 h) · S: M (~4 h)" — written BEFORE the first edit; /reflect copies estimate vs actual into estimates.csv]
