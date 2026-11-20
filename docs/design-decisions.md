@@ -1542,7 +1542,10 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   links to a tiny signed-in page served by `doGet` (`?intakefb=<submissionId>
   &ft=<type>`, the `?resolve=` pattern with a textarea). The recipient is an
   internal agent (roster-resolved), so `submitIntakeFeedback` re-authenticates
-  via `getEmployeeInfo_` — the page only collects text. The id is minted
+  via `getEmployeeInfo_` — the page only collects text. (Since cycle 26 F22
+  the sender is a roster employee OR anyone signed in to an org account: the
+  Sales and PAP recipients are read from the CDR roster and are not on the
+  Employees sheet — see [Batch 13](#c26-batch-13-intake-remainder).) The id is minted
   BEFORE the send; the CTA joins the FINAL body only, after the INV-41 hash
   check (the `drResolveCtaHtml_` placement), and an unresolvable exec URL
   drops the button rather than shipping a dead one. Rows are append-only in
