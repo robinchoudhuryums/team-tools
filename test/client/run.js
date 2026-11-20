@@ -52012,7 +52012,11 @@ test('F70 (cycle 26): the Deploy Command covers every deployed subsystem — the
   const uniq = Array.from(new Set(names));
   assert.ok(uniq.indexOf('Server') >= 0 && uniq.indexOf('Handbook app') >= 0 && uniq.indexOf('Test Suite') >= 0 && uniq.length >= 10, 'the subsystem names were read (' + uniq.join(' | ') + ')');
   const notDeployed = ['Manual source'];   // build-only: the import carries it, clasp never does
-  const missing = uniq.filter((n) => notDeployed.indexOf(n) < 0 && deploy.indexOf(n) < 0);
+  // A subsystem is covered by a line that is ABOUT it: its name in the line's head, before the first colon —
+  // a mention in passing on another subsystem's line ("…deploy the Handbook app too") is not a deploy line.
+  const heads = deploy.split('\n').filter((l) => /^[A-Z][^\n]*?: /.test(l)).map((l) => l.slice(0, l.indexOf(': ')));
+  assert.ok(heads.length >= 4, 'the deploy lines were read (' + heads.length + ')');
+  const missing = uniq.filter((n) => notDeployed.indexOf(n) < 0 && !heads.some((h) => h.split(', ').indexOf(n) >= 0));
   assert.deepStrictEqual(missing, [], 'THE REGRESSION: a subsystem with no deploy line — the handbook app had none, so a change to a file it copies shipped to Team Tools only');
   assert.ok(!/`Code\.js`/.test(deploy), 'no line ships `Code.js` (it was split into the fourteen server files in Batch F2)');
   const scripts = JSON.parse(b14Read_('package.json')).scripts;
