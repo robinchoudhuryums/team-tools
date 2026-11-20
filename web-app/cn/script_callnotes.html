@@ -1238,6 +1238,13 @@
   .cn-scratch-count.over { color: var(--danger); font-weight: 700; }
   .cn-scratch-status { font-size: 10.5px; color: var(--muted-2); min-height: 14px; margin: 2px 0 6px; }
   .cn-scratch-status.warn { color: var(--warning-deep); }
+  /* FT1 (cycle 26 follow-ons): unsaved text that has no page to go to. The
+     host (#cn-scratch-held) carries no rule, so it takes no room when empty. */
+  .cn-sp-held { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0 0 6px; padding: 6px 8px;
+    border: 1px solid var(--warn); border-radius: var(--radius-sm); background: var(--warn-soft); color: var(--ink); font-size: 11.5px; }
+  .cn-sp-held-msg { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }
+  .cn-sp-held-acts { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+  .cn-sp-held .cn-sp-pg-btn { background: var(--paper-card); }
   /* F58 (cycle 26): "Try again" on a page that would not open. */
   .cn-sp-retry { font: inherit; color: var(--accent-ink); background: none; border: 0; padding: 0; text-decoration: underline; cursor: pointer; }
 
@@ -5643,7 +5650,7 @@ function cnSchedStatus_(btn, id, status) {
 // answer older than the screen is never painted, `unchecked` the pages whose
 // text came from the browser mirror and has not been compared with the server.
 var CN_SCRATCH = { dirty: false, timer: null, saving: false, queued: false,
-  pending: {}, base: {}, touched: {}, unchecked: {}, mirrorTimer: null, mirrorBound: false,
+  pending: {}, base: {}, touched: {}, unchecked: {}, recovering: {}, mirrorTimer: null, mirrorBound: false,
   // 22post A-2a: the last copy this session loaded or saved — {content,
   // updatedAtMs, format, maxChars} — so a reopen paints INSTANTLY and
   // refreshes behind it.
@@ -5671,14 +5678,119 @@ function cnScratchUnpend_(page) {
   delete CN_SCRATCH.pending[page];
   delete CN_SCRATCH.base[page];
   delete CN_SCRATCH.unchecked[page];
-  CN_SCRATCH.dirty = Object.keys(CN_SCRATCH.pending).length > 0;
+  CN_SCRATCH.dirty = cnScratchAnyPagePending_(CN_SCRATCH.pending);
   cnScratchMirrorSoon_();
 }
+// ── FT1 (cycle 26 follow-ons): text with no page to go to ────────────────────
+// Recovered text goes onto a NEW page. When none can be added — the pad has
+// the most pages it holds, or the add failed — the text used to stay pending
+// under the page it could not go back onto, and the next save wrote it there:
+// over what had been saved from somewhere else, the one thing the recovery
+// exists to prevent. It is HELD instead: kept in `pending` under a key no page
+// has (so the browser mirror keeps it across a reload), never sent by a save
+// (cnScratchNextPage_ skips it by its key), and shown in the pad with its
+// three ways out — Move once there is room, Copy, Discard.
+var CN_SCRATCH_HELD_PREFIX = 'held~';
+/** PURE (Node-pinned) — is this `pending` key held text rather than a page? A
+ *  page id is `main` or `p…` (scratchpadPageOp), so the prefix names no page. */
+function cnScratchIsHeld_(key) { return String(key == null ? '' : key).indexOf(CN_SCRATCH_HELD_PREFIX) === 0; }
+/** PURE (Node-pinned) — the held keys among `pending`, oldest first (a key
+ *  opens with the base-36 time it was held at). */
+function cnScratchHeldKeys_(pending) { return Object.keys(pending || {}).filter(cnScratchIsHeld_).sort(); }
+/** PURE (Node-pinned) — does any PAGE have unsaved text? (`dirty`: held text
+ *  is not a save that is owed.) */
+function cnScratchAnyPagePending_(pending) {
+  return Object.keys(pending || {}).some(function (k) { return !cnScratchIsHeld_(k); });
+}
+/** PURE (Node-pinned) — is the pad KNOWN to have the most pages it holds?
+ *  False while the page list has not been read: an add is then worth trying. */
+function cnScratchPadFull_(pages, maxPages) {
+  return Array.isArray(pages) && pages.length >= (Number(maxPages) || 10);
+}
+/** Move `lostPage`'s unsaved text out from under its page id into a held key.
+ *  Returns the key ('' with nothing to hold; the same key when already held). */
+function cnScratchHold_(lostPage) {
+  if (!cnScratchHasPending_(lostPage)) return '';
+  if (cnScratchIsHeld_(lostPage)) return lostPage;
+  var key = CN_SCRATCH_HELD_PREFIX + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  var text = CN_SCRATCH.pending[lostPage];
+  cnScratchUnpend_(lostPage);
+  CN_SCRATCH.pending[key] = text;
+  CN_SCRATCH.base[key] = null;
+  cnScratchMirrorSoon_();
+  return key;
+}
+/** Rich text as plain text — for the held text's preview and its Copy. Built
+ *  from the SANITIZED markup, in a node that is never attached. */
+function cnScratchPlainText_(html) {
+  var d = document.createElement('div');
+  d.innerHTML = cnScratchSanitize_(html).replace(/<br\s*\/?>/gi, '\n').replace(/<\/(div|p|li|h[1-6])>/gi, '\n');
+  return String(d.textContent || '').replace(/\u200B/g, '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+/** The held texts' row in the pad (empty with none): what is kept, why it has
+ *  no page, and Move / Copy / Discard. Rewritten only when it changed, so a
+ *  background repaint never takes the focus off one of its buttons (g141). */
+function cnScratchRenderHeld_() {
+  var host = document.getElementById('cn-scratch-held');
+  if (!host) return;
+  var keys = cnScratchHeldKeys_(CN_SCRATCH.pending);
+  var full = cnScratchPadFull_(CN_SCRATCH.pages, CN_SCRATCH.maxPages);
+  var html = keys.map(function (key) {
+    var plain = cnScratchPlainText_(CN_SCRATCH.pending[key]).replace(/\s+/g, ' ');
+    var preview = plain.length > 60 ? plain.slice(0, 60) + '…' : plain;
+    return '<div class="cn-sp-held" role="group" aria-label="Unsaved text with no page">' +
+      '<span class="cn-sp-held-msg">Unsaved text could not go back on its page and is kept here' +
+        (preview ? ': “' + esc(preview) + '”' : '') + '. ' +
+        (full ? 'The scratchpad has the most pages it holds (' + esc(String(CN_SCRATCH.maxPages || 10)) + ') — delete one, and Move puts this on a new page.'
+          : 'Move puts it on a new page.') + '</span>' +
+      '<span class="cn-sp-held-acts">' +
+        '<button type="button" class="cn-sp-pg-btn" data-held-act="move" data-held="' + esc(key) + '">Move to a new page</button>' +
+        '<button type="button" class="cn-sp-pg-btn" data-held-act="copy" data-held="' + esc(key) + '">Copy it</button>' +
+        '<button type="button" class="cn-sp-pg-btn" data-held-act="discard" data-held="' + esc(key) + '">Discard</button>' +
+      '</span></div>';
+  }).join('');
+  if (host._heldHtml === html) return;
+  host._heldHtml = html;
+  host.innerHTML = html;
+}
+function cnScratchHeldClick_(ev) {
+  var btn = ev.target && ev.target.closest ? ev.target.closest('[data-held-act]') : null;
+  if (!btn) return;
+  var key = btn.getAttribute('data-held'), act = btn.getAttribute('data-held-act');
+  if (!cnScratchHasPending_(key)) { cnScratchRenderHeld_(); return; }
+  if (act === 'move') { cnScratchRecover_(key, 'move'); return; }
+  if (act === 'copy') {
+    var plain = cnScratchPlainText_(CN_SCRATCH.pending[key]);
+    copyText_(plain, function (ok) {
+      if (ok) showToast('Copied — it is still kept here until you move or discard it', 'toast-success');
+      else manualCopyModal_(plain, 'The unsaved Scratchpad text', { above: true });   // the pad floats above an ordinary overlay
+    });
+    return;
+  }
+  if (act === 'discard') {
+    uiConfirm({ title: 'Discard this unsaved text?', message: 'It is removed for good — it was never saved to a page.', confirmLabel: 'Discard', tone: 'danger' })
+      .then(function (ok) {
+        if (!ok) return;
+        cnScratchUnpend_(key);
+        cnScratchMirrorNow_();
+        cnScratchRenderHeld_();
+      });
+  }
+}
+/** Try a new page for the oldest held text — unless the pad is known to be
+ *  full (an add the server would refuse; the row says what to do). Quiet: a
+ *  failure leaves the text held, as it was. */
+function cnScratchRetryHeld_() {
+  var keys = cnScratchHeldKeys_(CN_SCRATCH.pending);
+  if (!keys.length || cnScratchPadFull_(CN_SCRATCH.pages, CN_SCRATCH.maxPages)) return;
+  cnScratchRecover_(keys[0], 'held');
+}
 /** PURE (Node-pinned) — which pending page a save sends next: never one whose
- *  mirrored text is still unchecked; a page that is NOT on screen first (its
- *  text exists nowhere else); '' when there is nothing to send. */
+ *  mirrored text is still unchecked, never HELD text (FT1 — it has no page); a
+ *  page that is NOT on screen first (its text exists nowhere else); '' when
+ *  there is nothing to send. */
 function cnScratchNextPage_(pending, shown, unchecked) {
-  var pages = Object.keys(pending || {}).filter(function (pg) { return !(unchecked && unchecked[pg]); });
+  var pages = Object.keys(pending || {}).filter(function (pg) { return !(unchecked && unchecked[pg]) && !cnScratchIsHeld_(pg); });
   if (!pages.length) return '';
   var off = pages.filter(function (pg) { return pg !== shown; });
   return off.length ? off[0] : pages[0];
@@ -5756,9 +5868,10 @@ function cnScratchAdoptMirror_() {
       if (cnScratchHasPending_(pg)) return;
       CN_SCRATCH.pending[pg] = r.pages[pg].text;
       CN_SCRATCH.base[pg] = r.pages[pg].base;
+      got.push(pg);
+      if (cnScratchIsHeld_(pg)) return;   // FT1: held text has no page to check it against, and is no save owed
       CN_SCRATCH.unchecked[pg] = true;
       CN_SCRATCH.dirty = true;
-      got.push(pg);
     });
   } catch (e) {}
   return got;
@@ -5769,13 +5882,16 @@ function cnScratchAdoptMirror_() {
  *  that FAILED decides nothing: the text stays pending and the next edit or
  *  Save now writes it (last write wins). */
 function cnScratchSettleAdopted_(page, res) {
-  delete CN_SCRATCH.unchecked[page];
-  if (!cnScratchHasPending_(page)) return;
-  if (!res || res.error) return;
-  if (res.missing || cnScratchMirrorVerdict_(CN_SCRATCH.base[page], res.updatedAtMs) === 'conflict') {
+  if (cnScratchHasPending_(page) && res && !res.error &&
+      (res.missing || cnScratchMirrorVerdict_(CN_SCRATCH.base[page], res.updatedAtMs) === 'conflict')) {
+    // FT1: still unchecked while the new page is being made — a keystroke in
+    // that second used to arm a save that wrote this text over the changed page.
     cnScratchRecover_(page, res.missing ? 'gone' : 'changed');
     return;
   }
+  delete CN_SCRATCH.unchecked[page];
+  if (!cnScratchHasPending_(page)) return;
+  if (!res || res.error) return;
   cnScratchSave_(true);
 }
 /** Adopted pages that are not the one on screen: read each and settle it. */
@@ -5787,6 +5903,7 @@ function cnScratchCheckUnchecked_() {
       .withFailureHandler(function () { cnScratchSettleAdopted_(pg, null); })
       .getMyScratchpad(pg);
   });
+  cnScratchRetryHeld_();   // FT1: held text gets another try at a new page — the page list has been read by now
 }
 /** Shell boot: say so when this account has Scratchpad text that was never
  *  saved — the pad may not be opened again for hours. */
@@ -6094,6 +6211,7 @@ function cnOpenScratchpadModal_() {
     '</div>' +
     '<div class="cn-scratch-body">' +
       '<div class="cn-sp-pages" id="cn-scratch-pages">' + cnScratchPagesHtml_() + '</div>' +
+      '<div id="cn-scratch-held"></div>' +
       cnScratchToolbarHtml_() +
       '<div id="cn-scratch-text" class="cn-scratch-editor" role="textbox" aria-multiline="true" aria-label="Scratchpad contents"' +
         ' contenteditable="false" aria-disabled="true" data-placeholder="Loading…"></div>' +
@@ -6128,6 +6246,8 @@ function cnOpenScratchpadModal_() {
     tools.addEventListener('click', cnScratchToolClick_);
   }
   cnScratchWireFind_(panel);
+  var heldHost = panel.querySelector('#cn-scratch-held');
+  if (heldHost) heldHost.addEventListener('click', cnScratchHeldClick_);   // FT1
   if (typeof ResizeObserver === 'function') {   // remember a resize (CSS resize handle)
     try {
       CN_SCRATCH.resizeObs = new ResizeObserver(function () {
@@ -6142,7 +6262,7 @@ function cnOpenScratchpadModal_() {
   // F58: so is text the browser mirror kept across a reload — but that text is
   // not saved until its page's server copy has been read (it may be older).
   cnScratchAdoptMirror_();
-  var carryPages = Object.keys(CN_SCRATCH.pending);
+  var carryPages = Object.keys(CN_SCRATCH.pending).filter(function (k) { return !cnScratchIsHeld_(k); });   // FT1: held text is not a page to open on
   var carry = carryPages.length > 0;
   if (!carry) CN_SCRATCH.dirty = false;
   else if (!cnScratchHasPending_(CN_SCRATCH.page)) CN_SCRATCH.page = carryPages[0];   // Batch S: reopen on a page the unsaved text belongs to
@@ -6464,6 +6584,7 @@ function cnScratchPagesHtml_() {
 function cnScratchRenderPages_() {
   var host = document.getElementById('cn-scratch-pages');
   if (host) host.innerHTML = cnScratchPagesHtml_();
+  cnScratchRenderHeld_();   // FT1: what it says depends on the page count
 }
 /** Show another page: the current page's unsaved text is captured under ITS
  *  id and saved (F58 — before the editor is given to the next page), then the
@@ -6530,14 +6651,19 @@ function cnScratchSwitchPage_(id) {
     .withFailureHandler(function (err) { failedOpen((err && err.message) || ''); })
     .getMyScratchpad(id);
 }
-function cnScratchPageOp_(op, id, name, done) {
+function cnScratchPageOp_(op, id, name, done, fail) {
+  // `fail` (FT1, optional) takes a refusal or a failed call instead of the status line.
+  var failed = function (msg) {
+    if (typeof fail === 'function') fail(msg || '');
+    else cnScratchStatus_(msg || 'That did not work — try again', true);
+  };
   google.script.run
     .withSuccessHandler(function (r) {
-      if (!r || r.error) { cnScratchStatus_((r && r.error) || 'That did not work — try again', true); return; }
+      if (!r || r.error) { failed(r && r.error); return; }
       if (Array.isArray(r.pages)) CN_SCRATCH.pages = r.pages;
       done(r);
     })
-    .withFailureHandler(function (e) { cnScratchStatus_((e && e.message) || 'That did not work — try again', true); })
+    .withFailureHandler(function (e) { failed(e && e.message); })
     .scratchpadPageOp(op, id, name);
 }
 function cnScratchPageAdd_() {
@@ -6565,6 +6691,7 @@ function cnScratchPageDelete_() {
         if (CN_SCRATCH.cache && CN_SCRATCH.cache.page === id) CN_SCRATCH.cache = null;
         CN_SCRATCH.page = '';   // so the switch below always loads
         cnScratchSwitchPage_(r.pageId);
+        cnScratchRetryHeld_();   // FT1: there is room now — held text gets its new page
       });
     });
 }
@@ -6572,14 +6699,28 @@ function cnScratchPageDelete_() {
  *  window ('gone'), or it was saved from somewhere else after the text was
  *  typed and only the browser mirror kept it ('changed', F58): it is never
  *  written over another page's text and never dropped — it goes onto a NEW
- *  page, named so. */
+ *  page, named so.
+ *
+ *  FT1: while that page is being made the text is not sendable (a keystroke
+ *  in that second used to arm a save onto the page it must not overwrite), and
+ *  one add runs per text. When NO page can be made — the pad is full, or the
+ *  add failed — the text is HELD (cnScratchHold_) and the pad shows the page
+ *  as the server has it. `why` 'held' is a quiet retry of held text, 'move'
+ *  the rep's own press of Move. */
 function cnScratchRecover_(lostPage, why) {
+  if (CN_SCRATCH.recovering[lostPage]) return;
+  CN_SCRATCH.recovering[lostPage] = true;
+  var wasHeld = cnScratchIsHeld_(lostPage);
+  if (!wasHeld && cnScratchHasPending_(lostPage)) CN_SCRATCH.unchecked[lostPage] = true;
   cnScratchPageOp_('add', '', 'Recovered text', function (r) {
+    delete CN_SCRATCH.recovering[lostPage];
     if (cnScratchHasPending_(lostPage)) {
       var text = CN_SCRATCH.pending[lostPage];
       cnScratchUnpend_(lostPage);
       CN_SCRATCH.base[r.pageId] = null;
       cnScratchPend_(r.pageId, text);
+    } else {
+      delete CN_SCRATCH.unchecked[lostPage];
     }
     if (CN_SCRATCH.page === lostPage) CN_SCRATCH.page = r.pageId;
     cnScratchRenderPages_();
@@ -6587,7 +6728,29 @@ function cnScratchRecover_(lostPage, why) {
     // A toast, not only the status line: the save that follows rewrites the status.
     showToast(why === 'changed'
       ? 'That scratchpad page was changed somewhere else after you typed — your unsaved text is on a new page, "Recovered text"'
-      : 'That scratchpad page was deleted in another window — your text is on a new page, "Recovered text"', 'toast-warn');
+      : (wasHeld ? 'Your unsaved scratchpad text is on a new page, "Recovered text"'
+        : 'That scratchpad page was deleted in another window — your text is on a new page, "Recovered text"'), 'toast-warn');
+    if (wasHeld) cnScratchRetryHeld_();   // the next held text, if there is one
+  }, function (msg) {
+    delete CN_SCRATCH.recovering[lostPage];
+    var key = cnScratchHold_(lostPage);
+    delete CN_SCRATCH.unchecked[lostPage];
+    cnScratchRenderHeld_();
+    if (!key) return;
+    if (wasHeld) {
+      // A quiet retry stays quiet; the rep's own Move is answered.
+      if (why === 'move') showToast(msg || 'It could not be moved to a new page — try again', 'toast-warn');
+      return;
+    }
+    // The pad was showing the unsaved text as if it were the page: show the
+    // page as the server has it (or, deleted, the page that comes instead).
+    if (CN_SCRATCH.page === lostPage && cnScratchEditor_()) { CN_SCRATCH.page = ''; cnScratchSwitchPage_(lostPage); }
+    if (cnScratchEditor_()) {
+      showToast('Your unsaved scratchpad text could not be put on a new page — it is kept at the top of the Scratchpad, to move, copy or discard', 'toast-warn');
+    } else {
+      showToast('Unsaved scratchpad text could not be put on a new page — open the Scratchpad to keep it', 'toast-warn',
+        { sticky: true, actionLabel: 'Open Scratchpad', onAction: function () { cnOpenScratchpadModal_(); } });
+    }
   });
 }
 

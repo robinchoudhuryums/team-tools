@@ -51079,9 +51079,15 @@ const b11Fn = (partial, names, extra) => {
   return c;
 };
 const b11J = (v) => JSON.parse(JSON.stringify(v));
+/** FT1 — the held-text key prefix, read from the source (never restated). */
+const ftHeldPrefix = () => {
+  const m = /var CN_SCRATCH_HELD_PREFIX = '([^']+)';/.exec(fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8'));
+  assert.ok(m, 'CN_SCRATCH_HELD_PREFIX is declared');
+  return m[1];
+};
 
 test('F58: which Scratchpad page a save sends next — never one whose mirrored text is unchecked, a page that is NOT on screen first, nothing when nothing may be sent (driven)', () => {
-  const c = b11Fn('cn/script_callnotes.html', ['cnScratchNextPage_']);
+  const c = b11Fn('cn/script_callnotes.html', ['cnScratchNextPage_', 'cnScratchIsHeld_'], { CN_SCRATCH_HELD_PREFIX: ftHeldPrefix() });   // FT1: held text is skipped by its key
   assert.strictEqual(c.cnScratchNextPage_({}, 'main', {}), '');
   assert.strictEqual(c.cnScratchNextPage_({ main: 'a' }, 'main', {}), 'main');
   assert.strictEqual(c.cnScratchNextPage_({ main: 'a', p2: 'b' }, 'main', {}), 'p2', 'THE RULE: the page off screen first — its text exists nowhere else');
@@ -51190,7 +51196,7 @@ test('F62: a confirm or a prompt paints above the floating Scratchpad and the Re
   const cn = fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8');
   const kb = fs.readFileSync(path.join(PA_WEB, 'kb/script_kb.html'), 'utf8');
   const tour = fs.readFileSync(path.join(PA_WEB, 'script_tour.html'), 'utf8');
-  const dialog = z(css, '\\.overlay\\.ui-dialog \\{'), overlay = z(css, '\\n  \\.overlay \\{'), pad = z(cn, '\\.cn-float-panel \\{'), drawer = z(kb, '#kb-drawer \\{'), tourZ = z(tour, '#tour-block \\{');
+  const dialog = z(css, '\\.overlay\\.ui-dialog(?:, \\.overlay\\.overlay-above-panels)? \\{'), overlay = z(css, '\\n  \\.overlay \\{'), pad = z(cn, '\\.cn-float-panel \\{'), drawer = z(kb, '#kb-drawer \\{'), tourZ = z(tour, '#tour-block \\{');
   assert.ok(dialog > pad && dialog > drawer && dialog > overlay, 'THE REGRESSION: the pad (' + pad + ') painted over the dialogs it opens (' + overlay + ') — dialog is ' + dialog);
   assert.ok(dialog < tourZ, 'the tour still sits above a dialog');
   assert.ok(/uiConfirm\(\{ title: 'Delete "' \+ cnScratchPageName_\(id\) \+ '"\?'[^\n]*tone: 'danger' \}\)/.test(cn), 'the delete confirm asks in the destructive tone the dialog reads');

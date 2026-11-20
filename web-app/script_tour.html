@@ -358,11 +358,20 @@ function tourPaintWaiting_(step) {
   pop.style.top = Math.max(8, (window.innerHeight - pop.offsetHeight) / 2) + 'px';
   pop.classList.add('in');
 }
-/** F60 — is the current view still showing its full-view loader (renderLoading's
- *  `.state-center[role=status]`)? Visible only: a loader left in a hidden tab
- *  does not hold the tour. */
+/** F60 — is the current view still loading? Visible only: a loader left in a
+ *  hidden tab does not hold the tour.
+ *
+ *  FT3 (cycle 26 follow-ons): the app has TWO shared loaders, and F60 knew one
+ *  — renderLoading's full-view `.state-center[role=status]`. My Stats, Team
+ *  Metrics and Training draw their frame at once and put the inline
+ *  `.m-loading` inside it, so the Stats step — the cold read F60 was written
+ *  about — was still given the plain ~1.9 s and skipped. Both are read here,
+ *  inside the view area only (a reader or quiz overlay's own loader is not the
+ *  view's). Skeleton blocks are NOT a signal: a Dashboard widget may keep one
+ *  for as long as its data is absent, and a step would wait out the cap on it. */
+const TOUR_VIEW_LOADERS = '#view-area .state-center[role="status"], #view-area .m-loading';
 function tourViewLoading_() {
-  return !!tourVisibleTarget_('.state-center[role="status"]');
+  return !!tourVisibleTarget_(TOUR_VIEW_LOADERS);
 }
 /** PURE (Node-pinned) — F60: what a step's poll does when its target is not
  *  there yet. 'loading' — the view's loader is up: keep waiting, without

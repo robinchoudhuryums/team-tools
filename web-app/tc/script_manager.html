@@ -2655,6 +2655,27 @@ function mgrAddDaysIso_(iso, n) {
 document.getElementById('de-date').addEventListener('change', function () {
   var d = this.value;
   if (!d || !_deEmpId) return;
+  // FT2 (cycle 26 follow-ons): the picker loads another day over the form.
+  // F63 made Escape, Cancel and the backdrop ask before unsaved edits to this
+  // day are lost; this was the one way left to lose them without a word. A
+  // "Keep editing" puts the picker back on the day being edited.
+  var picker = this;
+  var deOvAsk = document.getElementById('day-edit-overlay');
+  if (d !== _deDate && deOvAsk && overlayNeedsDiscardAsk_(deOvAsk)) {
+    uiConfirm({
+      title: 'Discard changes?',
+      message: 'Your changes to ' + _deDate + ' have not been saved. Loading another day loses them.',
+      confirmLabel: 'Discard', cancelLabel: 'Keep editing', tone: 'danger',
+    }).then(function (ok) {
+      if (ok) deLoadPickedDate_(d);
+      else picker.value = _deDate;
+    });
+    return;
+  }
+  deLoadPickedDate_(d);
+});
+/** Load day `d` into the open Day Edit modal (the date picker's change). */
+function deLoadPickedDate_(d) {
   _deDate = d;
   _deTouched = {};
   // F63: another day is being loaded over the form — nothing typed is left in
@@ -2672,7 +2693,7 @@ document.getElementById('de-date').addEventListener('change', function () {
   deRenderBreaks_([]);
   loadDayEditPunches(_deEmpId, d, d);
   deLoadActivity_(_deEmpId, d);   // E2
-});
+}
 
 document.getElementById('de-save').addEventListener('click', function () {
   if (!_deEmpId || !_deDate) return;

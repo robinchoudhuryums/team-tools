@@ -2041,7 +2041,7 @@
      be answered, so it paints above the two non-modal panels that sit over the
      overlay layer — the Reference drawer (55) and the floating Scratchpad (56).
      The Scratchpad's own "New page" and "Delete page" dialogs opened UNDER it. */
-  .overlay.ui-dialog { z-index: 57; }
+  .overlay.ui-dialog, .overlay.overlay-above-panels { z-index: 57; }
   /* Round 2 · 8c — hover-mode tethered popover. The backdrop becomes
      transparent + non-interactive so the rep can sweep across other
      calendar cells without dismissing; the modal itself catches pointer

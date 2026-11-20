@@ -117,7 +117,9 @@ function manualCopyModal_(text, what, opts) {
   // Sized to the content, 3..12 lines. A fixed 8 made a two-line price look
   // like an empty form the rep was meant to fill in.
   var rows = Math.min(12, Math.max(3, body.split('\n').length + Math.floor(body.length / 48)));
-  var overlay = ensureOverlay('manual-copy-overlay', { labelledBy: 'manual-copy-h' });
+  // FT1: a caller inside a floating panel (the Scratchpad) asks for the layer
+  // above it — an ordinary overlay opens beneath the pad.
+  var overlay = ensureOverlay('manual-copy-overlay', { labelledBy: 'manual-copy-h', extraClass: opts.above ? 'overlay-above-panels' : '' });
   overlay.innerHTML = '<div class="modal manual-copy-modal">' +
     '<div class="modal-head"><h3 id="manual-copy-h">' + esc(opts.title || 'Copy it by hand') + '</h3>' +
       '<button type="button" class="modal-x" aria-label="Close" onclick="closeOverlay(this.closest(\'.overlay\'))">' + icon('x', 15) + '</button></div>' +

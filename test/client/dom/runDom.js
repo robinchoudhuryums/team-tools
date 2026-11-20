@@ -15085,7 +15085,7 @@ test('FQ1 DOM: the manager card\'s idle line names the threshold the server sent
 
 section('DOM harness — cycle 26 decisions (DQ1 partial days for managers, DQ3 confirm as is)');
 
-test('DQ3 DOM: Day Edit offers "Confirm as is" on a SAVED inferred time — the press retags the slot, the save sends it as confirmed (not inferred), Undo and typing another time take it back, and a time applied in this open has no such button', () => {
+test('DQ3 DOM: Day Edit offers "Confirm as is" on a SAVED inferred time — the press retags the slot, the save sends it as confirmed (not inferred), Undo and typing another time take it back, and a time applied in this open has no such button', async () => {
   const h = boot();
   h.read('openDayEditModal')('E-1077', 'Nina Patel');
   const day = h.read('_deDate');
@@ -15155,6 +15155,10 @@ test('DQ3 DOM: Day Edit offers "Confirm as is" on a SAVED inferred time — the 
   const dEl3 = h3.document.getElementById('de-date');
   const y3 = h3.read('mgrAddDaysIso_')(d3, -1);
   dEl3.value = y3; dEl3.dispatchEvent(new h3.window.Event('change'));
+  // FT2: the press is unsaved work, so the picker asks before another day loads over it.
+  assert.ok(b9Ask(h3), 'the date picker asks before it discards the press');
+  h3.click(b9Ask(h3).querySelector('.ui-dialog-ok'));
+  await tick();
   h3.run.drain();
   assert.deepStrictEqual(JSON.parse(JSON.stringify(h3.read('_deConfirm'))), { ClockIn: false, ClockOut: false }, 'another day starts unconfirmed');
   assert.ok(h3.document.getElementById('de-clockin-inf-confirm').hidden);
@@ -15874,7 +15878,7 @@ test('F60 DOM: the tour WAITS for a view that is still loading instead of skippi
   const visible = (el) => { el.getBoundingClientRect = () => ({ width: 40, height: 20, top: 10, left: 10, bottom: 30, right: 50 }); return el; };
   const loader = visible(doc.createElement('div'));
   loader.className = 'state-center'; loader.setAttribute('role', 'status');
-  doc.body.appendChild(loader);
+  doc.getElementById('view-area').appendChild(loader);   // FT3: a view's loader is inside the view area
   h.window.tourVisibleSteps_ = () => [{ view: view, title: 'Late one', body: 'Loads slowly.', selector: '#b11-late' }, { view: view, title: 'Last', body: 'Done.', selector: null }];
   h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 1 }));
   h.window.tourStart('full');
@@ -15916,7 +15920,7 @@ test('F60 DOM: the tour WAITS for a view that is still loading instead of skippi
   assert.strictEqual(h.run.pending('recordViewEnter').length, 1, 'and outside the tour a tab visit is logged as before');
   // A view that never finishes loading: the step is given up on at the cap, and the run is NOT stamped seen.
   target.remove();
-  doc.body.appendChild(loader);
+  doc.getElementById('view-area').appendChild(loader);   // FT3: a view's loader is inside the view area
   h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 1 }));
   h.window.tourStart('full');
   h.flushTimers();
@@ -16108,9 +16112,32 @@ test('F63 DOM: the punch-adjustment, Day Edit and manager time-off modals ASK be
   assert.ok(open('day-edit-overlay') && b9Ask(h) && /this day/.test(b9Ask(h).textContent), 'THE REGRESSION: one Escape lost a filled Day Edit');
   await keep();
   assert.strictEqual(h.$('#de-clockout').value, '17:30');
-  // Moving to another day loads over the form — the picker is not "work", and nothing typed is left.
-  h.setField('de-date', '2026-11-10');
+  // Moving to another day loads over the form. FT2: with unsaved edits the
+  // picker ASKS first — "Keep editing" puts the picker back and loads nothing.
+  const deDay = h.read('_deDate');
+  const deLoads = () => h.run.pending('getEmployeeTimesheetForManager').length;
+  const loadsBefore = deLoads();
+  h.$('#de-date').value = '2026-11-10';
   h.$('#de-date').dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  assert.ok(b9Ask(h) && b9Ask(h).textContent.indexOf(deDay) >= 0, 'THE REGRESSION (FT2): the date picker loaded another day over unsaved edits without a word');
+  assert.strictEqual(deLoads(), loadsBefore, 'nothing is loaded while the question is up');
+  await keep();
+  assert.strictEqual(h.$('#de-date').value, deDay, 'Keep editing: the picker is back on the day being edited');
+  assert.strictEqual(h.read('_deDate'), deDay);
+  assert.strictEqual(h.$('#de-clockout').value, '17:30', 'and the edit is still there');
+  assert.strictEqual(deLoads(), loadsBefore, 'still nothing loaded');
+  h.$('#de-date').value = '2026-11-10';
+  h.$('#de-date').dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  await discard();
+  assert.strictEqual(h.read('_deDate'), '2026-11-10', 'Discard: the other day loads');
+  assert.strictEqual(deLoads(), loadsBefore + 1);
+  assert.strictEqual(h.$('#de-clockout').value, '', 'over a cleared form');
+  h.run.drain();
+  // The picker is not "work": a day just loaded has nothing to discard, and a
+  // second change of day asks nothing.
+  h.$('#de-date').value = '2026-11-09';
+  h.$('#de-date').dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  assert.ok(!h.$('.ui-dialog') && h.read('_deDate') === '2026-11-09', 'a clean day changes at once');
   h.run.drain();
   h.dispatchKey('Escape');
   assert.ok(!open('day-edit-overlay') && !h.$('.ui-dialog'), 'a day just loaded has nothing to discard');
