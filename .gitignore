@@ -8,3 +8,12 @@ web-app/.clasp.dev.json
 # The handbook app's real script id, kept on this machine (cycle 26 F57): {"scriptId": "…"}.
 # scripts/handbook-push.mjs reads it; the committed handbook-app/.clasp.json keeps a placeholder.
 handbook-app/.clasp.local.json
+# Saved audit reports (command templates v1.56.0: /broad-scan, /audit and
+# /targeted-audit write their whole output, unfixed security findings included,
+# to .cycle/blocks/; /seams-audit writes its block there). This repository is
+# PUBLIC, so they stay on the machine that ran the audit (operator 2026-11-23).
+# Implement, reflect and verification blocks are still committed.
+.cycle/blocks/*-scan.md
+.cycle/blocks/*-scan-[0-9]*.md
+.cycle/blocks/*-audit-*.md
+.cycle/blocks/*-seams.md
