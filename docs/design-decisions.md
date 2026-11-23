@@ -5815,6 +5815,23 @@ pick them up without re-deriving the context.
   threshold (it would email every morning).
 
 
+- <a id="saved-audit-reports-stay-off-the-public-repo"></a>**Saved audit reports stay off the public repository; the blocks that describe finished work are still committed (command sync v1.56.0, operator 2026-11-23)**
+  Since template v1.56.0 `/broad-scan`, `/audit` and `/targeted-audit` write their
+  whole output to `.cycle/blocks/` (`<cycle>-scan.md`, `<cycle>-audit-<subsystem>.md`,
+  `<cycle>-targeted-audit-<subsystem>.md`) so a later session can read a batch
+  or a finding back instead of being handed a paste, and `/seams-audit` writes
+  its block (`<cycle>-<letter>-seams.md`). A report holds every finding in
+  full, unfixed security findings included, and this repository is public. The
+  operator chose to keep them on the machine that ran the audit: four
+  `.gitignore` patterns cover those names and nothing else. Implement, reflect
+  and verification blocks describe work already done and stay committed.
+  **The cost, accepted:** sessions here run in containers that are reclaimed,
+  so a saved report does not outlive the session that wrote it — a later
+  `/broad-implement Batch N` asks for the scan to be pasted, as it did before
+  the sync. Making the repository private, or committing the reports, would
+  remove that cost; both were on the table and declined. The commands
+  themselves are unchanged (they are copied byte-identical), so the rule lives
+  in `.gitignore` and in CLAUDE.md's sync note, not in a command file.
 - <a id="the-close-out-is-a-command-and-the-visual-gate-a-subset"></a>**A cycle's standing is derived and its close-out is a command; CI gates on the visual matrix's measurements over a fixed subset (cycle 25 E5, ST4 + ST5, 2026-10-15)**
   **ST5.** The close-out was three hand steps that each went stale on its own
   schedule — PROJECT_HEALTH named cycle 21 for four cycles (F26), and cycle 24's

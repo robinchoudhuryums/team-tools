@@ -589,7 +589,7 @@ for the reasoning, which is usually the part that matters.
 - [A pay period closes against ONE checklist — open days and pending requests, offboarded reps included (cycle 25 E2, G1 + F19, operator 2026-10-15)](docs/design-decisions.md#a-pay-period-closes-against-one-checklist)
 - [The handbook's feedback reaches its source, a section's new text is its review, and the Log offers handbook sections for the Issue text (cycle 25 E3, G2 + ST3, operator 2026-10-15)](docs/design-decisions.md#the-handbook-s-feedback-reaches-its-source)
 - [A held reply waits for a person under "Replies to check", and the answers are counted, not learned from; a Spanish request is escalated at 7 calendar days (cycle 25 E4, ST1 + G5, operator 2026-10-15)](docs/design-decisions.md#a-held-reply-waits-for-a-person)
-- [A cycle's standing is derived and its close-out is a command; CI gates on the visual matrix's measurements over a fixed subset (cycle 25 E5, ST4 + ST5)](docs/design-decisions.md#the-close-out-is-a-command-and-the-visual-gate-a-subset)
+- [A cycle's standing is derived and its close-out is a command; CI gates on the visual matrix's measurements over a fixed subset (cycle 25 E5, ST4 + ST5)](docs/design-decisions.md#the-close-out-is-a-command-and-the-visual-gate-a-subset) · [saved audit reports stay off the public repository; implement, reflect and verification blocks are still committed (command sync v1.56.0, operator 2026-11-23)](docs/design-decisions.md#saved-audit-reports-stay-off-the-public-repo)
 - [The Reference search signal counts admin-vocabulary terms only — team-level, 90 days, admin view; a content request's hint replaces the raw query (cycle 25 E6, G4, operator 2026-10-14)](docs/design-decisions.md#the-search-signal-counts-vocabulary-terms-only)
 - [Note saves are serialised per rep on a lease, not on the project lock; the day's email allowance is on Admin → System (25post, operator 2026-10-16)](docs/design-decisions.md#note-saves-are-serialised-per-rep)
 - [The intake Send-to picker reads the Sales and PAP teams from the CDR roster, builds first.last addresses, and re-checks them at send (25post B6, operator 2026-10-16)](docs/design-decisions.md#intake-team-recipients-from-the-cdr-roster)
@@ -974,7 +974,7 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 14 | `TRIGGER_GROUPS` |
 | localStorage keys | 27 | `ums…` literals in `web-app/` (a per-tool key family counts once) |
-| Invariant library entries | 441 | `.cycle/config.md` |
+| Invariant library entries | 444 | `.cycle/config.md` |
 | Regression scenarios (S*) | 205 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
