@@ -7,7 +7,7 @@ Scope: —
 Test Command: manual
 Estimates: (none yet — each batch's goes here before its first edit)
 Subsystem cycles since last Seams audit: 4 — reset to 0 by the Seams & Invariants audit of 2026-10-05 (cycle 24); incremented by cycle 24's /reflect (2026-10-06), cycle 25's /reflect (2026-10-16), the 25post stretch's /reflect (2026-11-12) and cycle 26's /reflect (2026-11-20). The cadence is every 4 — a Seams & Invariants audit is DUE.
-Updated: 2026-11-23 (cycle 26 closed 2026-11-20; since then the command templates were synced to v1.56.0 and /sync-docs wrote INV-383, INV-456 and INV-457 into the library)
+Updated: 2026-11-24 (cycle 26 closed 2026-11-20 and merged as PR #310; Team Tools redeployed by the operator; F36 ruled; F39 is next, before the Seams audit)
 
 ## In progress (facts to carry forward — NOT judgments)
 - (none — cycle 26 is closed; its record is the top block of `.cycle/HISTORY.md`)
@@ -16,6 +16,9 @@ Updated: 2026-11-23 (cycle 26 closed 2026-11-20; since then the command template
 - (none yet)
 
 ## Pending / not yet done
+- **NEXT, before the Seams audit (operator 2026-11-24): F39 — the payor source-export converter's layout guesses (`insPayorFromSource_`, `web-app/70_kb.js`).** The operator called it important. Read at 2026-11-24, the guesses the preview does NOT name: a row after the last state section keeps that state (`current` is never cleared); a sheet with only one or two state starts is treated as unsectioned and its states are dropped; a catch-all row's section reaches back over the rows above it that begin with the same state; a file that is not recognised as the source shape imports untouched. Naming each in the preview needs no data; whether any should change behaviour needs the real exports (asked for 2026-11-24).
+- **F36 — RULED (operator 2026-11-24), not yet implemented:** the team's outbound totals do not need to be shown to reps, least of all when few people contribute. Implement as manager-only (the rep view of the Stats payload drops the team outbound totals); goes with the F39 batch.
+- **Operator 2026-11-24 (reported in chat): Team Tools was pushed and redeployed after PR #310 merged. The handbook app's push + New version is still owed, and no walk is confirmed. The older per-batch deploy lines below predate this.**
 - **Cycle 26 — the deploy is the whole of what a user has (reflect, 2026-11-20):** the last confirmed deploy is 2026-11-04/05 (commit ee12a6a). Everything since ED1, cycle 26 included, is undeployed: Team Tools `clasp push -f` + New version, `npm run handbook:push` + New version. First walks after it: S182 (a PDF document opens — the checksum-checked pdf.js load has never run on a deployed origin) and S161 (the card reader).
 - **Cycle 26 follow-ons after Batch 14, deploy (2026-11-20):** Team Tools — `clasp push -f` + New version (commit `web-app/.clasp.json` first); the handbook app — `npm run handbook:push` + New version (its copied shell changed). No operator state. Walk S210 on DEV.
 - **Cycle 26 Batch 14 (2026-11-20):** `clasp push -f` carries the changed `Tests.js` (no New version needed for this batch alone); the handbook app is unchanged. On DEV: run the two new editor tests (`suite_stashRestoresAnOverwrittenProperty`, `intakeFeedback_limitRefusesPastTheCap`) and walk S209. **After any stopped or timed-out editor run, run `cleanupTestData` before changing a setting by hand** — it restores what the run had overwritten.
@@ -213,6 +216,7 @@ Updated: 2026-11-23 (cycle 26 closed 2026-11-20; since then the command template
 - **Numbers — do not reuse:** the held invariant numbers now live in `.cycle/config.md`'s `HELD NUMBERS` line (seams F5) — that line, not this one, is what the pin reads. INV-229/230/231/374/375 were written this cycle; INV-350 is retired. **Next free: INV-376; gotcha g171; scenario S138.**
 
 ## Decisions made (so the next session doesn't re-litigate)
+- **2026-11-24 (operator): F36 — reps do not see the team's outbound totals (managers do). F39 is the next piece of work, ahead of the Seams audit that is due.**
 - **2026-11-23 (operator): saved audit reports stay off the public repo — `.gitignore` covers `*-scan.md`, `*-scan-N.md`, `*-audit-*.md` and `*-seams.md` under `.cycle/blocks/`; a later session asks for a paste. INV-383, INV-456 and INV-457 are WRITTEN (the next free number is INV-458). The follow-ons carried below have no FO IDs or dispositions yet — the one-time pass is not done.**
 - **Cycle 26 reflect (2026-11-20): a fix counts as a PRODUCTION fix only when its surface exists at the deployed commit (ee12a6a here). Four self-reported fixes were demoted on that test (F34, F21, FT3, FR3), F23 was promoted under the interface rule, and a failure mode opened and closed inside the cycle before production nets to zero (FT1 by FU3).**
 - **Follow-ons after Batch 14 (FX1–FX8, 2026-11-20): the stash restore REPORTS, it does not refuse — a test's value left in `ADMIN_EMAILS` is worse than replacing an edit that can be read back from the log. The copy dialog's layer is the dialog's, not a caller option. Team Training's 860px cards were LEFT (a deliberate cap). `voidCoaching`'s dead conjunct was removed with no new pin (no behaviour to pin).**
