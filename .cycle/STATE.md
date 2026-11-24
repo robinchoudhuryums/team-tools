@@ -2,10 +2,10 @@
 
 ## Current
 Cycle: 26 — closed 2026-11-20 (reflected net +18 (32 prod fixes − 14 new failure modes; 90 defensive)). The next /broad-scan, /audit or /targeted-audit opens the next cycle.
-Phase: idle
-Scope: —
+Phase: implement
+Scope: 26post — between-cycles operator work after cycle 26: the payor sheet tool (the scan's deferred F39 and F36, with what the operator's real workbooks showed)
 Test Command: manual
-Estimates: (none yet — each batch's goes here before its first edit)
+Estimates: 26post Payor 1 (F39 — trailing rows filed by rule, every layout guess named in the preview, a state listed twice said, untitled columns in one line; the lookup reads the sheet's L / Y and an X with a condition; F36 — reps do not get the team's outbound totals): M (~8 h)
 Subsystem cycles since last Seams audit: 4 — reset to 0 by the Seams & Invariants audit of 2026-10-05 (cycle 24); incremented by cycle 24's /reflect (2026-10-06), cycle 25's /reflect (2026-10-16), the 25post stretch's /reflect (2026-11-12) and cycle 26's /reflect (2026-11-20). The cadence is every 4 — a Seams & Invariants audit is DUE.
 Updated: 2026-11-24 (cycle 26 closed 2026-11-20 and merged as PR #310; Team Tools redeployed by the operator; F36 ruled; F39 is next, before the Seams audit)
 
