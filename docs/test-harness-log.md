@@ -4565,3 +4565,29 @@ F53, F54, F57.**
 - **Older pins updated:** the FT1 layer pin (the class is unconditional),
   PR4-4's retraction line, the F18 side-rail sandbox, the F73 stash sandbox.
 - **Bite-checks: 17 mutations (10 pure, 7 DOM), 17 bit, each on its first run. One drive was corrected before the run: it pressed a disabled button with click(), which jsdom ignores, so the guard it named was never reached.**
+
+## 26post Payor 1 — the converter and the lookup against the real workbooks (F39, F36)
+
+- **Method.** The operator's two source workbooks were read from an upload
+  (never committed — the repo is public), each tab dumped to a grid, and the
+  REAL `insPayorFromSource_` loaded through `harness.js` (`serverSource` +
+  `extractRawFunction`) and run over them; the client's real `insToneCls_` /
+  `insTermsIn_` were run over every distinct acceptance value. The pins below
+  are built from what that showed, on the existing miniatures.
+- **Pure harness: five pins.** The Medicaid tail on the UHC miniature (rows
+  filed by name, "all other states", the mid-sheet row that must not move, the
+  preview lines); a state listed twice, the explicit "Not state specific"
+  section, one-or-two sections; untitled columns as one line and the
+  not-converted flag; the lookup's letters over the real values; the rep view
+  driven over a manager payload, with the adjusted rail drawn from it.
+- **Older pins updated:** the rep-view key set (no `outboundMeta`), the M1 and
+  F35 structural lines, four sandboxes that load the rep view (they need its
+  helper), FQ7's field-by-field assertion (the field is gone), PT2's two
+  untitled-column lines (one line now), PT1a's not-converted sentence.
+- **A pin that stopped a wrong change.** The first version also read a bare
+  "Y" as location-based. The legend pin's line — "the 6 stray Y cells render
+  VERBATIM in neutral tone — never a guessed verdict (operator rule)" — failed,
+  and the change was taken back.
+- **Editor suite:** three assertions added to
+  `metrics_getTeamMetrics_nonManagerRejected` (no registration added).
+

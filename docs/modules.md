@@ -1062,6 +1062,19 @@ longer sent to reps.
      note; its own words ("Yes – Delivery Only", "MO", "OOP Only", "Priority
      Referral Only"…) are coloured and explained.
 
+     **26post Payor 1 (2026-11-24) — checked against the real workbooks.** On a
+     sheet grouped by state, a plan added below the last state's rows is filed
+     by the state its own name begins with, and an "all other states" row as
+     "Not state specific" (they were all filed under the last state). The
+     upload preview says what it decided about the sheet's layout: which
+     sections begin above their "not listed" row, a state listed in two
+     places, where the last group ends, and columns with no title in one line.
+     A payor file that was not converted says so. In the lookup, "L" and
+     "L ( 285-325 lb)" are coloured amber and explained as location-based, and
+     "X ( 350 lb)" as an accept with a condition. On Team Metrics a rep no
+     longer sees the team's outbound calls or the figures built from them;
+     managers do.
+
      **Cycle 23 Batch 4b (2026-10-01) — Metrics never caches what it could not
      read.** A call-data read that failed is an error on the date-range view (it was
      "no calls"), My Stats, Team Metrics and the ambient badge do not cache a

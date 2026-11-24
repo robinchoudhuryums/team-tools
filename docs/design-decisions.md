@@ -7739,6 +7739,42 @@ pick them up without re-deriving the context.
     (its date range never reaches the archive), a local command equal to CI
     (the scan's ST1), and everything that needs a ruling — F36, F39, F51 and
     the leading apostrophe.
+- <a id="p26-payor-1"></a>**26post Payor 1: the payor sheet tool against the real workbooks — rows after the last state section are filed by their own name, every layout guess is said, the lookup reads the sheet's L; reps are not sent the team's outbound totals (F39 + F36, operator 2026-11-24)**
+  The operator supplied the two source workbooks (the PMD payor sheet and the
+  Manual Mobility team's). The app's real converter and the lookup's real
+  colouring were run over all five payor tabs before anything was changed.
+  **What was decided, and why:**
+  - **After the last state section, a plan is filed by the state its own name
+    begins with** ("Washington D.C MCOs" → District of Columbia, "Florida MCOs"
+    → Florida). Only after the LAST section: mid-sheet a plan that names another
+    state is said and never moved (PT3 stands), because there a wrong guess
+    moves a real plan out of the section its neighbours explain. At the bottom
+    there is no next section, so the sheet's own grouping says nothing.
+  - **An "all other states" row is filed as "Not state specific"** wherever it
+    sits, and does not end the group around it. It is the rule for every state
+    the sheet does not list; a state on it is always wrong.
+  - **An explicit "Not state specific" section keeps what the sheet put in it**
+    — the BCBS tab ends with one, and a plan there whose name begins with a
+    state is the sheet's choice, not a guess to correct.
+  - **The preview says what the section reading decided** — one line each for
+    the sections that begin above their "not listed" row, the rows filed by
+    name, the "all other states" rows, a state listed in two places, the open
+    end of the last group, and a sheet with too few sections to group. They are
+    lines in the list the admin already reads, not warnings: none of them stops
+    an import.
+  - **Untitled columns are one line.** The real UHC tab has ten to the right of
+    its codes; ten lines hid the two that mattered. The BCBS tab's untitled
+    column of 567 cells stays dropped (the operator: a stray column).
+  - **The lookup reads "L" as location-based and an X with a bracket as an
+    accept with a condition.** Both are the sheet's own vocabulary, defined on
+    its key tab. A bare "Y" stays neutral — an earlier operator rule, kept.
+  - **F36: reps are sent nothing about the team's outbound calls.** The
+    operator's ruling. The copy drops by key prefix and rebuilds the adjusted
+    figures from their intake half; it does not null the whole adjustment,
+    because "Avg talk excl. intake" is every answering rep's figure.
+  **Not decided here:** what the Reimbursement Status words mean for a rep; the
+  two District of Columbia sections on the Medicaid tab (a sheet fix); the 81
+  BCBS plans listed before the first state section.
 - <a id="c26-one-verdict-for-employee-docs"></a>**One verdict for Verify, the certificate and the copy; the copy email is capped and reaches only today's managers; pdf.js is checksum-checked (cycle 26 Batch 6: F13, F14, F15, F44, F56, F64).**
   - **`verified` is its own field, not "not tampered" (F13).** A check has
     three outcomes and the old flag recorded one of them. `empDocVerdict_`

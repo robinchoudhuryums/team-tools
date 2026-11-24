@@ -11,6 +11,37 @@ keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
 
+## 2026-11-24 — 26post Payor 1: the payor sheet tool against the real workbooks (F39, F36)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The
+handbook app is not affected. After the deploy, **re-upload the Primary
+Medicaid tab** (Admin → Config → Reference data tables): the rows at the
+bottom of that tab are stored under Wyoming until you do.
+
+- **Rows at the bottom of a by-state sheet (F39).** A plan added below the
+  last state's rows used to take that state. Now it is filed by the state its
+  own name begins with, and an "all other states" row is "Not state specific".
+  On your Medicaid tab that moves "Washington D.C MCOs", "Florida MCOs" and
+  the two "… in ALL Other States" rows out of Wyoming.
+- **The preview says more.** It names the rows it filed by name, a state your
+  sheet lists in two places, where the last group ends, and columns with no
+  title (one line for all of them).
+- **In the lookup,** "L" and "L ( 285-325 lb)" are amber and explained as
+  location-based; "X ( 350 lb)" is an accept with a condition. A bare "Y" is
+  still shown as written.
+- **Team Metrics for reps (F36).** A rep no longer sees the team's outbound
+  calls, "Handled calls" or "Talk incl. outbound". Managers see everything as
+  before; a rep's own outbound calls on My Stats are unchanged.
+
+**Things in the sheets themselves, found by the check — yours to fix or leave:**
+- Primary Medicaid lists District of Columbia twice (rows 63–65 and 379–383).
+- BCBS column X has no header (567 cells); it is dropped. You said it is stray.
+- Medicare / MA row 26 has a date in the K0005 column.
+- Rows the preview names as possibly misfiled: Medicaid row 390; UHC rows 313,
+  421 and 611; five on BCBS.
+- The Reimbursement Status words (Testing, Need Test, Acceptable, Rejected)
+  are shown as written, with no colour or explanation.
+
 ## 2026-11-20 — Cycle 26 follow-ons after Batch 14 (FX1–FX8)
 
 **Nothing to set.** Deploy Team Tools (`clasp push -f` + New version) AND the

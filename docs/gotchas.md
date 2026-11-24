@@ -1159,6 +1159,8 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   column is still never opened. **No figure is computed from the marks on
   Team Metrics** — the line under the table says so.
 
+**AMENDED (26post Payor 1, F36 — operator 2026-11-24): a team total that one or two people make is theirs.** The rep view of Team Metrics shipped `teamTotals` whole, and since M1 that object carried the team's outbound calls — placed, connected, talk — which on this team are made by one or two bilingual reps. A "team" figure with one contributor is that person's figure. The operator's ruling: reps do not need it. `teamTotalsForRep_` copies the totals without any key that begins `outbound`, and rebuilds `adjusted` with only its intake half — Handled calls and Talk incl. outbound give the outbound figure back by subtraction, so they go too. The rep view carries no `outboundMeta` at all (the field-by-field copy FQ7 added went with it). Managers get the whole object, and a rep's OWN outbound calls on My Stats are untouched.
+
 <a id="g34-fire-and-forget-email"></a>
 
 - **Fire-and-forget email.** Decision emails
@@ -1480,6 +1482,12 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `insPayorMatch_` is handed the name and the other cells separately, each
   read for states on its own. Verify: the F6 pin — the grammar grid, the
   matcher, and the endpoint over a by-state table.
+
+**AMENDED (26post Payor 1, F39 — measured on the operator's real workbook, 2026-11-24): the last section of a sheet has no next section to end it.** The by-state converter gives each plan the state of the section it sits in, and a section ends where the next one starts. The LAST one therefore runs to the end of the sheet, and whatever is added at the bottom lands in it. On the real Primary Medicaid tab four rows follow Wyoming's two — "Washington D.C MCOs", "Florida MCOs", "Traditional Medicaid in ALL Other States" and "MCO's in ALL Other States" — and all four were written with State = Wyoming. The lookup scores the State cell with the plan name, so the fallback rule for every unlisted state was ranked and shown as a Wyoming plan. The preview's misfiled-row notice caught the first two (their names name another state) and said nothing of the two that mattered. The scan had recorded this as F39 with the words "needs the real source exports to confirm which shapes occur", and that was right: of the four silent guesses it named, the real data showed one happening and three not.
+
+What changed: after the last section start, a plan whose name BEGINS with another state starts that state (as a section's own first row does), an "all other states" row is filed as "Not state specific" wherever it sits and does not split the group around it, and an explicit "Not state specific" section at the bottom keeps what the sheet put in it. Mid-sheet a plan naming another state is still said and never moved (PT3). The preview now says each thing the section reading decides without being told: the sections that begin above their "not listed" row, the rows filed by their own name, the "all other states" rows, a state the sheet lists in two places (District of Columbia, twice, on that tab), the open end of the last group, and a sheet with only one or two sections. A payor file that was not converted at all says so even when no note is stored.
+
+**THE LESSON: a finding that says "needs the real data" is a request, not a deferral.** F39 sat deferred for a cycle. One xlsx settled it in an hour, and turned up four things no reading of the code could: an untitled column of 567 acceptance cells, a state listed twice, a date in a code column, and ten spilled columns that made fifteen lines of preview noise.
 
 <a id="g42-intake-ppd-controls-are-engine-safe-via"></a>
 
@@ -7228,6 +7236,8 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   other's. A key must hold a digit. And the agent's self-BCC was skipped
   when their address was a SUBSTRING of the list (`ann@x.com` inside
   `maryann@x.com`); the test is by whole address (`mailListHasAddress_`).
+
+**AMENDED (26post Payor 1 — measured on the real workbook, 2026-11-24): the sheet's own letter is a token too.** The lookup's colour and explanation were driven over every distinct acceptance value in the operator's five real tabs (about 49,000 cells). The location rule matched the WORD "location" — and the sheet writes it as a letter: "L" (16 cells) and "L ( 285-325 lb)" (105). Neither had a tone, and the bare letter had no explanation either, though the workbook's own key tab defines both. "X ( 350 lb)" and "X ( 285-325 lb)" had no tone, because only the bare X was an accept — and the second was explained as "Location-based (285–325 lb)", which it is not. `INS_IS.location` now also reads a leading L before a bracket, an "&" or the end; an X followed by a bracket is an accept with a condition (amber); the weight-range term no longer attaches to an X. A bare "Y" was deliberately NOT added: the operator's earlier rule is that it renders verbatim and neutral, never a guessed verdict, and its pin caught the attempt. The Reimbursement Status column's words (Testing, Need Test, Acceptable, Rejected — about 680 cells) are still shown as written with no explanation; what they should say is the operator's to define.
 
 <a id="g157-scriptcache-is-shared-by-every-deployment"></a>
 
