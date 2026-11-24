@@ -52548,6 +52548,7 @@ test('Payor 2: insPayorHasAll_ — every word of two characters or more, read as
   assert.strictEqual(M('UHC Star Plus (TX)', 'uhc tx', []).all, true, 'the state is matched on its own — it is not one of the words');
   assert.strictEqual(M('Carefirst', 'ohio', [], ['Ohio']).all, true, 'a state alone asks for no word');
   assert.deepStrictEqual(M('Cigna', 'aetna'), { score: 0, excluded: '', all: false }, 'no match is never "all"');
+  assert.deepStrictEqual(M('Carefirst', 'ohio', [], ['Maryland']), { score: 0, excluded: '', all: false }, 'nor is a plan for another state, searched by a state alone — it asks for no word, and it did not match');
 });
 
 test('Payor 2: a state is named for CERTAIN by its full name or an unambiguous code — a bare PA, MA, ID, CO, IN, OR is a state only loosely, "(IN)" certainly, "(MA)" never; only a certain state marks a plan as another state\'s', () => {
