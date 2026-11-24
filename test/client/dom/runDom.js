@@ -16888,3 +16888,100 @@ test('FX8 DOM (cycle 26): a reminder\'s Mark done and Cancel carry its id as DAT
   host.querySelector('.cn-sched-lbl').click();
   assert.strictEqual(calls().length, 2);
 });
+
+// ── 26post Payor 2 — what the lookup says about how well its cards match, and about blank codes ──
+function p2Tables_(over) {
+  return [Object.assign({ key: 'InsurancePayors', label: 'Medicare / MA', note: '', noteError: '', legend: {}, hasStatus: true }, over || {})];
+}
+async function p2Search_(h, text) {
+  const inp = h.$('#kb-ins-input');
+  inp.value = text; h.read('insLookupInput_')(inp); h.flushTimers(); await tick(); await tick();
+  return h.$('#kb-ins-results');
+}
+
+test('Payor 2 DOM: when no plan holds every word typed, the lookup says so ABOVE the cards with the not-listed rule — the cards stay as the nearest names; a catch-all row and a table not searched each change what it says (driven)', async () => {
+  const h = boot();
+  let answer = { total: 795, full: 0, cap: 8, tables: p2Tables_(), coverage: [{ key: 'InsurancePayors', label: 'Medicare / MA', state: 'searched', rows: 1150, unread: 0 }],
+    matches: [{ table: 'InsurancePayors', name: 'Aetna Better Health of Ohio', networkStatus: 'INN', details: [], partial: true },
+      { table: 'InsurancePayors', name: 'Aetna Medicare Assure', networkStatus: 'INN', details: [], partial: true }] };
+  h.run.respond('searchInsurancePayors', () => answer);
+  bootLookups(h);
+  let res = await p2Search_(h, 'bright <b>health</b>');
+  const guide = res.querySelector('.kb-ins-guide');
+  assert.ok(guide, 'the answer opens with a notice — it used to be eight cards for other plans and no word about "not listed"');
+  assert.ok(/No plan on the payor sheets has every word of/.test(guide.textContent) && /TRY/.test(guide.textContent) && /nearest names are below/.test(guide.textContent), guide.textContent);
+  assert.ok(/bright <b>health<\/b>/.test(guide.textContent) && !guide.querySelector('b b'), 'the query is escaped');
+  assert.ok(!/covers plans its sheet does not list/.test(guide.textContent), 'no catch-all row among the cards: none is mentioned');
+  assert.strictEqual(res.querySelectorAll('.kb-ins-card').length, 2, 'the nearest names are still drawn');
+  assert.ok(guide.compareDocumentPosition(res.querySelector('.kb-ins-card')) & h.window.Node.DOCUMENT_POSITION_FOLLOWING, 'and the notice comes first');
+  assert.ok(!res.querySelector('.kb-ins-part'), 'every card is a nearest name — the notice says it once, no card repeats it');
+  assert.ok(/Showing the 2 nearest of 795 plans that share a word/.test((res.querySelector('.kb-ins-more') || {}).textContent || ''), 'the count is called what it is');
+  // A catch-all row among the nearest: it applies before the TRY rule.
+  answer.matches[0].catchAll = true;
+  res = await p2Search_(h, 'bright health 2');
+  assert.ok(/a row below that covers plans its sheet does not list applies if it fits this plan; otherwise a plan that isn’t listed follows the TRY rules/.test(res.querySelector('.kb-ins-guide').textContent),
+    res.querySelector('.kb-ins-guide').textContent);
+  // A table that was not searched: not yet "not listed".
+  answer.coverage.push({ key: 'UhcPayors', label: 'UHC by state', state: 'missing', rows: 0, unread: 0 });
+  res = await p2Search_(h, 'bright health 3');
+  const gap = res.querySelector('.kb-ins-guide.gap');
+  assert.ok(gap && /not yet/.test(gap.textContent) && /Not every table was searched/.test(gap.textContent), 'with a table unread the rule is not given as settled');
+});
+
+test('Payor 2 DOM: beside plans that hold every word, a card that holds only some is marked, and the line under the cards counts plans with EVERY word — an answer from before Payor 2 keeps the line it had (driven)', async () => {
+  const h = boot();
+  let answer = { total: 1342, full: 1, cap: 8, tables: p2Tables_(), matches: [
+    { table: 'InsurancePayors', name: 'Sunflower Health Plan (KS)', networkStatus: 'INN', details: [] },
+    { table: 'InsurancePayors', name: 'Aetna Better Health Premier Plan', networkStatus: 'INN', details: [], partial: true },
+    { table: 'InsurancePayors', name: 'Alignment Health Plan AZ', networkStatus: 'INN', details: [], partial: true }] };
+  h.run.respond('searchInsurancePayors', () => answer);
+  bootLookups(h);
+  let res = await p2Search_(h, 'sunflower health plan');
+  const cards = Array.from(res.querySelectorAll('.kb-ins-card'));
+  assert.deepStrictEqual(cards.map((c) => !!c.querySelector('.kb-ins-part')), [false, true, true], 'the two that hold some of the words say so; the plan itself does not');
+  assert.ok(!res.querySelector('.kb-ins-guide'), 'a plan holds every word: no "not listed" notice');
+  assert.strictEqual(res.querySelector('.kb-ins-more').textContent, '1 plan has every word you typed; the other 2 shown have only some of them.',
+    'it read "Showing 3 of 1342 matches — type more of the name to narrow"');
+  answer = { total: 1770, full: 558, cap: 8, tables: p2Tables_(), matches: [{ table: 'InsurancePayors', name: 'UHC A', networkStatus: '', details: [] }, { table: 'InsurancePayors', name: 'UHC B', networkStatus: '', details: [] }] };
+  res = await p2Search_(h, 'uhc tx');
+  assert.strictEqual(res.querySelector('.kb-ins-more').textContent, 'Showing 2 of 558 plans that have every word you typed — type more of the name to narrow.', 'of 558, not of 1,770');
+  answer = { total: 2, full: 2, cap: 8, tables: p2Tables_(), matches: answer.matches };
+  res = await p2Search_(h, 'uhc tx 2');
+  assert.ok(!res.querySelector('.kb-ins-more'), 'every plan with the words is shown: no line');
+  // An answer with no `full` (a server from before Payor 2).
+  answer = { total: 40, cap: 8, tables: p2Tables_(), matches: [{ table: 'InsurancePayors', name: 'UHC A', networkStatus: '', details: [], partial: true }] };
+  res = await p2Search_(h, 'uhc tx 3');
+  assert.strictEqual(res.querySelector('.kb-ins-more').textContent, 'Showing 1 of 40 matches — type more of the name to narrow.');
+  assert.ok(!res.querySelector('.kb-ins-part') && !res.querySelector('.kb-ins-guide'), 'and claims nothing it was not told');
+});
+
+test('Payor 2 DOM: a card SAYS which codes the sheet leaves blank for its plan — on the button\'s count and under the answers; every code blank is said on the card itself; none blank, nothing (driven)', async () => {
+  const h = boot();
+  const answer = { total: 3, full: 3, cap: 8, tables: p2Tables_(), matches: [
+    { table: 'InsurancePayors', name: 'Aetna One', networkStatus: 'INN', codeCount: 4,
+      details: [{ label: 'K0800', value: 'X' }, { label: 'K0802', value: 'NO' }], blank: [{ label: 'K0816' }, { label: 'E0143 <i>x</i>', group: 'Walker' }] },
+    { table: 'InsurancePayors', name: 'Aetna Two', networkStatus: 'INN', codeCount: 3,
+      details: [{ label: 'Payor ID', value: 'SB520' }], blank: [{ label: 'K0800' }, { label: 'K0801' }, { label: 'K0802' }] },
+    { table: 'InsurancePayors', name: 'Aetna Three', networkStatus: 'INN', codeCount: 2, details: [{ label: 'K0800', value: 'X' }, { label: 'K0801', value: 'X' }], blank: [] },
+    { table: 'InsurancePayors', name: 'Aetna Four', networkStatus: 'INN', codeCount: 1, details: [], blank: [{ label: 'K0800' }] }] };
+  h.run.respond('searchInsurancePayors', () => answer);
+  bootLookups(h);
+  const res = await p2Search_(h, 'aetna');
+  const cards = Array.from(res.querySelectorAll('.kb-ins-card'));
+  assert.strictEqual(cards.length, 4);
+  // Some codes blank.
+  assert.ok(/Acceptance by code \(2 · 2 blank\)/.test(cards[0].querySelector('.kb-ins-det-btn').textContent), cards[0].querySelector('.kb-ins-det-btn').textContent);
+  const line = cards[0].querySelector('.kb-ins-grid .kb-ins-blank');
+  assert.ok(line && /Blank on the sheet — no answer for: K0816, Walker: E0143 <i>x<\/i>/.test(line.textContent) && !line.querySelector('i'),
+    'the blank codes are named under the answers, by category, escaped — they were simply missing from the card');
+  assert.ok(!cards[0].querySelector('.kb-ins-blank.all'));
+  // Every code blank.
+  const all = cards[1].querySelector('.kb-ins-blank.all');
+  assert.ok(all && /The sheet gives no answer for this plan — all 3 of its code columns are blank/.test(all.textContent), 'said on the card, not behind the button');
+  assert.ok(!all.closest('.kb-ins-grid') && !all.closest('[hidden]'), 'and visible without opening anything');
+  assert.ok(/Acceptance by code \(1\)/.test(cards[1].querySelector('.kb-ins-det-btn').textContent) && !cards[1].querySelector('.kb-ins-grid .kb-ins-blank'), 'its other detail keeps its button, with no second note');
+  // None blank.
+  assert.ok(!cards[2].querySelector('.kb-ins-blank') && /Acceptance by code \(2\)/.test(cards[2].querySelector('.kb-ins-det-btn').textContent), 'a full row says nothing');
+  // One code column, blank, and no other detail.
+  assert.ok(/its one code column is blank/.test(cards[3].querySelector('.kb-ins-blank.all').textContent) && !cards[3].querySelector('.kb-ins-det-btn'));
+});

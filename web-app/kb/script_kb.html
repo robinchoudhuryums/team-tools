@@ -364,6 +364,10 @@
   .kb-ins-legend dt { font-family: var(--mono); font-weight: 600; color: var(--muted-2); }
   .kb-ins-legend dd { margin: 0 0 5px; }
   .kb-ins-more { font-size: .74rem; color: var(--muted); margin-top: 6px; font-style: italic; }
+  /* 26post Payor 2: a name that holds only some of the words typed, and the codes a plan's row leaves blank. */
+  .kb-ins-part { font-size: .7rem; color: var(--muted); border: 1px dashed var(--line); border-radius: var(--radius-pill); padding: 1px 8px; white-space: nowrap; }
+  .kb-ins-blank { grid-column: 1 / -1; font-size: .74rem; color: var(--muted); margin-top: 6px; }
+  .kb-ins-blank.all { margin: 4px 0 2px; }
   /* The cross-reference under an item: what the payors ON SCREEN say about it.
      Wraps rather than scrolls — it sits inside a card that is already narrow in
      the drawer, and a strip that pushes its own row sideways takes the page
@@ -2836,6 +2840,25 @@ function insTablesOf_(res) {
   if (res && res.tables && res.tables.length) return res.tables;
   return [{ key: '', label: '', note: (res && res.note) || '', noteError: (res && res.noteError) || '', legend: null }];
 }
+/** PURE (Node-pinned) — 26post Payor 2: what the server said about how well
+ *  the cards match. `known` is false for an answer with no `full` count (a
+ *  server from before Payor 2) — nothing is claimed either way. `nearest`:
+ *  matches came back but NO plan holds every word typed, so the cards are only
+ *  the nearest names. `fullShown` / `partShown` count the cards of each kind. */
+function insMatchKind_(res) {
+  var ms = (res && res.matches) || [];
+  var out = { known: !!res && typeof res.full === 'number', full: 0, nearest: false, fullShown: 0, partShown: 0 };
+  if (!out.known) return out;
+  out.full = res.full;
+  ms.forEach(function (m) { if (m.partial) out.partShown++; else out.fullShown++; });
+  out.nearest = ms.length > 0 && out.full === 0;
+  return out;
+}
+/** Payor 2: the codes a plan's row leaves blank, as text — "K0816, K0838", or
+ *  under their item category where the sheet names one ("Walker: E0143"). */
+function insBlankList_(blank) {
+  return (blank || []).map(function (b) { return (b.group ? b.group + ': ' : '') + b.label; }).join(', ');
+}
 function insRenderResults_(suffix, q, res) {
   var host = document.getElementById('kb-ins-results' + suffix);
   if (!host) return;
@@ -2868,6 +2891,24 @@ function insRenderResults_(suffix, q, res) {
     return;
   }
   var html = insCoverageHtml_(res, false);   // F5: a table that was not searched is named above the cards
+  // Payor 2: cards are drawn for any plan that shares ONE word with the query,
+  // and on the real tables nearly every name a rep can type shares "health" or
+  // "plan" with hundreds — so a plan the sheets do not carry came back as eight
+  // unrelated cards and the not-listed rule was never given. When no plan holds
+  // every word, that is said FIRST, with the rule; the cards stay, as the
+  // nearest names (a misspelling still finds its plan).
+  var kind = insMatchKind_(res);
+  if (kind.nearest) {
+    var covN = insCoverage_(res);
+    var hasCatch = res.matches.some(function (m) { return m.catchAll; });
+    html += (covN.known && !covN.complete
+      ? '<div class="kb-ins-guide gap" role="note">' + icon('warning', 13) + ' No plan in the payor tables that were searched has every word of “' + esc(q) +
+        '” — the nearest names are below. Not every table was searched, so this is <b>not yet</b> “plan not listed”: check the table named above in its source sheet before following the TRY rules.</div>'
+      : '<div class="kb-ins-guide" role="note">' + icon('info', 13) + ' No plan on the payor sheets has every word of “' + esc(q) +
+        '” — the nearest names are below. If the plan is not one of them, it isn’t listed' +
+        (hasCatch ? ' by name: a row below that covers plans its sheet does not list applies if it fits this plan; otherwise' : ':') +
+        ' a plan that isn’t listed follows the <b>TRY</b> rules — submit to test authorization; credentialing decides going forward.</div>');
+  }
   var cards = {};
   // The join is BEST-EFFORT and its absence is reassuring, so it announces
   // itself when it fails: bare codes with no names look exactly like a payor
@@ -2902,9 +2943,22 @@ function insRenderResults_(suffix, q, res) {
     if (m.reimbursement) meta.push('Reimbursement: ' + esc(m.reimbursement));
     var det = (m.details || []);
     var detId = 'kb-ins-det' + suffix + '-' + i;
+    // Payor 2: a code the sheet leaves blank for this plan is SAID. Blank cells
+    // are not in `details`, so they used to be simply missing from the card.
+    // Every code blank is said on the card itself; some blank, on the button's
+    // count and in a line under the answers.
+    var blank = m.blank || [];
+    var allBlank = blank.length > 0 && blank.length === m.codeCount;
+    var blankAll = allBlank
+      ? '<div class="kb-ins-blank all" role="note">' + icon('info', 11) + ' The sheet gives no answer for this plan — ' +
+        (blank.length === 1 ? 'its one code column is blank' : 'all ' + blank.length + ' of its code columns are blank') + '.</div>'
+      : '';
+    var blankSome = (blank.length && !allBlank)
+      ? '<div class="kb-ins-blank">Blank on the sheet — no answer for: ' + esc(insBlankList_(blank)) + '</div>'
+      : '';
     var detHtml = det.length
       ? '<button type="button" class="kb-ins-det-btn" data-kb-primary aria-expanded="false" aria-controls="' + detId + '" onclick="insToggleLegend_(this)">' +
-          icon('chevronDown', 11) + ' Acceptance by code (' + det.length + ')</button>' +
+          icon('chevronDown', 11) + ' Acceptance by code (' + det.length + (blankSome ? ' · ' + blank.length + ' blank' : '') + ')</button>' +
         '<div class="kb-ins-grid" id="' + detId + '" hidden>' +
           insGroupedCells_(det, function (d) {
             // The value is the thing a rep is stuck on — `SI/PR` next to a
@@ -2918,14 +2972,18 @@ function insRenderResults_(suffix, q, res) {
               (known
                 ? '<button type="button" ' + vAttrs + ' onclick="insTermClick_(this)">' + esc(d.value) + '</button>'
                 : '<span ' + vAttrs + '>' + esc(d.value) + '</span>') + '</div>';
-          }) + '</div>'
+          }) + blankSome + '</div>'
       : '';
     // D3: the server ranks a plan that excludes the searched state LAST and
     // names the state; the card says so beside the name.
     var excl = m.excludedState ? '<span class="kb-ins-excl" title="This plan’s name excludes ' + esc(m.excludedState) + '">' + esc(m.excludedState) + ' excluded</span>' : '';
+    // Payor 2: beside plans that hold every word typed, one that holds only
+    // some of them says so (with none that do, the line above the cards does).
+    var part = (m.partial && kind.known && !kind.nearest)
+      ? '<span class="kb-ins-part" title="This name has only some of the words you typed">some of your words</span>' : '';
     var tk = named ? String(m.table || '') : '';
     cards[tk] = (cards[tk] || '') + '<div class="kb-ins-card' + (excl ? ' is-excl' : '') + '" data-kb-nav tabindex="-1">' +
-      '<div class="kb-ins-head"><span class="kb-ins-name">' + esc(m.name) + '</span>' + excl +
+      '<div class="kb-ins-head"><span class="kb-ins-name">' + esc(m.name) + '</span>' + excl + part +
         (m.state ? '<span class="kb-ins-state">' + esc(m.state) + '</span>' : '') + pill + '</div>' +
       (m.catchAll ? '<div class="kb-ins-catch">' + icon('info', 11) + ' Covers any ' +
         (m.state && !/^(multi-state|not state specific)/i.test(m.state) ? esc(m.state) + ' ' : '') + 'plan this sheet does not list by name</div>' : '') +
@@ -2935,7 +2993,7 @@ function insRenderResults_(suffix, q, res) {
       // short of says so — no note here used to mean "the tables agree".
       (m.alsoUnchecked ? '<div class="kb-ins-also unchecked" role="note">' + icon('info', 11) +
         ' <span>Not compared with the other payor tables — this search matched too many listings to check them all. Search the plan by its full name to compare.</span></div>' : '') +
-      detHtml + '</div>';
+      blankAll + detHtml + '</div>';
   });
   // PT1: a group per payor table that has matches, in the server's order —
   // its name (when there is more than one table), its standing note, its
@@ -2947,8 +3005,22 @@ function insRenderResults_(suffix, q, res) {
       (named ? '<div class="kb-ins-group-h">' + esc(t.label) + '</div>' : '') +
       insNoteHtml_(t, named) + cards[tk] + insKeyHtml_(t.legend) + '</div>';
   });
-  if (res.total > res.matches.length) {
-    html += '<div class="kb-ins-more">Showing ' + res.matches.length + ' of ' + res.total + ' matches — type more of the name to narrow.</div>';
+  // Payor 2: the count a rep is told to narrow is of plans holding EVERY word
+  // — "8 of 1,770" counted every row that shared one. An answer with no such
+  // count (a server from before Payor 2) keeps the line it had.
+  if (!kind.known) {
+    if (res.total > res.matches.length) {
+      html += '<div class="kb-ins-more">Showing ' + res.matches.length + ' of ' + res.total + ' matches — type more of the name to narrow.</div>';
+    }
+  } else if (kind.nearest) {
+    if (res.total > res.matches.length) {
+      html += '<div class="kb-ins-more">Showing the ' + res.matches.length + ' nearest of ' + res.total + ' plans that share a word with it.</div>';
+    }
+  } else if (kind.full > kind.fullShown) {
+    html += '<div class="kb-ins-more">Showing ' + kind.fullShown + ' of ' + kind.full + ' plans that have every word you typed — type more of the name to narrow.</div>';
+  } else if (kind.partShown) {
+    html += '<div class="kb-ins-more">' + (kind.full === 1 ? '1 plan has' : kind.full + ' plans have') + ' every word you typed; the other ' + kind.partShown + ' shown ' +
+      (kind.partShown === 1 ? 'has' : 'have') + ' only some of them.</div>';
   }
   host.innerHTML = html;
   oopRepaintXref_(suffix);

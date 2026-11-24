@@ -1075,6 +1075,16 @@ longer sent to reps.
      longer sees the team's outbound calls or the figures built from them;
      managers do.
 
+     **26post Payor 2 (2026-11-24) — searches checked against the real
+     tables.** The District of Columbia is found however it is written
+     ("dc", "d.c.", "Washington DC", "District of Columbia") and is no longer
+     mixed up with Washington state. With a state in the search, plans that
+     belong to another state come after that state's own. When no plan has
+     every word typed, the lookup says so above the cards and gives the
+     rule for a plan that is not listed; the cards are then only the nearest
+     names. A card names the codes its plan's row leaves blank on the sheet,
+     and says so on its face when every code is blank.
+
      **Cycle 23 Batch 4b (2026-10-01) — Metrics never caches what it could not
      read.** A call-data read that failed is an error on the date-range view (it was
      "no calls"), My Stats, Team Metrics and the ambient badge do not cache a

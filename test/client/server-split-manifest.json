@@ -4950,6 +4950,47 @@
     "insPayorFromSource_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-24",
+   "why": "26post Payor 2: the District of Columbia read as DC by the payor search's state readers (insDcPad_); insPayorMatch_ says whether a row holds every word (insPayorHasAll_); searchInsurancePayors ships the every-word count and each card's blank codes (insPayorBlankCodes_)",
+   "added": [
+    "insDcPad_",
+    "insPayorBlankCodes_",
+    "insPayorHasAll_"
+   ],
+   "removed": [],
+   "changed": [
+    "insLeadingStates_",
+    "insPayorMatch_",
+    "insPayorNameStates_",
+    "insStatesIn_",
+    "searchInsurancePayors"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-24",
+   "why": "26post Payor 2: a plan that names another state for certain ranks after the searched state's (insStatesIn_ sure, insPayorMatch_ other)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "insPayorMatch_",
+    "insPayorNameStates_",
+    "insStatesIn_",
+    "searchInsurancePayors"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-24",
+   "why": "26post Payor 2: insPayorBlankCodes_ decides a code column by the code parser alone",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "insPayorBlankCodes_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -12034,6 +12075,11 @@
    "kind": "function",
    "sha": "7fee6eb42489ab4e"
   },
+  "insDcPad_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "5fa7a0acd90667a2"
+  },
   "insEditDistance_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -12042,7 +12088,7 @@
   "insLeadingStates_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "3cfcd020e0cfcb5b"
+   "sha": "0a205d979c6b951b"
   },
   "insNameCodeDetail_": {
    "file": "70_kb.js",
@@ -12064,6 +12110,11 @@
    "kind": "function",
    "sha": "e5cf482163fbb413"
   },
+  "insPayorBlankCodes_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "bcd0fa67eb8a6393"
+  },
   "insPayorCatchAll_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -12079,10 +12130,15 @@
    "kind": "function",
    "sha": "fd7fe6f9c60a575e"
   },
+  "insPayorHasAll_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "f4907162a667685f"
+  },
   "insPayorMatch_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "b8155a72cca89978"
+   "sha": "cd92e7ad44f8085b"
   },
   "insPayorNameKey_": {
    "file": "70_kb.js",
@@ -12092,7 +12148,7 @@
   "insPayorNameStates_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "bb68f3c5b666a5d9"
+   "sha": "acd180d17b585a7d"
   },
   "insPayorNoteTidy_": {
    "file": "70_kb.js",
@@ -12147,7 +12203,7 @@
   "insStatesIn_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "a0db0e05a5eec900"
+   "sha": "c54e167f7210422f"
   },
   "installAutomationTriggers": {
    "file": "10_core.js",
@@ -15077,7 +15133,7 @@
   "searchInsurancePayors": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "952c0ecbe6422382"
+   "sha": "6462a9e0c3ca7ee0"
   },
   "searchMyCallNotes": {
    "file": "30_callnotes.js",

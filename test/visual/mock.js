@@ -2229,7 +2229,9 @@ function runRecAgo(msAgo, notes) {
     // defect from the operator's own post-deploy check.
     // PT1a: the source sheet's standing note rides every answer.
     // PT1: one search across the payor tables, each with its note and its sheet's key.
-    searchInsurancePayors: { total: 8, cap: 8,
+    // 26post Payor 2: `full` (plans holding every word), one card that holds only
+    // some of them, one that leaves two codes blank and one whose every code is blank.
+    searchInsurancePayors: { total: 8, full: 7, cap: 8,
       tables: [
         { key: 'InsurancePayors', label: 'Medicare / MA', noteError: '',
           note: 'Traditional Medicare or MA: no power orders regardless of insurance in OR, WA, ID, ND, SD, WY or MT. (If Medicare or a commercial plan, no rehab, nursing or other skilled nursing facility.) (Hospice okay if the mobility diagnosis differs from the hospice diagnosis — get documentation from the facility.)',
@@ -2245,7 +2247,7 @@ function runRecAgo(msAgo, notes) {
           note: "Use the row for the patient's primary insurance. Branch to Delivery Locations (Can deliver beyond an hour for priority referrals): Dallas-Fort Worth, TX (Irving, Texas); Austin/San Antonio; O'ahu Island, HI (Honolulu, HI).",
           legend: { MO: 'Medicaid Only', Yes: 'We can process', No: 'Do not process', OOP: 'OOP Only', 'Yes - Delivery Only': 'Based on several factors including shipping cost and profitability' } }],
       matches: [
-      { table: 'InsurancePayors', tableLabel: 'Medicare / MA', name: 'AETNA NETWORK GOLD S Plan Number 000001-EXTX0107', networkStatus: 'status not recorded',
+      { table: 'InsurancePayors', tableLabel: 'Medicare / MA', name: 'AETNA NETWORK GOLD S Plan Number 000001-EXTX0107', codeCount: 20, blank: [{ label: 'K0816' }, { label: 'E1161' }], networkStatus: 'status not recorded',
         waystar: '60054', qualification: 'Standard', reimbursement: '',
         details: [
           // T3: the server names each code column from the pricing tab. K0800
@@ -2263,9 +2265,9 @@ function runRecAgo(msAgo, notes) {
             code: { shaped: true, certain: false, tokens: [] }, item: '', itemCount: 0 },
           { label: 'Category', value: 'POV/Scooter',
             code: { shaped: false, certain: false, tokens: [] }, item: '', itemCount: 0 }] },
-      { table: 'InsurancePayors', tableLabel: 'Medicare / MA', name: 'MDX HAWAII (UHC AND HUMANA — MEDICARE ADVANTAGE PLANS)', networkStatus: 'in-network',
+      { table: 'InsurancePayors', tableLabel: 'Medicare / MA', name: 'MDX HAWAII (UHC AND HUMANA — MEDICARE ADVANTAGE PLANS)', codeCount: 2, blank: [{ label: 'K0800' }, { label: 'K0801' }], networkStatus: 'in-network',
         waystar: 'MDXHI', qualification: 'Yes', reimbursement: 'Yes', details: [] },
-      { table: 'InsurancePayors', tableLabel: 'Medicare / MA', name: 'PACIFICARE (UHC)', networkStatus: 'Accepted except HI', waystar: 'MULTIPLE', qualification: '', reimbursement: 'No', details: [] },
+      { table: 'InsurancePayors', tableLabel: 'Medicare / MA', name: 'PACIFICARE (UHC)', partial: true, networkStatus: 'Accepted except HI', waystar: 'MULTIPLE', qualification: '', reimbursement: 'No', details: [] },
       { table: 'MedicaidPayors', tableLabel: 'Primary Medicaid', name: 'Aetna Better Health of Texas (MCO)', networkStatus: 'OON W/ PA', waystar: '128TX', qualification: 'X',
         reimbursement: 'Testing', alsoUnchecked: true,   // F38: the bounded cross-table check stopped before this card
         details: [{ label: 'K0814', value: 'TRY', code: { shaped: true, certain: true, tokens: ['K0814'] }, item: '', itemCount: 0 }] },

@@ -16516,13 +16516,13 @@ test('D1–D3 (operator 2026-10-27): the payor lookup reads STATES by code or na
   vm.runInContext((serverSource().match(/const US_STATE_CODES = \[[\s\S]*?\];/) || [''])[0].replace(/^const /, 'var ') + '\n' +
     (serverSource().match(/const US_STATE_NAMES = \{[\s\S]*?\};/) || [''])[0].replace(/^const /, 'var ') + '\n' +
     (serverSource().match(/const INS_PAYOR_ALIAS_FAMILIES = \[[\s\S]*?\n\];/) || [''])[0].replace(/^const /, 'var '), ctx);
-  ['insPayorScore_', 'insStatesIn_', 'insLeadingStates_', 'insPayorNameStates_', 'insPayorMatch_', 'insPayorAliasSuggest_']
+  ['insDcPad_', 'insPayorHasAll_', 'insPayorScore_', 'insStatesIn_', 'insLeadingStates_', 'insPayorNameStates_', 'insPayorMatch_', 'insPayorAliasSuggest_']
     .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx, { filename: 'D#' + f }));
   const J = (e) => JSON.parse(vm.runInContext('JSON.stringify(' + e + ')', ctx));
   const UHC = [['uhc', 'unitedhealthcare', 'united healthcare']];
   const M = (n, q, g) => J('insPayorMatch_(' + JSON.stringify(n) + ',' + JSON.stringify(q) + ',' + JSON.stringify(g || UHC) + ')');
   // States read whole words, code or name; a code in a NAME only in capitals.
-  assert.deepStrictEqual(J('insStatesIn_("uhc tx", true)'), { states: ['TX'], rest: 'uhc' });
+  assert.deepStrictEqual(J('insStatesIn_("uhc tx", true)'), { states: ['TX'], rest: 'uhc', sure: ['TX'] });
   assert.deepStrictEqual(J('insStatesIn_("UnitedHealthcare New York", false)').states, ['NY']);
   assert.deepStrictEqual(J('insStatesIn_("Plans in Texas or Ohio", false)').states, ['TX', 'OH'], 'in/or are words in a name');
   assert.deepStrictEqual(J('insStatesIn_("humana in texas", true)').states, ['TX'], 'and "in" is a word in a query');
@@ -45520,12 +45520,12 @@ function pt1SearchCtx_(tabs, rawNotes) {
     KB_DATA_TABLES: { InsurancePayors: { tab: 'InsurancePayors', payorTable: 'Medicare / MA' }, OopPricing: { tab: 'X' },
       MedicaidPayors: { tab: 'MedicaidPayors', payorTable: 'Primary Medicaid' } },
     getEmployeeInfo_: () => ({ email: 'rep@x' }), getKbSearchSynonyms_: () => [],
-    insPayorMatch_: (name, q, g, cells) => { const n = [name].concat(cells || []).join(' ').toLowerCase(); return { score: n.indexOf(q) >= 0 ? (n === q ? 10 : 5) : 0, excluded: '' }; },
+    insPayorMatch_: (name, q, g, cells) => { const n = [name].concat(cells || []).join(' ').toLowerCase(); return { score: n.indexOf(q) >= 0 ? (n === q ? 10 : 5) : 0, excluded: '', all: n.indexOf(q) >= 0 }; },
     oopCodeIndex_: () => ({ byToken: {}, error: '' }),
     PropertiesService: { getScriptProperties: () => ({ getProperty: () => rawNotes }) },
     getKbSS_: () => ({ getSheetByName: (n) => (tabs[n] ? sheet(tabs[n]) : null) }) });
   ['hcpcsParse_', 'insNameCodeDetail_', 'insPayorRowObj_', 'insPayorCatchAll_', 'insPayorTables_', 'insPayorNotesParse_', 'insPayorNotes_',
-    'insPayorNameKey_', 'insPayorCrossDiff_', 'insCodeGroupSplit_', 'insPayorSlotOf_', 'searchInsurancePayors']
+    'insPayorNameKey_', 'insPayorCrossDiff_', 'insCodeGroupSplit_', 'insPayorSlotOf_', 'insPayorBlankCodes_', 'searchInsurancePayors']
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   return ctx;
 }
@@ -47219,7 +47219,7 @@ function c26StateCtx_() {
   const ctx = vm.createContext({});
   vm.runInContext((serverSource().match(/const US_STATE_CODES = \[[\s\S]*?\];/) || [''])[0].replace(/^const /, 'var ') + '\n' +
     (serverSource().match(/const US_STATE_NAMES = \{[\s\S]*?\};/) || [''])[0].replace(/^const /, 'var '), ctx);
-  ['insPayorScore_', 'insStatesIn_', 'insLeadingStates_', 'insPayorNameStates_', 'insPayorMatch_']
+  ['insDcPad_', 'insPayorHasAll_', 'insPayorScore_', 'insStatesIn_', 'insLeadingStates_', 'insPayorNameStates_', 'insPayorMatch_']
     .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx, { filename: 'c26#' + f }));
   return ctx;
 }
@@ -47228,7 +47228,7 @@ function c26SearchCtx_(tabs, tables) {
   const c = pt1SearchCtx_(tabs, null);
   vm.runInContext((serverSource().match(/const US_STATE_CODES = \[[\s\S]*?\];/) || [''])[0].replace(/^const /, 'var ') + '\n' +
     (serverSource().match(/const US_STATE_NAMES = \{[\s\S]*?\};/) || [''])[0].replace(/^const /, 'var '), c);
-  ['insPayorScore_', 'insStatesIn_', 'insLeadingStates_', 'insPayorNameStates_', 'insPayorMatch_']
+  ['insDcPad_', 'insPayorHasAll_', 'insPayorScore_', 'insStatesIn_', 'insLeadingStates_', 'insPayorNameStates_', 'insPayorMatch_']
     .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), c));
   Object.keys(tables || {}).forEach((k) => { c.KB_DATA_TABLES[k] = tables[k]; });
   return c;
@@ -47236,7 +47236,8 @@ function c26SearchCtx_(tabs, tables) {
 
 test('F6 (cycle 26): an exclusion word excludes only the states that DIRECTLY follow it — "Non-Dual" beside a Texas State cell is a Texas plan, not one that excludes Texas (driven)', () => {
   const c = c26StateCtx_();
-  const NS = (n) => hJ(c.insPayorNameStates_(n));
+  // (26post Payor 2 added `sure` to the return; these assertions are about the two lists F6 changed.)
+  const NS = (n) => { const r = hJ(c.insPayorNameStates_(n)); return { excluded: r.excluded, named: r.named }; };
   // THE CASE: the word, then something that is not a state.
   assert.deepStrictEqual(NS('UHC Community Plan Non-Dual'), { excluded: [], named: [] });
   assert.deepStrictEqual(NS('UHC Community Plan Non-Dual TX'), { excluded: [], named: ['TX'] }, 'it took every state to the end of the name before');
@@ -52476,6 +52477,166 @@ test('26post F36: a rep is sent nothing about the team\'s outbound calls — not
   assert.ok(/Handled calls=130/.test(m.mAdjustedHtml_(adj, 'team')), 'a manager still sees the outbound rows (non-vacuous)');
   const cli = extractScript('metrics/script_metrics.html');
   assert.ok(/var om = data\.outboundMeta \|\| null;\s*if \(om\) html \+= mOutboundRowHtml_\(/.test(cli), 'and the Team rail draws its outbound row only when the payload carries the state');
+});
+
+console.log('\n26post Payor 2 — searches driven over the real tables (FO-26-3, FO-26-4)');
+
+test('Payor 2: insDcPad_ rewrites the District of Columbia — spelled out, "D.C", after "Washington" — as the code DC at the SAME length, and leaves what is not the District alone', () => {
+  const c = c26StateCtx_();
+  [['District of Columbia', 'DC                  '], ['Washington D.C Medicaid', 'DC             Medicaid'], ['Washington DC UHC', 'DC            UHC'],
+    ['Wshington District of Columbia X', 'DC                             X'], ['plan (D.C.)', 'plan (DC  )'], ['d.c. medicaid', 'DC   medicaid'],
+    ['washington, dc', 'DC            ']].forEach(([from, to]) => {
+    assert.strictEqual(c.insDcPad_(from), to, from);
+    assert.strictEqual(c.insDcPad_(from).length, from.length, 'the length is kept, so an offset into the text still holds: ' + from);
+    assert.strictEqual(c.insDcPad_(c.insDcPad_(from)), to, 'and a second pass changes nothing');
+  });
+  ['M.D.C. plan', 'Washington District Health', 'Washington Medicaid', 'Dr. D. Clark', 'DC Medicaid', ''].forEach((t) => assert.strictEqual(c.insDcPad_(t), t, 'left as written: ' + t));
+  assert.strictEqual(c.insDcPad_(null), '');
+});
+
+test('Payor 2: the state readers read the District of Columbia as DC and never as Washington — in a name, in a State cell, in a query and inside an exclusion', () => {
+  const c = c26StateCtx_();
+  const S = (t, q) => hJ(c.insStatesIn_(t, !!q));
+  assert.deepStrictEqual(S('Washington D.C Medicaid (Traditional Only)').states, ['DC'], 'it read WA — the word "Washington", then two stray letters');
+  assert.deepStrictEqual(S('District of Columbia').states, ['DC'], 'a three-word name: the reader tried one and two words, so a State cell named nothing');
+  assert.deepStrictEqual(S('Wshington District of Columbia Medicaid MCOs not Listed Below'), { states: ['DC'], rest: 'Medicaid MCOs not Listed Below', sure: ['DC'] });
+  assert.deepStrictEqual(S('d.c. medicaid', true), { states: ['DC'], rest: 'medicaid', sure: ['DC'] }, 'a rep\'s "d.c." — it was two stray letters and no state');
+  assert.deepStrictEqual(S('district of columbia medicaid', true).states, ['DC']);
+  assert.deepStrictEqual(S('Washington Medicaid (Traditional Only)').states, ['WA'], 'the state is still the state');
+  assert.deepStrictEqual(S('Washington State Medicaid').states, ['WA']);
+  const NS = (n) => hJ(c.insPayorNameStates_(n));
+  assert.deepStrictEqual(NS('UHC (all states other than District of Columbia and TX) PPO').excluded, ['DC', 'TX'], 'an exclusion list reads it too');
+  assert.deepStrictEqual([NS('Aetna except Washington D.C. plans in Ohio').excluded, NS('Aetna except Washington D.C. plans in Ohio').named], [['DC'], ['OH']],
+    'and the name after the list is read from where the list ended — the padding keeps the offsets');
+  assert.deepStrictEqual(hJ(c.insLeadingStates_('District of Columbia and TX plans')).states, ['DC', 'TX']);
+});
+
+test('Payor 2: a "dc medicaid" search ranks the District\'s own rows first, and a "washington medicaid" search marks them as another state\'s (the real Medicaid tab\'s rows)', () => {
+  const c = c26StateCtx_();
+  const M = (name, q, cells) => hJ(c.insPayorMatch_(name, q, [], cells));
+  const dcTrad = M('Washington D.C Medicaid (Traditional Only)', 'dc medicaid', ['District of Columbia']);
+  const dcCatch = M('Wshington District of Columbia Medicaid MCOs not Listed Below', 'dc medicaid', ['District of Columbia']);
+  const stateless = M('Medicaid - Molina', 'dc medicaid', []);
+  const allOther = M('Traditional Medicaid in ALL Other States', 'dc medicaid', ['Not state specific']);
+  assert.ok(dcTrad.score > stateless.score && dcCatch.score > stateless.score && dcTrad.score > allOther.score,
+    'the District\'s rows above a plan that names no state: ' + JSON.stringify([dcTrad.score, dcCatch.score, stateless.score, allOther.score]) +
+    ' — they ranked BELOW it (one read as Washington\'s, the other as naming no state), under the "all other states" row');
+  assert.ok(!dcTrad.other && !dcCatch.other);
+  const asWa = M('Washington D.C Medicaid (Traditional Only)', 'washington medicaid', ['District of Columbia']);
+  const wa = M('Washington Medicaid (Traditional Only)', 'washington medicaid', ['Washington']);
+  assert.ok(asWa.other === true && !wa.other && wa.score > asWa.score, 'searched as Washington, the District\'s row is another state\'s — it was listed as Washington\'s');
+  assert.ok(M('Carefirst Community Health Plan', 'dc', ['District of Columbia']).score > 0, 'a state alone finds a plan by its State cell — "dc" found only the plans with DC in their own name');
+  assert.strictEqual(M('Carefirst Community Health Plan', 'dc', ['Maryland']).score, 0);
+});
+
+test('Payor 2: insPayorHasAll_ — every word of two characters or more, read as letters and digits; insPayorMatch_ carries it as `all`, as typed or as an alias gives it', () => {
+  const c = c26StateCtx_();
+  const A = (n, q) => c.insPayorHasAll_(n, q);
+  assert.strictEqual(A('Sunflower Health Plan (KS)', 'sunflower health plan'), true);
+  assert.strictEqual(A('Aetna Better Health Premier Plan', 'sunflower health plan'), false, 'two of three words is not all');
+  assert.strictEqual(A('Anthem MediBlue Extra HMO H3447-024 (IN)', 'h3447-024'), true, 'a plan number is two words, both there');
+  assert.strictEqual(A('Blue Cross Blue Shield of Texas', 'blue cross/blue shield'), true, 'punctuation between words is not a word');
+  assert.strictEqual(A('Aetna', 'a'), false, 'a query with no word of two characters asks for nothing — never "all"');
+  assert.strictEqual(A('', 'aetna'), false);
+  const M = (name, q, g, cells) => hJ(c.insPayorMatch_(name, q, g || [], cells));
+  assert.strictEqual(M('Aetna Better Health of Ohio', 'bright health').all, false, 'shares "health" — scored, and not all');
+  assert.ok(M('Aetna Better Health of Ohio', 'bright health').score > 0);
+  assert.strictEqual(M('Bright Health Plan', 'bright health').all, true);
+  const UHC = [['uhc', 'unitedhealthcare', 'united healthcare']];
+  assert.strictEqual(M('United Healthcare Dual Complete', 'uhc dual', UHC).all, true, 'the alias gives the word the name spells out');
+  assert.strictEqual(M('United Way Dual plan', 'uhc dual', UHC).all, false, '"united" alone is not the alias');
+  assert.strictEqual(M('UHC Star Plus (TX)', 'uhc tx', []).all, true, 'the state is matched on its own — it is not one of the words');
+  assert.strictEqual(M('Carefirst', 'ohio', [], ['Ohio']).all, true, 'a state alone asks for no word');
+  assert.deepStrictEqual(M('Cigna', 'aetna'), { score: 0, excluded: '', all: false }, 'no match is never "all"');
+});
+
+test('Payor 2: a state is named for CERTAIN by its full name or an unambiguous code — a bare PA, MA, ID, CO, IN, OR is a state only loosely, "(IN)" certainly, "(MA)" never; only a certain state marks a plan as another state\'s', () => {
+  const c = c26StateCtx_();
+  const S = (t) => hJ(c.insStatesIn_(t, false));
+  assert.deepStrictEqual([S('Alignment Health Texas (HMO OON w PA)').states, S('Alignment Health Texas (HMO OON w PA)').sure], [['TX', 'PA'], ['TX']], 'PA is prior auth here');
+  assert.deepStrictEqual(S('BCBS Federal (When member ID Starts with R)').sure, [], 'a member ID is not Idaho for certain');
+  assert.deepStrictEqual(S('AARP MA Choice Plan 2').sure, [], 'MA is Medicare Advantage on these sheets');
+  assert.deepStrictEqual(S('Anthem BCBS (NH) (MA) (Access Integra)').sure, ['NH'], '"(MA)" is loose even in parentheses');
+  assert.deepStrictEqual(S('Anthem MediBlue Extra HMO H3447-024 (IN)').sure, ['IN'], 'in parentheses of its own, the code is the state');
+  assert.deepStrictEqual(S('UHC Dual Complete IN-S3 PPO').sure, [], 'bare, it is not certain');
+  assert.deepStrictEqual(S('BCBS of Ohio and IL plans').sure, ['OH', 'IL']);
+  const M = (name, q, cells) => hJ(c.insPayorMatch_(name, q, [], cells));
+  assert.strictEqual(M('Highmark Wholecare BCBS medicaid HMO', 'bcbs arkansas medicaid', ['Pennsylvania']).other, true, 'a State cell is certain');
+  assert.strictEqual(M('Anthem BCBS Ohio medicaid', 'bcbs arkansas medicaid').other, true);
+  assert.ok(!M('Aetna Silver 5: Aetna Network - oon (can not do PA)', 'aetna tx').other, 'a loose code never sends a plan to the back');
+  assert.strictEqual(M('Aetna Silver 5: Aetna Network - oon (can not do PA)', 'aetna tx').score, M('Aetna', 'aetna tx').score - 20, 'it keeps the 20 it lost before, and no more');
+  assert.ok(!M('BCBS Federal', 'bcbs arkansas').other, 'a plan that names no state is nobody else\'s');
+  assert.ok(!M('BCBS of Arkansas and Ohio', 'bcbs arkansas').other, 'nor one that names the searched state among others');
+});
+
+const P2_MA = [['Insurance', 'Network Status', 'K0800', 'K0801', 'K0802', 'Payor ID'],
+  ['Aetna Better Health of Ohio', 'INN', 'X', '', 'NO', ''],
+  ['Bright Start Plan', 'OON', 'X', 'X', 'X', '77'],
+  ['Sunflower Health Plan (KS)', 'INN', '', '', '', '12']];
+const P2_BCBS = [['Insurance', 'State', 'Company', 'K0800', 'K0801'],
+  ['Highmark BCBS medicaid HMO', 'Pennsylvania', '', 'NO', 'NO'],
+  ['medicaid', 'Multi-state / other', 'BCBS Arkansas', '', ''],
+  ['BCBS Federal medicaid', 'Multi-state / other', '', 'TRY', 'TRY']];
+const P2_TABLES = { BcbsPayors: { tab: 'BcbsPayors', payorTable: 'BCBS / Anthem' } };
+
+test('Payor 2 (driven): the search says how many plans hold EVERY word — none, and the cards are only the nearest names; one that holds some is marked beside those that hold all', () => {
+  const c = c26SearchCtx_({ InsurancePayors: P2_MA }, {});
+  vm.runInContext(extractRawFunction('Code.js', 'insPayorBlankCodes_'), c);
+  let r = hJ(c.searchInsurancePayors('bright health'));
+  assert.deepStrictEqual([r.total, r.full, r.notFound], [3, 0, false],
+    'three rows share a word, none holds both — the answer used to be three cards and nothing else, so "plan not listed" was never said');
+  assert.ok(r.matches.every((m) => m.partial === true), 'every card is a nearest name');
+  r = hJ(c.searchInsurancePayors('sunflower health plan'));
+  assert.deepStrictEqual([r.total, r.full], [3, 1]);
+  assert.deepStrictEqual(r.matches.map((m) => [m.name, !!m.partial]), [['Sunflower Health Plan (KS)', false], ['Aetna Better Health of Ohio', true], ['Bright Start Plan', true]],
+    'the plan with every word first and unmarked; the two that hold one are marked');
+  r = hJ(c.searchInsurancePayors('aetna'));
+  assert.deepStrictEqual([r.full, r.matches.length, 'partial' in r.matches[0]], [1, 1, false], 'a plain match carries no mark');
+  r = hJ(c.searchInsurancePayors('zzqx'));
+  assert.deepStrictEqual([r.total, r.full, r.notFound], [0, 0, true], 'nothing shares a word: the not-found answer, as before');
+});
+
+test('Payor 2 (driven): with a state in the search, a plan that is certainly another state\'s comes after every plan for that state or for none — whatever its score', () => {
+  const c = c26SearchCtx_({ BcbsPayors: P2_BCBS }, P2_TABLES);
+  vm.runInContext(extractRawFunction('Code.js', 'insPayorBlankCodes_'), c);
+  const r = hJ(c.searchInsurancePayors('bcbs arkansas medicaid'));
+  assert.deepStrictEqual(r.matches.map((m) => m.name), ['medicaid', 'BCBS Federal medicaid', 'Highmark BCBS medicaid HMO'],
+    'Arkansas\'s own row, then the plan for no state, then Pennsylvania\'s — which came FIRST, its name holding "bcbs medicaid" in the order typed');
+  assert.deepStrictEqual(r.matches.map((m) => !!m.otherState), [false, false, true]);
+  const M = (i) => hJ(c.insPayorMatch_(P2_BCBS[i][0], 'bcbs arkansas medicaid', [], [P2_BCBS[i][1], P2_BCBS[i][2]]));
+  assert.ok(M(1).score > M(2).score, 'on score alone Pennsylvania would still lead (' + M(1).score + ' > ' + M(2).score + ') — the order is the rule\'s');
+  const se = stripJsComments_(extractRawFunction('Code.js', 'searchInsurancePayors'));
+  assert.ok(/\(a\.excluded \? 1 : 0\) - \(b\.excluded \? 1 : 0\) \|\| \(a\.other \? 1 : 0\) - \(b\.other \? 1 : 0\) \|\| b\.score - a\.score/.test(se), 'excluded last, then another state\'s, then the score');
+});
+
+test('Payor 2: insPayorBlankCodes_ names the CODE columns a row leaves blank — never a column that is not a code — and the search ships them on every card (driven)', () => {
+  const c = c26SearchCtx_({ InsurancePayors: P2_MA }, {});
+  vm.runInContext(extractRawFunction('Code.js', 'insPayorBlankCodes_'), c);
+  const B = (h, r) => hJ(c.insPayorBlankCodes_(h, r));
+  assert.deepStrictEqual(B(P2_MA[0], P2_MA[1]), { codes: 3, blank: [{ label: 'K0801' }] }, 'the blank Payor ID is not a code, nor is the Network Status');
+  assert.deepStrictEqual(B(P2_MA[0], P2_MA[2]), { codes: 3, blank: [] });
+  assert.deepStrictEqual(B(P2_MA[0], P2_MA[3]).blank.map((b) => b.label), ['K0800', 'K0801', 'K0802']);
+  assert.deepStrictEqual(B(['Insurance', 'Walker: E0143', 'Walker: E0143 & E0156', 'Hospital Bed: E0260', 'last updated'], ['P', '', 'Yes', ' ', '']),
+    { codes: 3, blank: [{ label: 'E0143', group: 'Walker' }, { label: 'E0260', group: 'Hospital Bed' }] }, 'under its item category where the sheet names one; spaces are blank');
+  assert.deepStrictEqual(B(['Insurance'], ['P']), { codes: 0, blank: [] });
+  const r = hJ(c.searchInsurancePayors('plan'));
+  const by = {}; r.matches.forEach((m) => { by[m.name] = m; });
+  assert.deepStrictEqual([by['Bright Start Plan'].codeCount, by['Bright Start Plan'].blank], [3, []]);
+  assert.deepStrictEqual([by['Sunflower Health Plan (KS)'].codeCount, by['Sunflower Health Plan (KS)'].blank.length, by['Sunflower Health Plan (KS)'].details.length], [3, 3, 1],
+    'every code blank: the card had one detail — the payor ID — and said nothing of the three codes');
+});
+
+test('Payor 2: insMatchKind_ reads the server\'s every-word count — nothing claimed for an answer without one; insBlankList_ writes the blank codes under their category', () => {
+  const c = vm.createContext({});
+  vm.runInContext(['insMatchKind_', 'insBlankList_'].map((f) => extractFunction('kb/script_kb.html', f)).join('\n'), c);
+  const K = (r) => hJ(c.insMatchKind_(r));
+  assert.deepStrictEqual(K({ total: 3, matches: [{ name: 'A' }] }), { known: false, full: 0, nearest: false, fullShown: 0, partShown: 0 }, 'a server from before Payor 2: no claim');
+  assert.deepStrictEqual(K(null).known, false);
+  assert.deepStrictEqual(K({ total: 3, full: 0, matches: [{ partial: true }, { partial: true }] }), { known: true, full: 0, nearest: true, fullShown: 0, partShown: 2 });
+  assert.deepStrictEqual(K({ total: 9, full: 4, matches: [{}, {}, { partial: true }] }), { known: true, full: 4, nearest: false, fullShown: 2, partShown: 1 });
+  assert.strictEqual(K({ total: 0, full: 0, matches: [] }).nearest, false, 'no cards at all is the not-found answer, not "nearest"');
+  assert.strictEqual(c.insBlankList_([{ label: 'K0816' }, { label: 'E0143', group: 'Walker' }]), 'K0816, Walker: E0143');
+  assert.strictEqual(c.insBlankList_(null), '');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

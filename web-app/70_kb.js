@@ -872,29 +872,65 @@ function insPayorScore_(name, query) {
   if (hits === toks.length) score += 30;            // every token present
   return score;
 }
+/** PURE (Node-pinned) — 26post Payor 2: the District of Columbia, however a
+ *  sheet or a rep writes it — "District of Columbia", "D.C", "D.C.",
+ *  "Washington DC", "Washington D.C", "Wshington District of Columbia" —
+ *  rewritten as the code DC, PADDED with spaces to the length it had, so every
+ *  offset into the text still holds. The state readers below split on words
+ *  and tried one- and two-word names only: a State cell reading "District of
+ *  Columbia" named nothing, and "Washington D.C Medicaid" named WASHINGTON —
+ *  so a "dc medicaid" search ranked the District's own rows below every
+ *  stateless plan, and a "washington medicaid" search listed them (measured on
+ *  the operator's real tables). Idempotent. */
+function insDcPad_(text) {
+  const pad = function (m) { return 'DC' + new Array(Math.max(0, m.length - 2) + 1).join(' '); };
+  return String(text == null ? '' : text)
+    .replace(/\bw[a-z]{0,2}shington[\s,]+(?:d\.\s?c\b\.?|dc\b|district\s+of\s+columbia\b)/gi, pad)
+    .replace(/\bdistrict\s+of\s+columbia\b/gi, pad)
+    // a bare "D.C" only where no letter-and-dot runs into it ("M.D.C." is not the District)
+    .replace(/(^|[^A-Za-z.])(d\.\s?c\b\.?)/gi, function (m, pre, dc) { return pre + pad(dc); });
+}
 /** PURE (Node-pinned) — D1 (operator 2026-10-27): the US states a text names,
  *  as codes, WHOLE WORDS only. A full name reads in any case ("Texas", "new
  *  york"); a two-letter code only in capitals in a payor NAME ("UHC TX"),
  *  because a name is prose ("in", "or"). In a typed QUERY a rep writes
  *  lower case, so a code reads in any case there — except the three that are
  *  everyday words in a query ("in", "or", "me"), which only count in capitals.
- *  Returns { states: ['TX', …], rest } — `rest` is the text with the states
- *  taken out. */
+ *  Returns { states: ['TX', …], rest, sure } — `rest` is the text with the
+ *  states taken out.
+ *
+ *  26post Payor 2: `sure` are the states the text names for CERTAIN — a full
+ *  name, or a code that is not also a word or another term on these sheets. A
+ *  bare "PA" (prior auth), "MA" (Medicare Advantage), "ID" (member ID), "CO",
+ *  "IN", "OR", "ME", "OK", "HI", "DE", "MD", "LA" or "PR" still reads as its
+ *  state (a search for it finds the row), but is certain only in parentheses
+ *  of its own — "(IN)" — and "(MA)" / "(PR)" not even there: the list is
+ *  `insPlanStatesNamed_`'s. Only a certain state marks a plan as another
+ *  state's (`insPayorMatch_`). */
 function insStatesIn_(text, isQuery) {
-  const words = String(text == null ? '' : text).split(/[^A-Za-z0-9&]+/).filter(function (w) { return !!w; });
-  const states = [], rest = [];
-  const add = function (c) { if (states.indexOf(c) < 0) states.push(c); };
+  const padded = insDcPad_(text);
+  const words = padded.split(/[^A-Za-z0-9&]+/).filter(function (w) { return !!w; });
+  const states = [], rest = [], sure = [];
+  const LOOSE = { MA: 1, PA: 1, OR: 1, IN: 1, ME: 1, OK: 1, HI: 1, DE: 1, CO: 1, ID: 1, MD: 1, LA: 1, PR: 1 };
+  const add = function (c, certain) {
+    if (states.indexOf(c) < 0) states.push(c);
+    if (certain && sure.indexOf(c) < 0) sure.push(c);
+  };
+  const codeSure = function (c) {
+    if (!LOOSE[c]) return true;
+    return c !== 'MA' && c !== 'PR' && new RegExp('\\(\\s*' + c + '\\s*\\)').test(padded);
+  };
   for (let i = 0; i < words.length; i++) {
     const two = i + 1 < words.length ? (words[i] + ' ' + words[i + 1]).toLowerCase() : '';
-    if (two && Object.prototype.hasOwnProperty.call(US_STATE_NAMES, two)) { add(US_STATE_NAMES[two]); i++; continue; }
+    if (two && Object.prototype.hasOwnProperty.call(US_STATE_NAMES, two)) { add(US_STATE_NAMES[two], true); i++; continue; }
     const w = words[i], lc = w.toLowerCase();
-    if (Object.prototype.hasOwnProperty.call(US_STATE_NAMES, lc)) { add(US_STATE_NAMES[lc]); continue; }
+    if (Object.prototype.hasOwnProperty.call(US_STATE_NAMES, lc)) { add(US_STATE_NAMES[lc], true); continue; }
     const up = w.toUpperCase();
     if (w.length === 2 && US_STATE_CODES.indexOf(up) >= 0 &&
-        (w === up || (isQuery && ['in', 'or', 'me'].indexOf(lc) < 0))) { add(up); continue; }
+        (w === up || (isQuery && ['in', 'or', 'me'].indexOf(lc) < 0))) { add(up, codeSure(up)); continue; }
     rest.push(w);
   }
-  return { states: states, rest: rest.join(' ') };
+  return { states: states, rest: rest.join(' '), sure: sure };
 }
 /** PURE (Node-pinned) — cycle 26 F6: the states a text OPENS with — a list of
  *  states (code in capitals, or a full name) joined by "and", "or", commas and
@@ -903,7 +939,7 @@ function insStatesIn_(text, isQuery) {
  *  end } — `end` is how far into the text the list runs (0 when it opens with
  *  something else). "TX and Oklahoma plans" → TX, OK; "Dual TX" → none. */
 function insLeadingStates_(text) {
-  const s = String(text == null ? '' : text);
+  const s = insDcPad_(text);   // same length, so `end` still indexes the caller's text
   const re = /[A-Za-z0-9]+/g;
   const words = [];
   let m;
@@ -929,7 +965,7 @@ function insLeadingStates_(text) {
 }
 /** PURE (Node-pinned) — D3: the states a payor NAME excludes ("UHC (all
  *  states other than TX)", "Aetna except Texas and Oklahoma"), and the states
- *  it names otherwise. Returns { excluded: [...], named: [...] }.
+ *  it names otherwise. Returns { excluded: [...], named: [...], sure: [...] }.
  *
  *  Cycle 26 F6: an exclusion word excludes only the states that DIRECTLY
  *  follow it (inside its bracket). It used to take every state from the word
@@ -938,7 +974,7 @@ function insLeadingStates_(text) {
  *  excluding the one state it is for. A word followed by anything else
  *  ("Non-Dual", "except where noted") excludes nothing and stays in the name. */
 function insPayorNameStates_(name) {
-  const n = String(name == null ? '' : name);
+  const n = insDcPad_(name);   // Payor 2: every slice below is of the one normalised text
   const re = /\b(?:other\s+than|except|excluding|excludes|excl|outside(?:\s+of)?|not\s+in|non)\b[\s.:-]*/gi;
   const excluded = [];
   let outside = '', from = 0, m;
@@ -953,7 +989,42 @@ function insPayorNameStates_(name) {
     re.lastIndex = from;
   }
   outside += n.slice(from);
-  return { excluded: excluded, named: insStatesIn_(outside, false).states };
+  const read = insStatesIn_(outside, false);
+  return { excluded: excluded, named: read.states, sure: read.sure };   // Payor 2: `sure` — named for certain
+}
+/** PURE (Node-pinned) — 26post Payor 2: does a plan's text hold EVERY word of
+ *  the query — each of two characters or more, read as letters and digits, so
+ *  "h3447-024" is two words? The scorer above counts a row that shares ONE
+ *  word, and on the real tables (about 2,900 plans) nearly every plan name a
+ *  rep can type shares "health", "plan" or "care" with hundreds of rows — so
+ *  the "plan not listed → TRY" answer, which waited for a search that matched
+ *  nothing at all, was almost never given. False for a query with no such
+ *  word. */
+function insPayorHasAll_(name, query) {
+  const n = String(name == null ? '' : name).toLowerCase();
+  const toks = String(query == null ? '' : query).toLowerCase().split(/[^a-z0-9&]+/).filter(function (t) { return t.length >= 2; });
+  if (!toks.length) return false;
+  return toks.every(function (t) { return n.indexOf(t) >= 0; });
+}
+/** PURE (Node-pinned) — 26post Payor 2: the CODE columns a plan's row leaves
+ *  blank. `insPayorRowObj_` keeps only the cells that hold a value, so a code
+ *  the sheet gives no answer for was simply missing from the card — and a rep
+ *  looking for that code could not tell "blank on the sheet" from "this card
+ *  does not show it" (about one code cell in six on the real tables). Returns
+ *  { codes, blank: [{label, group?}] } — `codes` counts the code columns. */
+function insPayorBlankCodes_(headers, row) {
+  const blank = [];
+  let codes = 0;
+  for (let c = 1; c < (headers || []).length; c++) {
+    const h = String(headers[c] == null ? '' : headers[c]).trim();
+    if (!h) continue;
+    const g = insCodeGroupSplit_(h);
+    if (!hcpcsParse_(g.label).shaped) continue;   // a code column — never Network Status, a payor ID or a date
+    codes++;
+    if (String(row[c] == null ? '' : row[c]).trim()) continue;
+    blank.push(g.group ? { label: g.label, group: g.group } : { label: g.label });
+  }
+  return { codes: codes, blank: blank };
 }
 /** PURE (Node-pinned) — D1–D3 (operator 2026-10-27): score a payor name for
  *  the payor lookup. The query's STATES are matched on their own — by code or
@@ -962,7 +1033,11 @@ function insPayorNameStates_(name) {
  *  alias the Synonyms list gives it ("uhc" → "unitedhealthcare"). A plan
  *  naming the searched state ranks above one naming another; one whose name
  *  EXCLUDES it carries `excluded` and the caller ranks it last. Returns
- *  { score, excluded: 'TX' | '' }; 0 = no match.
+ *  { score, excluded: 'TX' | '', all, other? }; 0 = no match. `all` (Payor 2)
+ *  is true when the row holds every word asked for besides the states — as
+ *  typed, or as an alias gives them; a state on its own asks for no word.
+ *  `other` marks a plan that names, for certain, only states that were not
+ *  searched.
  *
  *  Cycle 26 F6: `cells` are the row's OTHER scored cells (a by-state table's
  *  State and Company). They are scored with the name, and each is read for
@@ -976,6 +1051,7 @@ function insPayorMatch_(nameCell, query, groups, cells) {
     const cs = insPayorNameStates_(c);
     cs.excluded.forEach(function (x) { if (ns.excluded.indexOf(x) < 0) ns.excluded.push(x); });
     cs.named.forEach(function (x) { if (ns.named.indexOf(x) < 0) ns.named.push(x); });
+    cs.sure.forEach(function (x) { if (ns.sure.indexOf(x) < 0) ns.sure.push(x); });
   });
   const name = others.length ? String(nameCell == null ? '' : nameCell) + ' ' + others.join(' ') : nameCell;
   let base;
@@ -983,7 +1059,10 @@ function insPayorMatch_(nameCell, query, groups, cells) {
   else if (q.rest.trim()) base = insPayorScore_(name, q.rest);
   else base = ns.named.some(function (c) { return q.states.indexOf(c) >= 0; }) ? 40 : 0;   // a state alone
   // Aliases: every group with a term the rest of the query holds, as whole words.
-  const restLc = ' ' + String(q.states.length ? q.rest : query).toLowerCase().replace(/[^a-z0-9&]+/g, ' ').trim() + ' ';
+  const restQ = q.states.length ? q.rest : query;
+  const restLc = ' ' + String(restQ).toLowerCase().replace(/[^a-z0-9&]+/g, ' ').trim() + ' ';
+  const asksWords = /[a-z0-9&]{2}/.test(restLc);
+  let all = asksWords ? insPayorHasAll_(name, restQ) : true;
   (groups || []).forEach(function (g) {
     (g || []).forEach(function (term) {
       const t = String(term || '').toLowerCase().replace(/[^a-z0-9&]+/g, ' ').trim();
@@ -993,16 +1072,21 @@ function insPayorMatch_(nameCell, query, groups, cells) {
         if (!a || a === t) return;
         const variant = restLc.replace(' ' + t + ' ', ' ' + a + ' ').trim();
         base = Math.max(base, insPayorScore_(name, variant));
+        if (!all && insPayorHasAll_(name, variant)) all = true;
       });
     });
   });
-  if (!(base > 0)) return { score: 0, excluded: '' };
-  if (!q.states.length) return { score: base, excluded: '' };
+  if (!(base > 0)) return { score: 0, excluded: '', all: false };
+  if (!q.states.length) return { score: base, excluded: '', all: all };
   const ex = q.states.filter(function (c) { return ns.excluded.indexOf(c) >= 0; })[0] || '';
-  if (ex) return { score: base, excluded: ex };
-  if (ns.named.some(function (c) { return q.states.indexOf(c) >= 0; })) return { score: base + 40, excluded: '' };
-  if (ns.named.length) return { score: Math.max(1, base - 20), excluded: '' };   // a plan for another state
-  return { score: base, excluded: '' };
+  if (ex) return { score: base, excluded: ex, all: all };
+  if (ns.named.some(function (c) { return q.states.indexOf(c) >= 0; })) return { score: base + 40, excluded: '', all: all };
+  // A plan for another state. Payor 2: one that names another state for CERTAIN
+  // carries `other`, and the caller ranks it after every plan that names the
+  // searched state or none — on the real tables "bcbs arkansas medicaid" put a
+  // Pennsylvania plan first, its name holding the words in the order typed.
+  if (ns.named.length) return { score: Math.max(1, base - 20), excluded: '', all: all, other: ns.sure.length > 0 };
+  return { score: base, excluded: '', all: all };
 }
 /** PURE (Node-pinned) — D2: the alias groups to OFFER from the payor names —
  *  each INS_PAYOR_ALIAS_FAMILIES family one of whose terms a name carries, and
@@ -3583,12 +3667,19 @@ function searchInsurancePayors(query) {
       t.keys = names.map(function (r) { return insPayorNameKey_(r[0]); });   // PT3: the cross-table check
       for (let i = 0; i < names.length; i++) {
         const sc = insPayorMatch_(names[i][0], q, groups, names[i].slice(1));   // F6: each cell read for states on its own
-        if (sc.score > 0) scored.push({ ti: ti, i: i, score: sc.score, excluded: sc.excluded });
+        if (sc.score > 0) scored.push({ ti: ti, i: i, score: sc.score, excluded: sc.excluded, all: sc.all === true, other: sc.other === true });
       }
     });
     // One ranking across the tables; a tie keeps the tables' configured order.
-    scored.sort(function (a, b) { return (a.excluded ? 1 : 0) - (b.excluded ? 1 : 0) || b.score - a.score || a.ti - b.ti; });
+    // Payor 2: then a plan that is certainly another state's, after every plan
+    // for the searched state or for none.
+    scored.sort(function (a, b) { return (a.excluded ? 1 : 0) - (b.excluded ? 1 : 0) || (a.other ? 1 : 0) - (b.other ? 1 : 0) || b.score - a.score || a.ti - b.ti; });
     const top = scored.slice(0, INS_PAYOR_TOP);
+    // Payor 2: how many plans hold EVERY word asked for. None is said — the
+    // cards are then the nearest names, and the not-listed rule rides with
+    // them; and the count a rep is told to narrow is of these, not of every
+    // row that shares one word.
+    const full = scored.filter(function (x) { return x.all; }).length;
     let alsoReads = 0;
     const matches = top.map(function (t) {
       const tb = tables[t.ti];
@@ -3599,6 +3690,12 @@ function searchInsurancePayors(query) {
       o.table = tb.key;
       o.tableLabel = tb.label;   // F8: the price row's cross-reference names the table
       if (t.excluded) o.excludedState = t.excluded;   // D3: the card says "TX excluded"
+      if (!t.all) o.partial = true;                   // Payor 2: the name holds only some of the words
+      if (t.other) o.otherState = true;               // Payor 2: certainly another state's plan
+      // Payor 2: the codes this plan's row leaves blank are SAID, never just absent.
+      const bl = insPayorBlankCodes_(tb.headers, row);
+      o.codeCount = bl.codes;
+      o.blank = bl.blank;
       // PT3: the same plan in ANOTHER payor table with a different answer on a
       // code both fill is said on the card — a rep never picks one silently.
       // Bounded: at most INS_PAYOR_ALSO_MAX other listings read per search —
@@ -3637,7 +3734,7 @@ function searchInsurancePayors(query) {
         (m.details || []).forEach(function (d) { insNameCodeDetail_(d, idx.byToken); });
       });
     }
-    return { matches: matches, total: scored.length, notFound: scored.length === 0, cap: INS_PAYOR_TOP,
+    return { matches: matches, total: scored.length, full: full, notFound: scored.length === 0, cap: INS_PAYOR_TOP,
       tables: tables.filter(function (t) { return t.sh; }).map(function (t) {
         return { key: t.key, label: t.label, note: t.note, legend: t.legend, noteError: t.noteError, hasStatus: t.hasStatus !== false };
       }),

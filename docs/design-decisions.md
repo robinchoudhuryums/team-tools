@@ -7775,6 +7775,36 @@ pick them up without re-deriving the context.
   **Not decided here:** what the Reimbursement Status words mean for a rep; the
   two District of Columbia sections on the Medicaid tab (a sheet fix); the 81
   BCBS plans listed before the first state section.
+- <a id="p26-payor-2"></a>**26post Payor 2: searches driven over the real tables — the District of Columbia read as DC, another state's plans after the searched state's, the nearest names said to be that, blank codes named (FO-26-3 + FO-26-4, 2026-11-24)**
+  Payor 1 checked the upload against the operator's workbooks. This batch
+  drove the real search endpoint over the five converted tabs, with sheet
+  stand-ins, and read what each query returned before changing anything.
+  - **The District of Columbia is one state, however it is written.** The
+    readers tried one- and two-word names; `insDcPad_` rewrites "District of
+    Columbia", "D.C" and "Washington DC / D.C / District of Columbia" as DC at
+    the same length. Rejected: adding a three-word pass to each reader — three
+    readers, and "Washington" before it would still have read as the state.
+  - **With a state in the search, a plan that is certainly another state's
+    comes last** (before only a plan that EXCLUDES the state). The score alone
+    let a Pennsylvania plan lead an Arkansas search. Only a certain state
+    counts: a bare PA, MA, ID and the like are words on these sheets, and a
+    wrong demotion hides a plan. The 20-point loss for any named state stays.
+  - **A plan no sheet carries gets the not-listed rule.** The cards are kept —
+    a misspelling still finds its plan — but when no plan holds every word the
+    lookup says so first, gives the TRY rule, and names a catch-all row as
+    coming before it. With a table not searched it is "not yet" not listed
+    (cycle 26 F5's rule). Rejected: dropping the weak cards — the rep judges
+    near-misses, and a one-word typo would then show nothing.
+  - **A blank code is said, not omitted.** The card names the codes its plan's
+    row leaves blank, by item category where the sheet has one; every code
+    blank is said on the card without opening it. It says "blank on the
+    sheet", not "not accepted" — what a blank means is the sheet owner's.
+  - **Left as measured, for the operator:** a lower-case "in", "or" or "me" in
+    a search is a word, so "in medicaid" finds Wisconsin; the twelve BCBS rows
+    named only "medicaid" (a payer ID and no answers) lead a "<state>
+    medicaid" search; cards are drawn grouped by table in the tables' order,
+    not in rank order.
+
 - <a id="c26-one-verdict-for-employee-docs"></a>**One verdict for Verify, the certificate and the copy; the copy email is capped and reaches only today's managers; pdf.js is checksum-checked (cycle 26 Batch 6: F13, F14, F15, F44, F56, F64).**
   - **`verified` is its own field, not "not tampered" (F13).** A check has
     three outcomes and the old flag recorded one of them. `empDocVerdict_`

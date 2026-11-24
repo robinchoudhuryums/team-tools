@@ -11,6 +11,43 @@ keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
 
+## 2026-11-24 — 26post Payor 2: the payor lookup's searches against the real tables (FO-26-3, FO-26-4)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version); the
+handbook app is not touched. No sheet, tab or Script Property changes, and the
+tables do not need to be uploaded again for this batch.
+
+What a rep sees after the deploy:
+- **District of Columbia.** "dc medicaid", "d.c. medicaid" and "washington dc
+  medicaid" list the District's own rows first. Before, they came below plans
+  that name no state and below "Traditional Medicaid in ALL Other States";
+  "washington medicaid" listed the District's rows as Washington's.
+- **A state in the search.** Plans that belong to another state come after the
+  searched state's plans and after plans for no state. "bcbs arkansas medicaid"
+  opened with a Pennsylvania plan.
+- **A plan that is on no sheet.** When no plan has every word typed, a notice
+  above the cards says so and gives the rule for a plan that is not listed
+  (TRY). The cards under it are the nearest names. Before, "bright health"
+  showed eight Aetna cards and "Showing 8 of 795 matches".
+- **The count under the cards** is of plans that have every word typed ("8 of
+  558", not "8 of 1,770").
+- **Blank cells.** A card names the codes its plan's row leaves blank on the
+  sheet ("Acceptance by code (17 · 3 blank)", and the list under the answers).
+  A plan with every code blank says so on the card.
+
+Measured on the real workbooks and left for a decision (nothing was changed):
+- A lower-case "in", "or" or "me" in a search is read as a word, so "in
+  medicaid" finds Wisconsin plans. "IN medicaid" and "indiana medicaid" work.
+- Twelve rows on the BCBS tab are named only "medicaid" (insurer and payer ID,
+  no answers). They lead a "<state> medicaid" search for their state; their
+  cards now say that every code is blank.
+- Cards are drawn grouped by table in the tables' order (Medicare / MA first),
+  so the best match is not always the first card on screen.
+- Blank cells by column, for the sheet's owner: E1161 and K0005 are blank on
+  96–100% of plans, K0816 on 77% (Medicare / MA), K0837 and K0838 on 72–77%
+  (Medicaid), K0841 on 82% (UHC). No data row has merged cells, so a blank is
+  a blank.
+
 ## 2026-11-24 — 26post Payor 1: the payor sheet tool against the real workbooks (F39, F36)
 
 **Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The
