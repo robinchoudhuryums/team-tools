@@ -14315,7 +14315,10 @@ function cnDTablePreviewHtml_(key, fileName, r) {
       '<div class="cn-dt-note">' + (r.converted.note
         ? 'Every insurance result will show this note: <q>' + esc(r.converted.note) + '</q>'
         : 'The source has no note in its top-left cell — the note on insurance results will be removed.') + '</div>'
-    : (r.currentNote ? '<div class="cn-dt-note">This file is already in the table’s shape — the note on insurance results stays as it is.</div>' : '');
+    : ((r.notConverted || r.currentNote)
+        ? '<div class="cn-dt-note">This file was not read as the source sheet’s export — that has its item codes on the second row — so nothing in it was converted: it is written exactly as it stands.' +
+          (r.currentNote ? ' The note on insurance results stays as it is.' : '') + '</div>'
+        : '');
   return '<div class="cn-dt-prevbox">' +
     '<div class="cn-dt-prevhead">' + esc(fileName) + ' — <strong>' + esc(String(r.rows)) + '</strong> row(s) × ' +
       esc(String(r.cols)) + ' column(s)</div>' +

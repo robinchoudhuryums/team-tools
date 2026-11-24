@@ -11092,6 +11092,7 @@ test('Team Metrics for reps: whitelist-built aggregate, no per-rep leak, card cl
   // never ride to reps by default.
   const ctx = {};
   vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'teamTotalsForRep_'), ctx);   // 26post F36
   vm.runInContext(extractRawFunction('Code.js', 'teamMetricsRepView_'), ctx);
   const full = {
     from: 'a', to: 'b', date: 'a', reps: [{ repName: 'X' }], teamTotals: { rung: 1 },
@@ -11101,7 +11102,7 @@ test('Team Metrics for reps: whitelist-built aggregate, no per-rep leak, card cl
   };
   const rep = ctx.teamMetricsRepView_(full);
   assert.deepStrictEqual(Object.keys(rep).sort().join('|'),
-    ['repView', 'from', 'to', 'date', 'teamTotals', 'trend', 'transferMeta', 'outboundMeta', 'queueRows', 'groupRows', 'alertThreshold', 'alertBand', 'standardSource'].sort().join('|'),   // M1: the outbound tab's state, no names
+    ['repView', 'from', 'to', 'date', 'teamTotals', 'trend', 'transferMeta', 'queueRows', 'groupRows', 'alertThreshold', 'alertBand', 'standardSource'].sort().join('|'),   // 26post F36: nothing about outbound, no names
     'the rep payload is EXACTLY the aggregate whitelist — reps[]/diagnostics/meta/unknown fields never ride');
   assert.strictEqual(rep.repView, true);
   // Registry: the tab is visible to everyone now (the server shape is the
@@ -43574,7 +43575,7 @@ test('M1: the three Stats endpoints carry outbound + adjusted beside the actual 
   assert.ok(/var obRes = getCdrOutboundPerRep_\(from, toDate, rosterNames\);/.test(team) && /outboundMeta: outboundMeta,/.test(team), 'one read for the team, its state shipped');
   assert.ok(/\|\| \(rep\.outbound && rep\.outbound\.placed > 0\)\) \{/.test(team), 'a rep with outbound calls and no inbound ones is still listed');
   assert.ok(/teamTotals\.intakeNotesPartial \? null : teamIntake/.test(team), 'a team total built from an unreadable rep Sheet has no intake adjustment');
-  assert.ok(/outboundMeta: full\.outboundMeta \? \{ available: !!full\.outboundMeta\.available, error: full\.outboundMeta\.error \|\| null, through: full\.outboundMeta\.through \|\| null \} : full\.outboundMeta,/.test(extractRawFunction('Code.js', 'teamMetricsRepView_')), 'the rep view carries the tab\'s state, field by field (no names in it — FQ7)');
+  assert.ok(!/outboundMeta/.test(stripJsComments_(extractRawFunction('Code.js', 'teamMetricsRepView_'))), '26post F36: the rep view carries nothing about the team\'s outbound calls (it carried the tab\'s state, field by field — FQ7)');
   // Driven range: outbound read clean → shipped and adjusted; read failed → named, null, not cached.
   const run = (ob) => {
     const puts = [];
@@ -45467,7 +45468,9 @@ test('PT1a: the Admin preview lists every conversion step and the note it will s
   html = ctx.cnDTablePreviewHtml_('InsurancePayors', 'src.csv', Object.assign({}, base, { converted: { from: 'source', sourceRows: 5, note: '', changes: [] } }));
   assert.ok(/the note on insurance results will be removed/.test(html), 'a source with no note says the note goes');
   html = ctx.cnDTablePreviewHtml_('InsurancePayors', 'tab.csv', Object.assign({}, base, { currentNote: 'old' }));
-  assert.ok(/already in the table’s shape — the note on insurance results stays/.test(html) && !/Converted/.test(html));
+  assert.ok(/was not read as the source sheet’s export — that has its item codes on the second row — so nothing in it was converted: it is written exactly as it stands\. The note on insurance results stays as it is\./.test(html) && !/Converted from/.test(html));
+  html = ctx.cnDTablePreviewHtml_('InsurancePayors', 'tab.csv', Object.assign({}, base, { notConverted: true }));   // 26post F39: said with no note stored too
+  assert.ok(/nothing in it was converted: it is written exactly as it stands\.<\/div>/.test(html) && !/note on insurance results stays/.test(html), 'a payor file that was not converted says so even when no note is stored');
   assert.ok(!/note/.test(ctx.cnDTablePreviewHtml_('T', 't.csv', base).replace(/cn-dt-note/g, '')), 'another table says nothing about a note');
   const row = (t) => ctx.cnDTableRowHtml_(Object.assign({ key: 'InsurancePayors', tab: 'InsurancePayors', label: 'L', describe: 'D', present: true, rows: 1, cols: 2 }, t));
   assert.ok(/Note on every insurance result: <q>Rule &lt;x&gt;<\/q>/.test(row({ note: 'Rule <x>' })));
@@ -45646,7 +45649,7 @@ test('PT2: the UHC tab — each plan carries the state of the section it sits in
     "Wisconsin | Wisonsin UHC PPO If It's Not Listed Below"], 'each plan under its section\'s state — a catch-all also covers the rows just above it that begin with its state; the name-only Vermont reminder dropped');
   assert.strictEqual(r.note, 'United Healthcare By State -- No Power Orders In OR. (Hospice okay.)', 'the note without its "Added:" wrapper and quotes');
   const ch = r.changes.join('\n');
-  [/Column I has no title — dropped with its 1 filled cell/, /Column K has no title — dropped with its 1 filled cell/,
+  [/2 columns have no title — dropped with their filled cells, which belong to no item: I \(1\), K \(1\)\. Give a column a title in the sheet if it is an item\./,   // 26post F39: one line
     /Column "X = Yes" is the key, not data — dropped with its 1 filled cell/,
     /grouped by state in the sheet — each now carries its State: 4 section\(s\) \(Alabama, Connecticut, Texas, Wisconsin\)/,
     /"Conneticut" → Connecticut, "Wisonsin" → Wisconsin/, /1 plan\(s\) come before the first state section — their State reads "Multi-state \/ other"/,
@@ -49682,7 +49685,7 @@ test('F35: a Team window in which no rep has a call-data row has no call figures
   assert.ok(/teamCallDataState_\(reps\.some\(function \(rp\) \{ return rp\.hasCdrData; \}\), toDate,\s*prevWorkdayIso_\(Utilities\.formatDate\(new Date\(\), CONFIG\.TIMEZONE, 'yyyy-MM-dd'\)\)\);/.test(team),
     'from the listed reps and the org\'s day — the cached payload is every caller\'s, so nothing in it is the caller\'s own');
   assert.ok(/teamTotals\.hasCallData = callState\.hasCallData;\s*teamTotals\.callDataPending = callState\.callDataPending;/.test(team), 'on the totals, which the rep view ships whole');
-  assert.ok(/teamTotals: full\.teamTotals,/.test(extractRawFunction('Code.js', 'teamMetricsRepView_')));
+  assert.ok(/teamTotals: teamTotalsForRep_\(full\.teamTotals\),/.test(extractRawFunction('Code.js', 'teamMetricsRepView_')), '26post F36: through the rep copy, which keeps every key that is not outbound');
   const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
   assert.ok(/hasCallData: false, callDataPending: true, hasTransferData: false \}/.test(mock) && /totals\.hasCallData = true; totals\.callDataPending = false;/.test(mock), 'both Team fixtures carry the state (INV-185)');
 });
@@ -50184,12 +50187,13 @@ test('FQ7: an outbound agent not on the roster is remembered by name, and Team M
   assert.ok(/out\.offRoster = agg\.offRoster\.slice\(0, CDR_OUTBOUND_OFFROSTER_MAX\);/.test(reader), 'kept beside the window, bounded');
   // The rep view: driven over a manager payload that carries a pair.
   const rv = vm.createContext({});
+  vm.runInContext(extractRawFunction('Code.js', 'teamTotalsForRep_'), rv);   // 26post F36
   vm.runInContext(extractRawFunction('Code.js', 'teamMetricsRepView_'), rv);
   const full = { from: 'a', to: 'b', date: 'a', teamTotals: {}, trend: [], transferMeta: {}, queueRows: [], groupRows: [], alertThreshold: 1, alertBand: 1, standardSource: 's',
     reps: [{ repName: 'Jo Tran' }], likelyMismatches: [{ roster: 'x', cdr: 'y' }],
     outboundMeta: { available: true, error: null, through: '2026-11-09', likelyMismatches: [{ roster: 'Jo Tran', cdr: 'Tran, Jo' }] } };
   const view = m1J(rv.teamMetricsRepView_(full));
-  assert.deepStrictEqual(view.outboundMeta, { available: true, error: null, through: '2026-11-09' }, 'THE RULE: built field by field — a whole-object copy would ship the name pairs to every rep');
+  assert.strictEqual(view.outboundMeta, undefined, '26post F36: the rep view carries no outbound state at all — the stricter rule; the field-by-field copy FQ7 pinned went with it');
   assert.ok(JSON.stringify(view).indexOf('Tran') < 0, 'no colleague\'s name anywhere in the rep view');
   assert.strictEqual(rv.teamMetricsRepView_(Object.assign({}, full, { outboundMeta: undefined })).outboundMeta, undefined, 'an older payload with no outbound state stays without one');
   const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
@@ -50493,6 +50497,7 @@ test('DQ1: a manager\'s Team Metrics row names the rep\'s partial days — dates
     'the marks are shown, and only the per-day figure is computed from them');
   // The rep view, driven over a manager payload with marked rows.
   const rv = vm.createContext({});
+  vm.runInContext(extractRawFunction('Code.js', 'teamTotalsForRep_'), rv);   // 26post F36
   vm.runInContext(extractRawFunction('Code.js', 'teamMetricsRepView_'), rv);
   const full = { from: '2026-11-03', to: '2026-11-10', date: '2026-11-03', teamTotals: { answered: 5 }, trend: [], transferMeta: {}, queueRows: [], groupRows: [], alertThreshold: 1, alertBand: 1, standardSource: 's',
     partialDaysUnavailable: true, reps: [{ repName: 'Jo Tran', partialDays: [{ date: '2026-11-05', credit: 0.5 }] }], outboundMeta: { available: true } };
@@ -51097,6 +51102,7 @@ test('DT1: Handled (adj.) per CREDITED day — the adjusted handled count over t
   assert.ok(/team_metrics_v9:/.test(team), 'a cached row without the figure is never served (INV-85)');
   // The rep view never carries a manager row.
   const rv = vm.createContext({});
+  vm.runInContext(extractRawFunction('Code.js', 'teamTotalsForRep_'), rv);   // 26post F36
   vm.runInContext(extractRawFunction('Code.js', 'teamMetricsRepView_'), rv);
   const view = JSON.stringify(rv.teamMetricsRepView_({ from: 'a', to: 'b', date: 'a', teamTotals: {}, trend: [], transferMeta: {}, queueRows: [], groupRows: [], reps: [{ repName: 'Jo', handledPerDay: 11.6 }], outboundMeta: { available: true } }));
   assert.ok(!/handledPerDay|11\.6/.test(view), 'INV-124: the figure rides `reps`, which a rep is never sent');
@@ -52349,6 +52355,127 @@ test('FX4 + FX6 (cycle 26): the blocked-copy dialog takes the layer above the Re
   assert.ok(/61\.5h/.test(short) && /The timesheet archive could not be read/.test(short), 'THE REGRESSION: the tile drew its hours and "all complete" for a period it could not read whole');
   // …and it is the same field the server ships.
   assert.ok(/archiveError: read\.archiveError/.test(extractRawFunction('Code.js', 'buildTimesheetForEmployee_')), 'getTimesheetData\'s payload carries it');
+});
+
+console.log('\n26post Payor 1 — the payor sheet tool against the real workbooks (F39, F36)');
+
+// F39. Measured on the operator's real workbook (2026-11-24): the Medicaid tab
+// ends with four rows AFTER its last state section — "Washington D.C MCOs",
+// "Florida MCOs" and two "… in ALL Other States" rows — and all four were
+// filed as Wyoming, the fallback for every unlisted state among them. The
+// fixture is that tail on the UHC miniature (same converter path).
+const P1_ROW = (name) => pt2Row_(12, { 0: name, 2: 'OON', 5: 'NO', 6: 'TRY', 7: 'TRY' });
+test('26post F39: after the LAST state section a plan whose name begins with another state is filed under that state, an "all other states" row under none — and neither ends the group around it; mid-sheet a misfiled plan is still said, never moved (driven)', () => {
+  const c = pt1aCtx_();
+  const src = PT2_UHC.concat([P1_ROW('AARP plan of Wisconsin'), P1_ROW('Washington D.C MCOs'), P1_ROW('Florida MCOs'),
+    P1_ROW('Traditional Medicaid in ALL Other States'), P1_ROW("MCO's in ALL Other States"), P1_ROW('A plan added under them')]);
+  const r = hJ(c.insPayorFromSource_(src));
+  const tail = r.grid.slice(-6).map((x) => x[1] + ' | ' + x[0]);
+  assert.deepStrictEqual(tail, [
+    'Wisconsin | AARP plan of Wisconsin',
+    'District of Columbia | Washington D.C MCOs',
+    'Florida | Florida MCOs',
+    'Not state specific | Traditional Medicaid in ALL Other States',
+    "Not state specific | MCO's in ALL Other States",
+    'Florida | A plan added under them'], 'THE REGRESSION: all five rows below the Wisconsin plan read Wisconsin');
+  assert.ok(r.grid.some((x) => x[1] === 'Texas' && x[0] === 'Florida Blue plan listed here by mistake'), 'a plan naming another state MID-sheet keeps its section (PT3: said, never moved)');
+  const ch = r.changes.join('\n');
+  [/2 plan\(s\) after the last state section begin with another state and are filed under it, not under the section above them: "Washington D\.C MCOs" \(row 15\) → District of Columbia; "Florida MCOs" \(row 16\) → Florida\./,
+    /2 "all other states" row\(s\) are filed as "Not state specific" — they are the rule for every state the sheet does not list \(source row 17, 18\)\./,
+    /1 section\(s\) begin above their "not listed" row, on the row\(s\) that start with the same state — for example "Connecticut Medicaid \(Traditional Only\)" \(row 6\)\./,
+    /The last group, Florida, runs to the end of the sheet \(2 plan\(s\)\) — a plan added below it takes that state unless its name begins with another state or it reads "all other states"\./,
+    /1 plan\(s\) name a different state than the section they sit in and keep the section's state — move the row in the sheet if it is misfiled: "Florida Blue plan listed here by mistake" \(row 12, under Texas; the name says FL\)/]
+    .forEach((re) => assert.ok(re.test(ch), re + '\n' + ch));
+  assert.ok(!/Florida has 2 separate groups/.test(ch), 'the "all other states" rows do not split the Florida group in two');
+  assert.ok(!/Washington D\.C MCOs" \(row 15, under/.test(ch), 'a row filed by its own name is not also reported as misfiled');
+  // The sheet as it was: nothing after the last section's own plans.
+  const was = hJ(c.insPayorFromSource_(PT2_UHC)).changes.join('\n');
+  assert.ok(/The last group, Wisconsin, runs to the end of the sheet \(1 plan\(s\)\)/.test(was) && !/after the last state section/.test(was) && !/all other states" row/.test(was), 'and with no such rows only the open end is said');
+});
+
+test('26post F39: a state the sheet lists in two places is named with both rows; an explicit "Not state specific" section at the bottom keeps a plan whose name begins with a state; one or two sections are said, not silently dropped (driven)', () => {
+  const c = pt1aCtx_();
+  // Alabama again after Wisconsin: the catch-all opens a second Alabama group.
+  const twice = hJ(c.insPayorFromSource_(PT2_UHC.concat([P1_ROW("Alabama UHC PPO If It's Not Listed Below"), P1_ROW('UHC Alabama extra plan')])));
+  assert.ok(/Alabama has 2 separate groups of rows \(starting at row 4, 14\) — each keeps the state; check that they do not give two different answers for the same plan\./.test(twice.changes.join('\n')), twice.changes.join('\n'));
+  assert.ok(!/separate groups/.test(hJ(c.insPayorFromSource_(PT2_UHC)).changes.join('\n')), 'a sheet with each state once says nothing (non-vacuous the other way)');
+  // BCBS: the last section is "Not State Specific" by the sheet's own column A.
+  const b = hJ(c.insPayorFromSource_(PT2_BCBS.concat([pt2Row_(9, { 1: 'Florida Blue Federal plan', 3: 'INN', 5: 'X', 6: 'X', 7: 'X' })])));
+  const last = b.grid[b.grid.length - 1];
+  assert.deepStrictEqual([last[b.grid[0].indexOf('State')], last[0]], ['Not state specific', 'Florida Blue Federal plan'], 'what the sheet put under "Not State Specific" stays there');
+  assert.ok(!/after the last state section/.test(b.changes.join('\n')));
+  // Fewer than three sections.
+  const two = hJ(c.insPayorFromSource_(PT2_UHC.filter((row, i) => i < 2 || i === 3)));
+  assert.ok(/Only 1 state section\(s\) could be read \(Alabama\) — three are needed before the sheet is treated as grouped by state, so no plan carries a State\./.test(two.changes.join('\n')), two.changes.join('\n'));
+  assert.ok(!/Only \d+ state section/.test(hJ(c.insPayorFromSource_(PT1A_SRC)).changes.join('\n')), 'a sheet with no sections at all (Medicare / MA) says nothing about them');
+});
+
+test('26post F39: untitled columns are ONE line however many there are (the real UHC tab has ten); a payor file that was not converted says so in the preview', () => {
+  const c = pt1aCtx_();
+  const one = PT2_UHC.map((row, i) => { const x = row.slice(); if (i > 1) x[10] = ''; return x; });   // only column I keeps a cell
+  const ch1 = hJ(c.insPayorFromSource_(one)).changes;
+  assert.strictEqual(ch1.filter((x) => /no title/.test(x)).length, 1);
+  assert.ok(/^Column I has no title — dropped with its 1 filled cell\(s\)\.$/.test(ch1.filter((x) => /no title/.test(x))[0]), 'a single one keeps its own sentence');
+  const ch2 = hJ(c.insPayorFromSource_(PT2_UHC)).changes.filter((x) => /no title/.test(x));
+  assert.deepStrictEqual(ch2, ['2 columns have no title — dropped with their filled cells, which belong to no item: I (1), K (1). Give a column a title in the sheet if it is an item.']);
+  const imp = stripJsComments_(extractRawFunction('Code.js', 'kbImportDataTable'));
+  assert.ok(/if \(conv\) \{\s*summary\.converted = \{[^}]*\};\s*\} else if \(spec\.sourceFormat === 'payorAcceptance'\) \{\s*summary\.notConverted = true;\s*\}/.test(imp), 'the summary carries notConverted for a payor table whose file did not read as the source export');
+});
+
+test('26post: the lookup reads the sheet\'s own letters — "L" and "L ( 285-325 lb)" are location-based (amber, explained), "X ( 350 lb)" is an accept with a condition; a bare "Y" stays neutral and unexplained (the operator\'s rule), and no word that merely begins with L is read as one (driven over the real functions)', () => {
+  const sb = { String: String, RegExp: RegExp, Array: Array };
+  vm.createContext(sb);
+  const cli = extractScript('kb/script_kb.html');
+  vm.runInContext(extractFunction('kb/script_kb.html', 'insWord_') + '\n' + cli.match(/var INS_IS = \{[\s\S]*?\n\};/)[0], sb);
+  vm.runInContext(cli.match(/var INS_TERMS = \[[\s\S]*?\n\];/)[0], sb);
+  vm.runInContext(extractFunction('kb/script_kb.html', 'insTermsIn_'), sb);
+  vm.runInContext(extractFunction('kb/script_kb.html', 'insToneCls_'), sb);
+  const T = (v) => [sb.insToneCls_(v), hJ(sb.insTermsIn_(v)).map((t) => t.term)];
+  // The values and counts are the real workbook's (2026-11-24): L ×16, L ( 285-325 lb) ×105, X ( 350 lb) ×2, X ( 285-325 lb) ×2, Y ×2.
+  assert.deepStrictEqual(T('L'), ['warn', ['Location-based']], 'THE REGRESSION: no tone and no explanation');
+  assert.deepStrictEqual(T('L ( 285-325 lb)'), ['warn', ['Location-based (285–325 lb)', 'Location-based']], 'THE REGRESSION: explained, but with no tone');
+  assert.deepStrictEqual(T('L ( Up To 285) & SI/PR'), ['warn', ['SI/PR', 'Location-based', 'A & B (combined)']], 'the combined value names its location half too');
+  assert.deepStrictEqual(T('X ( 350 lb)'), ['warn', ['Accepted, with a condition']], 'THE REGRESSION: no tone, no explanation');
+  assert.deepStrictEqual(T('X ( 285-325 lb)'), ['warn', ['Accepted, with a condition']], 'an X with a weight is not location-based (it was explained as one)');
+  assert.deepStrictEqual(T('Y'), ['', []], 'a bare Y: verbatim and neutral, never a guessed verdict');
+  assert.deepStrictEqual(T('Y ( 285-325 lb)'), ['', ['Location-based (285\u2013325 lb)']], 'and a Y with the weight range reads exactly as it did: explained, untoned');
+  assert.deepStrictEqual(T('X'), ['good', ['Accepted / X']], 'the bare accept is unchanged');
+  ['Limited', 'lb', 'Letter on file', 'Last updated 1/2/2026'].forEach((v) => assert.ok(T(v)[1].indexOf('Location-based') < 0 && T(v)[0] !== 'warn', v + ' is not the letter L'));
+  assert.deepStrictEqual(T('Location-based ( 285-325 lb)')[0], 'warn', 'the word still reads');
+});
+
+test('26post F36: a rep is sent nothing about the team\'s outbound calls — not the totals, not the adjusted figures built from them, not the tab\'s state; the intake half of the adjustment stays; a manager\'s payload is untouched (driven)', () => {
+  const ctx = vm.createContext({ Object, JSON });
+  vm.runInContext(extractRawFunction('Code.js', 'teamTotalsForRep_'), ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'teamMetricsRepView_'), ctx);
+  const adj = { handled: 130, talkSec: 9000, talkFormatted: '2:30:00', outbound: { placed: 40, connected: 30, talkSec: 1800, talkFormatted: '0:30:00' },
+    intakeTimed: 4, intakeAvgSec: 600, attSec: 72, attFormatted: '0:01:12', attExIntakeSec: 50, attExIntakeFormatted: '0:00:50' };
+  const tt = { answered: 100, missed: 5, tttSeconds: 7200, hasCallData: true, outboundPlaced: 40, outboundConnected: 30, outboundTalkSec: 1800, adjusted: adj };
+  const full = { from: 'a', to: 'b', date: 'a', teamTotals: tt, trend: [], transferMeta: {}, queueRows: [], groupRows: [], alertThreshold: 1, alertBand: 1, standardSource: 's',
+    outboundMeta: { available: true, error: null, through: '2026-11-20' } };
+  const rep = hJ(ctx.teamMetricsRepView_(full));
+  assert.ok(!('outboundMeta' in rep), 'no outbound state');
+  assert.deepStrictEqual(Object.keys(rep.teamTotals).sort(), ['adjusted', 'answered', 'hasCallData', 'missed', 'tttSeconds'], 'THE REGRESSION: the three outbound totals rode the team totals to every rep');
+  assert.deepStrictEqual(rep.teamTotals.adjusted, { outbound: null, intakeTimed: 4, intakeAvgSec: 600, attSec: 72, attFormatted: '0:01:12', attExIntakeSec: 50, attExIntakeFormatted: '0:00:50' },
+    'the intake half stays; Handled calls and Talk incl. outbound — which give the outbound figure back by subtraction — do not');
+  assert.ok(JSON.stringify(rep).indexOf('130') < 0 && JSON.stringify(rep).indexOf('1800') < 0 && JSON.stringify(rep).indexOf('"placed"') < 0, 'no outbound-derived number anywhere in the rep payload');
+  assert.strictEqual(hJ(ctx.teamTotalsForRep_(Object.assign({}, tt, { adjusted: Object.assign({}, adj, { attExIntakeSec: null, attExIntakeFormatted: null }) }))).adjusted, null,
+    'an adjustment that was only outbound leaves nothing to show');
+  assert.strictEqual(tt.outboundPlaced, 40, 'the manager\'s object is not mutated (the cached payload is every caller\'s)');
+  // Every outbound key the team totals carry begins `outbound` — the copy drops by that prefix.
+  const team = stripJsComments_(extractRawFunction('Code.js', 'getTeamMetrics'));
+  const keys = (team.match(/teamTotals\.(\w+) = /g) || []).map((x) => x.replace(/teamTotals\.| = /g, ''));
+  const ob = keys.filter((k) => /outbound/i.test(k));
+  assert.ok(ob.length >= 3 && ob.every((k) => /^outbound/.test(k)), 'non-vacuous, and every one is caught by the prefix: ' + ob.join(', '));
+  // The rail: a rep payload draws no outbound row and no outbound-derived adjusted row.
+  const m = vm.createContext({ String, Math, M_ADJ_SEQ: 0, icon: () => '', mFmtTalk_: (x) => String(x),
+    mRailRow_: (label, value, sub) => '<row>' + label + '=' + value + '|' + (sub || '') + '</row>' });
+  vm.runInContext(extractFunction('metrics/script_metrics.html', 'mAdjustedHtml_'), m);
+  const html = m.mAdjustedHtml_(rep.teamTotals.adjusted, 'team');
+  assert.ok(/Avg talk excl\. intake=0:00:50/.test(html) && !/Handled calls=|Talk incl\. outbound=/.test(html), html);
+  assert.ok(/Handled calls=130/.test(m.mAdjustedHtml_(adj, 'team')), 'a manager still sees the outbound rows (non-vacuous)');
+  const cli = extractScript('metrics/script_metrics.html');
+  assert.ok(/var om = data\.outboundMeta \|\| null;\s*if \(om\) html \+= mOutboundRowHtml_\(/.test(cli), 'and the Team rail draws its outbound row only when the payload carries the state');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

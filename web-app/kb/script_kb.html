@@ -1627,7 +1627,12 @@ var INS_IS = {
   supervisorEx: function (v) { return /supervisor\s+exception/.test(v); },
   cannotService: function (v) { return /(^|[^a-z])(cannot|can'?t|can\s+not)\s+service([^a-z]|$)/.test(v); },
   planSpecific: function (v) { return /(^|[^a-z])plan[\s-]*specific([^a-z]|$)/.test(v); },
-  location: function (v) { return /(^|[^a-z])locations?([^a-z]|$)/.test(v); },
+  // 26post: the sheet writes the location rule as a LETTER — "L", "L ( 285-325
+  // lb)" (its key tab defines both). Only at the start of the value and only
+  // before a bracket, an "&" or the end — never a word that begins with one.
+  // A bare "Y" is NOT read this way: the operator's rule is that it renders
+  // verbatim and neutral, never a guessed verdict.
+  location: function (v) { return /(^|[^a-z])locations?([^a-z]|$)/.test(v) || /^l\s*(\(|&|$)/.test(v); },
   // PT2 (operator 2026-11-10): SI is secondary insurance, PR patient
   // responsibility; "PR/SI" is the same rule as "SI/PR".
   siPr: function (v) { return v.indexOf('si/pr') >= 0 || v.indexOf('pr/si') >= 0; },
@@ -1640,7 +1645,9 @@ var INS_IS = {
   // A negated or "out-of" in-network is never a yes ("Not in network").
   accepted: function (v) {
     if (/(^|[^a-z])(not|non|out)[\s-]*(of[\s-]*)?in[\s-]*network/.test(v)) return false;
-    return insWord_(v, 'in-network') || /(^|[^a-z])(inn|in network)([^a-z]|$)/.test(v) || insWord_(v, 'accepted') || v === 'x' || v === 'yes';
+    // 26post: "X ( 350 lb)" is an accept with a condition in a bracket — it had
+    // no tone at all (only the bare X was an accept).
+    return insWord_(v, 'in-network') || /(^|[^a-z])(inn|in network)([^a-z]|$)/.test(v) || insWord_(v, 'accepted') || v === 'x' || v === 'yes' || /^x\s*\(/.test(v);
   },
   // F7 (cycle 26): GREEN is for a value that is an accept and nothing else —
   // X, Yes, Accepted, In-Network, INN, alone or together. "Accepted except
@@ -1704,7 +1711,7 @@ var INS_TERMS = [
   { term: 'Plan Specific', why: 'Can\u2019t be confirmed from the sheet \u2014 only by contacting the insurance or attempting submission.',
     match: INS_IS.planSpecific },
   { term: 'Location-based (285\u2013325 lb)', why: 'The location rules below, and the patient must be 285\u2013325 lb.',
-    match: function (v) { return /285\s*[-\u2013]\s*325/.test(v); } },
+    match: function (v) { return /285\s*[-\u2013]\s*325/.test(v) && !/^x\s*\(/.test(v); } },   // 26post: "X ( 285-325 lb)" is an accept with a weight, not location-based
   { term: 'SI/PR', why: 'Only accept if the patient has secondary insurance details that will cover any remaining patient responsibility or, if the patient is unable to provide a secondary insurance, then they were made aware that there may be some patient responsibility cost that will need to be collected up front by the delivery team. "PR/SI" is the same rule.',
     match: INS_IS.siPr },
   { term: 'SI', why: 'Secondary insurance \u2014 only accept if the patient has secondary insurance that will cover any remaining patient responsibility.',

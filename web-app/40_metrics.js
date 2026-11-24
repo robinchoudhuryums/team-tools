@@ -2528,6 +2528,24 @@ function getMyMetricsRange(from, to) {
  * Accepts either a single date or from/to. Also returns a 30-day team
  * % Answered trend when viewing a single date.
  */
+/** PURE (Node-pinned) — 26post (F36, operator 2026-11-24): the team totals a
+ *  REP is sent. One or two people make the team's outbound calls, so a "team"
+ *  outbound figure is theirs — reps do not get it: not the three totals (any
+ *  key that begins `outbound`), and not the adjusted figures built from them
+ *  (Handled calls and Talk incl. outbound give the outbound figure back by
+ *  subtraction). The intake half of the adjustment is every answering rep's,
+ *  and stays. Managers get the whole object. */
+function teamTotalsForRep_(tt) {
+  if (!tt) return tt;
+  var out = {};
+  Object.keys(tt).forEach(function (k) { if (!/^outbound/i.test(k) && k !== 'adjusted') out[k] = tt[k]; });
+  var a = tt.adjusted;
+  out.adjusted = (a && a.attExIntakeSec != null)
+    ? { outbound: null, intakeTimed: a.intakeTimed, intakeAvgSec: a.intakeAvgSec, attSec: a.attSec, attFormatted: a.attFormatted,
+        attExIntakeSec: a.attExIntakeSec, attExIntakeFormatted: a.attExIntakeFormatted }
+    : null;
+  return out;
+}
 /** The REP view of the team aggregate (operator 2026-08-18: "users should
  *  have the team metrics available as well") — whitelist-BUILT, the
  *  trainStripQuizForRep_ discipline: a field missed by a delete-key copy
@@ -2543,13 +2561,11 @@ function teamMetricsRepView_(full) {
   return {
     repView: true,
     from: full.from, to: full.to, date: full.date,
-    teamTotals: full.teamTotals,
+    teamTotals: teamTotalsForRep_(full.teamTotals),
     trend: full.trend,
     transferMeta: full.transferMeta,
-    // M1 — the tab's STATE, no names. FQ7: built field by field — the manager
-    // payload's outboundMeta also carries name pairs, and a whole-object copy
-    // would ship them to every rep.
-    outboundMeta: full.outboundMeta ? { available: !!full.outboundMeta.available, error: full.outboundMeta.error || null, through: full.outboundMeta.through || null } : full.outboundMeta,
+    // 26post (F36): no `outboundMeta` — a rep is sent nothing about the team's
+    // outbound calls, so the tab's state has nothing to explain either.
     queueRows: full.queueRows,
     groupRows: full.groupRows,
     alertThreshold: full.alertThreshold,

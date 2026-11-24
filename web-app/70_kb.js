@@ -1333,7 +1333,7 @@ function insPayorFromSource_(grid) {
   if (useCats) changes.push('Row 1\'s item categories are kept with their codes: ' + cats.join(', ') + '.');
   else if (covered) changes.push('Row 1 names categories over only some code columns (' + cats.join(', ') + ') — not kept, so no code is filed under the wrong item.');
   keep.push({ c: nameCol, h: 'Insurance' });
-  const derived = [];
+  const untitled = [];
   for (let c = 0; c < width; c++) {
     if (c === nameCol || c === groupCol) continue;
     const orig = h2[c] || h1[c] || '';
@@ -1347,7 +1347,9 @@ function insPayorFromSource_(grid) {
     if (!n) { if (orig) changes.push('Column "' + orig + '" has no data — dropped.'); continue; }
     // PT2: a column with no title is not a plan's data (the sheet's row-fill
     // spilling past the last code) — dropped and named, never kept unlabelled.
-    if (!orig) { changes.push('Column ' + insColLetter_(c) + ' has no title — dropped with its ' + n + ' filled cell(s).'); continue; }
+    // 26post (F39): one line for all of them — the real UHC tab has ten, and
+    // ten lines hid the two that mattered.
+    if (!orig) { untitled.push({ col: insColLetter_(c), n: n }); continue; }
     let h = orig, why = '';
     if (/network/i.test(orig) && /update/i.test(orig)) { h = 'Last Update'; why = 'it would have been read as the network status'; }
     else if (/reimb/i.test(orig) && /(oon|%|out[\s-]*of[\s-]*network)/i.test(orig)) { h = 'OON Rate (% of Medicare)'; why = 'it would have been read as the reimbursement status'; }
@@ -1379,6 +1381,9 @@ function insPayorFromSource_(grid) {
     if (h !== orig && why) changes.push('Header "' + orig + '" → "' + h + '" (' + why + ').');
     keep.push({ c: c, h: h || orig });
   }
+  if (untitled.length === 1) changes.push('Column ' + untitled[0].col + ' has no title — dropped with its ' + untitled[0].n + ' filled cell(s).');
+  else if (untitled.length) changes.push(untitled.length + ' columns have no title — dropped with their filled cells, which belong to no item: ' +
+    untitled.map(function (u) { return u.col + ' (' + u.n + ')'; }).join(', ') + '. Give a column a title in the sheet if it is an item.');
   // PT2: state sections. A section starts at a state name in column A (BCBS),
   // or at a "<State> … not listed below" / "Unlisted <State> …" row (UHC,
   // Medicaid) — reached back over the rows just above it that begin with the
@@ -1394,6 +1399,10 @@ function insPayorFromSource_(grid) {
     live.push(r);
   }
   const fuzzy = {}, starts = {};
+  // 26post (F39): what the section reading GUESSES is said in the preview —
+  // the rows a section reached back over, the rows filed by their own name
+  // after the last section, and a state the sheet lists twice.
+  const reached = [], allOther = {}, lateStarts = [], lateIdx = {};
   const leadOf = function (text) {
     const st = insStateLead_(text);
     if (st && st.read) fuzzy[st.read] = st.name;
@@ -1416,15 +1425,41 @@ function insPayorFromSource_(grid) {
           if (!prev || prev.name !== st.name) break;
           j--;
         }
+        if (j < i) reached.push('"' + body[live[j]][nameCol].slice(0, 50) + '" (row ' + (live[j] + 3) + ')');
         starts[j] = st.name;
       }
     }
+    // A row for every state the sheet does not list ("Traditional Medicaid in
+    // ALL Other States") belongs to no state section, wherever it sits.
+    if (starts[i] === undefined && /\ball\s+other\s+states\b/i.test(nm)) allOther[i] = true;
   });
   const sectionNames = [];
   Object.keys(starts).sort(function (a, b) { return a - b; }).forEach(function (i) {
     if (sectionNames.indexOf(starts[i]) < 0) sectionNames.push(starts[i]);
   });
   const sectioned = sectionNames.length >= 3;
+  // 26post (F39): the LAST section has no next section to end it, so whatever
+  // is added at the bottom of the sheet landed in it — on the real Medicaid
+  // tab "Washington D.C MCOs", "Florida MCOs" and both "… in ALL Other States"
+  // rows read as Wyoming. After the last section start, a plan whose name
+  // BEGINS with another state starts that state (as a section's own first row
+  // does). Only while a real state is in force: an explicit "Not state
+  // specific" section at the bottom keeps what the sheet put in it. Mid-sheet
+  // a plan naming another state is still SAID and never moved (PT3).
+  if (sectioned) {
+    const startIdx = Object.keys(starts).map(Number).sort(function (a, b) { return a - b; });
+    const lastStart = startIdx[startIdx.length - 1];
+    let cur = starts[lastStart];
+    for (let i = lastStart + 1; i < live.length; i++) {
+      if (allOther[i]) continue;
+      if (!US_STATE_NAMES[String(cur).toLowerCase()]) break;
+      const st = insStateLead_(body[live[i]][nameCol]);
+      if (st && st.name !== cur) {
+        starts[i] = st.name; lateIdx[i] = true; cur = st.name;
+        lateStarts.push('"' + body[live[i]][nameCol].slice(0, 50) + '" (row ' + (live[i] + 3) + ') → ' + st.name);
+      }
+    }
+  }
   if (sectioned) keep.splice(1, 0, { derived: 'state', h: 'State' });
   const companies = groupCol >= 0 && live.some(function (r) {
     const g = body[r][groupCol];
@@ -1435,14 +1470,19 @@ function insPayorFromSource_(grid) {
   const rewritten = {};
   const rows = [], emptyRows = [], before = [], elsewhere = [], held = {}, netFixed = {}, valFixed = {};
   let current = '';
+  const runsOf = {}, otherRows = [];
+  let runState = null, lastRun = { state: '', n: 0 };
   live.forEach(function (r, i) {
     if (starts[i] !== undefined) current = starts[i];
+    // The state THIS row is filed under: its section's, or none for an
+    // "all other states" row (which does not end the section around it).
+    const rowState = (sectioned && allOther[i]) ? 'Not state specific' : current;
     const cells = body[r];
     const g = groupCol >= 0 ? cells[groupCol] : '';
     const company = (g && !/^(not state specific|nationwide|all states|multi[\s-]*state)/i.test(g) && !(insStateLead_(g) || {}).whole) ? g : '';
     let any = false;
     const row = keep.map(function (k) {
-      if (k.derived === 'state') return current || 'Multi-state / other';
+      if (k.derived === 'state') return rowState || 'Multi-state / other';
       if (k.derived === 'company') return company;
       let v = cells[k.c] || '';
       if (k.c !== nameCol && v) any = true;
@@ -1463,18 +1503,27 @@ function insPayorFromSource_(grid) {
     // A name with nothing recorded beside it is a reminder, not a rule — the
     // operator's sheet uses such rows as guides; they carry no acceptance.
     if (!any) { emptyRows.push(r + 3); return; }
-    if (sectioned && !current) before.push(r + 3);
+    if (sectioned && allOther[i]) otherRows.push(r + 3);   // filed elsewhere; it does not split the group around it
+    else {
+      if (sectioned && rowState !== runState) {
+        runState = rowState;
+        if (rowState && rowState !== 'Not state specific') (runsOf[rowState] = runsOf[rowState] || []).push(r + 3);
+        lastRun = { state: rowState, n: 0 };
+      }
+      lastRun.n++;
+    }
+    if (sectioned && !rowState) before.push(r + 3);
     // PT3: a plan whose name names ANOTHER state anywhere — "(NC)", "BCBS NC",
     // "AR-S001", "of Virginia" — and not its own is said, never moved.
-    if (sectioned && current && current !== 'Not state specific') {
+    if (sectioned && rowState && rowState !== 'Not state specific') {
       const said = insPlanStatesNamed_(cells[nameCol]);
-      const ownCode = US_STATE_NAMES[current.toLowerCase()];
+      const ownCode = US_STATE_NAMES[rowState.toLowerCase()];
       const other = said.named.filter(function (c) { return c !== ownCode; });
       if (other.length && said.named.indexOf(ownCode) < 0 && said.loose.indexOf(ownCode) < 0) {
-        elsewhere.push('"' + cells[nameCol].slice(0, 60) + '" (row ' + (r + 3) + ', under ' + current + '; the name says ' + other.join(', ') + ')');
+        elsewhere.push('"' + cells[nameCol].slice(0, 60) + '" (row ' + (r + 3) + ', under ' + rowState + '; the name says ' + other.join(', ') + ')');
       }
     }
-    if (current) held[current] = true;
+    if (rowState) held[rowState] = true;
     rows.push(row);
   });
   // A section is named only if a plan kept its state — a reminder row the
@@ -1485,8 +1534,16 @@ function insPayorFromSource_(grid) {
     const reads = Object.keys(fuzzy);
     if (reads.length) changes.push('State names read through a misspelling: ' + reads.map(function (k) { return '"' + k + '" → ' + fuzzy[k]; }).join(', ') + '.');
     if (before.length) changes.push(before.length + ' plan(s) come before the first state section — their State reads "Multi-state / other".');
+    // 26post (F39): the three things the section reading decides without being told.
+    if (reached.length) changes.push(reached.length + ' section(s) begin above their "not listed" row, on the row(s) that start with the same state — for example ' + reached.slice(0, 2).join(' and ') + '.');
+    if (lateStarts.length) changes.push(lateStarts.length + ' plan(s) after the last state section begin with another state and are filed under it, not under the section above them: ' + lateStarts.slice(0, 12).join('; ') + (lateStarts.length > 12 ? '; …' : '') + '.');
+    if (otherRows.length) changes.push(otherRows.length + ' "all other states" row(s) are filed as "Not state specific" — they are the rule for every state the sheet does not list (source row ' + otherRows.slice(0, 12).join(', ') + ').');
+    const twice = Object.keys(runsOf).filter(function (st) { return runsOf[st].length > 1; });
+    if (twice.length) changes.push(twice.map(function (st) { return st + ' has ' + runsOf[st].length + ' separate groups of rows (starting at row ' + runsOf[st].join(', ') + ')'; }).join('; ') + ' — each keeps the state; check that they do not give two different answers for the same plan.');
+    if (lastRun.state && lastRun.state !== 'Not state specific' && lastRun.n > 0) changes.push('The last group, ' + lastRun.state + ', runs to the end of the sheet (' + lastRun.n + ' plan(s)) — a plan added below it takes that state unless its name begins with another state or it reads "all other states".');
     if (elsewhere.length) changes.push(elsewhere.length + ' plan(s) name a different state than the section they sit in and keep the section\'s state — move the row in the sheet if it is misfiled: ' + elsewhere.slice(0, 12).join('; ') + (elsewhere.length > 12 ? '; …' : '') + '.');
   }
+  if (!sectioned && sectionNames.length) changes.push('Only ' + sectionNames.length + ' state section(s) could be read (' + sectionNames.join(', ') + ') — three are needed before the sheet is treated as grouped by state, so no plan carries a State.');
   if (companies) changes.push('Column A\'s insurer names are kept as the Company of their plan.');
   Object.keys(netFixed).forEach(function (k) {
     const p = k.split('\u0001');
@@ -3750,6 +3807,11 @@ function kbImportDataTable(tabKey, csvBase64, opts) {
     const summary = kbDataTableSummary_(grid, spec);
     if (conv) {
       summary.converted = { from: 'source', sourceRows: conv.sourceRows, changes: conv.changes, note: conv.note };
+    } else if (spec.sourceFormat === 'payorAcceptance') {
+      // 26post (F39): a file that did not read as the source sheet's export is
+      // written exactly as it stands — and the preview said so only while a
+      // note happened to be stored. It always says so now.
+      summary.notConverted = true;
     }
     summary.fingerprint = kbDataTableFingerprint_(tabKey, grid, conv);
     // F37: the write is bound to the preview that was approved. A page from

@@ -4926,6 +4926,30 @@
     "voidCoaching"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-24",
+   "why": "26post Payor 1: teamTotalsForRep_ (F36)",
+   "added": [
+    "teamTotalsForRep_"
+   ],
+   "removed": [],
+   "changed": [
+    "insPayorFromSource_",
+    "kbImportDataTable",
+    "teamMetricsRepView_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-24",
+   "why": "26post Payor 1: F39 — trailing rows filed by rule, the section guesses named; F36 — teamTotalsForRep_",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "insPayorFromSource_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -12053,7 +12077,7 @@
   "insPayorFromSource_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "c0e4573a214edbef"
+   "sha": "fd7fe6f9c60a575e"
   },
   "insPayorMatch_": {
    "file": "70_kb.js",
@@ -12848,7 +12872,7 @@
   "kbImportDataTable": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "0d325fb4c9ca6789"
+   "sha": "5975d176645942b3"
   },
   "kbImportManual": {
    "file": "70_kb.js",
@@ -15718,7 +15742,12 @@
   "teamMetricsRepView_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "79979e690a876252"
+   "sha": "15466ea88cf1837a"
+  },
+  "teamTotalsForRep_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "61bcc11232a3eeae"
   },
   "teammateActiveNotIn_": {
    "file": "20_timeclock.js",

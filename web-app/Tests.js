@@ -9294,6 +9294,10 @@ function test_metrics_getTeamMetrics_nonManagerRejected() {
   _assertTrue(!r.error, "an enrolled rep gets the aggregate, not an error (got: " + (r.error || '') + ")");
   _assertTrue(r.repView === true, "the rep payload is marked repView");
   _assertNotNull(r.teamTotals, "team totals ride the rep payload");
+  // 26post F36 (operator 2026-11-24): nothing about the team's outbound calls reaches a rep.
+  _assertTrue(!('outboundMeta' in r), "the outbound tab's state never reaches a rep");
+  _assertTrue(Object.keys(r.teamTotals).every(function (k) { return !/^outbound/i.test(k); }), "no outbound total rides the team totals to a rep");
+  _assertTrue(!r.teamTotals.adjusted || r.teamTotals.adjusted.outbound === null, "the adjusted figures a rep is sent carry no outbound part");
   _assertTrue(!('reps' in r), "per-rep rows never reach a rep");
   _assertTrue(!('unmatchedAgents' in r) && !('rosterWithNoCdr' in r) && !('likelyMismatches' in r),
     "name diagnostics never reach a rep");
