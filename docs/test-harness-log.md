@@ -4590,4 +4590,8 @@ F53, F54, F57.**
   and the change was taken back.
 - **Editor suite:** three assertions added to
   `metrics_getTeamMetrics_nonManagerRejected` (no registration added).
-
+- **A red build this batch caused:** the commit that added the five pins did not
+  regenerate the counts block, so CI's `counts.mjs --check` failed on it (every
+  harness in that run passed). The next commit regenerated it. New pins and
+  `counts.mjs --write` belong in one commit.
+- **Bite-checks: 19 mutations (all pure), 19 bit, each on its first run.**
