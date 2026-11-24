@@ -1,0 +1,48 @@
+---BROAD SCAN IMPLEMENTATION SUMMARY---
+Findings implemented (26post — between-cycles operator work after cycle 26; the scan's two deferred findings the operator ruled on, with what the operator's real workbooks showed):
+  F39 — the payor source-export converter made layout guesses the preview did not name. Measured on the real workbooks first: one of the four guesses the scan named was happening (rows after the last state section took that state), three were not.
+  F36 — the rep view of Team Metrics shipped the team's outbound totals, which one or two people make (operator's ruling 2026-11-24: reps do not need them)
+  Found by the same measurement and taken with them: the lookup did not read the sheet's letter "L" (location-based) or an X with a condition in a bracket
+New capabilities (G/ST): None
+Files modified: web-app/70_kb.js, web-app/40_metrics.js, web-app/kb/script_kb.html, web-app/cn/script_callnotes.html, web-app/Tests.js, test/client/run.js, test/client/server-split-manifest.json, .cycle/config.md, CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/modules.md, docs/operator-log.md, docs/test-harness-log.md
+Estimate: M (~8 h), written to STATE.md's Estimates line before the first edit
+Actual: ~5 h
+
+CHANGES:
+F39 | web-app/70_kb.js | `insPayorFromSource_`: after the LAST section start, and only while a US state is in force, a plan whose name begins with another state starts that state; a row reading "all other states" is written as "Not state specific" wherever it sits and does not split the group around it; an explicit "Not state specific" section keeps its rows; mid-sheet a plan naming another state is still said and never moved. The preview's change list gains one line each for: sections that begin above their "not listed" row, rows filed by their own name, "all other states" rows, a state with more than one group of rows, the open end of the last group, and a sheet with only one or two sections. Several untitled columns are one line.
+F39 | web-app/70_kb.js, web-app/cn/script_callnotes.html | `kbImportDataTable` sets `summary.notConverted` for a payor table whose file did not read as the source export; the preview says the file is written exactly as it stands, with or without a stored note.
+Lookup | web-app/kb/script_kb.html | `INS_IS.location` also reads a leading "L" before a bracket, an "&" or the end; `INS_IS.accepted` reads an X followed by a bracket (an accept with a condition — amber); the "Location-based (285–325 lb)" term no longer attaches to an X. A bare "Y" is unchanged: neutral, by an earlier operator rule.
+F36 | web-app/40_metrics.js | `teamTotalsForRep_` (new, pure): the team totals without any key that begins `outbound`, and `adjusted` rebuilt from its intake half (or null). `teamMetricsRepView_` ships that copy and no `outboundMeta`. The manager's payload and a rep's own outbound calls on My Stats are untouched.
+Tests | test/client/run.js, web-app/Tests.js | Five new pure pins; eight older pins followed; three assertions added to an editor test.
+
+TEST RESULTS: passed. Pure 1817/1817 (with dev dependencies), DOM 508/508; `lint-server`, `split-manifest --check`, `handbook-sync --check`, `counts.mjs --check` clean; `cycle-closeout --check` in step.
+  Measured on the real data, before and after: the operator's two workbooks were read from an upload (not committed — the repo is public), each tab dumped to a grid, and the app's real converter and the lookup's real colouring run over all five payor tabs. After the change the Medicaid tab's four trailing rows are filed District of Columbia, Florida and "Not state specific" ×2; every tab still converts; in the item columns only a bare Y (2 cells), "Y ( 285-325 lb)" (2) and one stray date have no colour.
+  Bite-checks: 19 mutations (all pure), 19 bit, each on its first run.
+  A wrong change caught by an existing pin: the first version read a bare "Y" as location-based. The legend pin carries the operator's rule that a stray Y renders verbatim and neutral; it failed, and the change was taken back before the first commit.
+  CI: both jobs (client-tests; visual-layout) completed with conclusion success on 88006b6 (the code and the pins) and 019d7a8 (the docs, the invariant and the scenario). The commit that adds this block and the checkpoint is pushed with it; its run is not read here.
+  NOT verified here: nothing ran in a deployed Apps Script project and the editor suite was not run. The workbooks were read as xlsx; the app's upload reads a CSV of one tab through `kbParseCsv_`, which was not in the loop — dates and numbers can be formatted differently, the layout cannot. No lookup was searched over the converted real tables (the scoring of a State cell was read in the code, not driven on them). The Manual Mobility tab converts cleanly and every value on it is coloured and explained; what the lookup shows for its blank cells (its last four plans have most items blank) was not checked.
+  Regression scenarios whose Subsystem overlaps the modified files (Server; Client (Reference views); Client (Metrics views); Client (Call Notes views — Admin)): every scenario of those subsystems, and the new S211 — NOT WALKED: each needs a deployed instance (Test Command is `manual`).
+REGRESSION RISKS: (1) F39 — a plan added below the last state section whose name merely BEGINS with a state it does not belong to is now filed under that state (it was filed under the last section's). The preview names every such row. (2) F39 — the stored Medicaid table keeps the old filing until that tab is uploaded again; nothing rewrites it. (3) The preview's change list is longer by up to six lines on a by-state sheet. (4) F36 — a rep's page still open from before the deploy holds the old payload until it reloads. (5) Lookup — a value that begins "L (" and means something other than location-based would now be amber and explained as location-based; none exists in either workbook.
+INVARIANTS AT RISK: None broken. PT3's rule (a misfiled plan mid-sheet is said, never moved) holds and is pinned again beside the new rule. INV-185 (a fixture mirrors the server): the visual mock has no rep-view Team fixture, so nothing to mirror. g33 / INV-124 (peers' numbers stay manager-only) is tightened, not loosened. The legend's neutral-Y rule holds. New: INV-458.
+NET SCORE: 0 production fixes − 1 new failure mode = −1. (a) F39 NO — the Medicaid table exists only since PT1, deployed 2026-11-24 by the operator's report, and nothing shows that tab has been uploaded; it fires the moment it is. Lookup letters NO — it needs the source export uploaded (the earlier tab-shape uploads may have spelled the word out); not shown. F36 NO — it needs the CDR Report's Outbound Calls tab, which nothing shows exists yet. (b) F39 YES, one, Low, documented: risk 1. F36 NO. Lookup NO.
+
+OPERATOR ACTIONS / DEPLOY:
+- After the deploy, upload the Primary Medicaid tab again (Admin → Config → Reference data tables) — the stored table keeps the Wyoming filing until then | BLOCKS DEPLOY: N
+- Say what the Reimbursement Status words mean for a rep (FO-26-1) | BLOCKS DEPLOY: N
+Deploy: Team Tools — `cd web-app && clasp push -f`, then Deploy → Manage deployments → Edit → Version: New version. The handbook app is not affected (`handbook-sync --check` reports its copies current).
+
+(Not complete in production until blocking operator actions are done AND the deploy step is confirmed.)
+
+FOLLOW-ON ITEMS:
+- FO-26-1 | web-app/kb/script_kb.html: the lookup's vocabulary — the Reimbursement Status column's words (Testing ×600, Need Test ×63, Testing (Hold) ×15, Acceptable ×11, Rejected ×3) have no colour and no explanation | → decision (the operator defines what each should say)
+- FO-26-2 | web-app/70_kb.js: insPayorFromSource_ — on the BCBS tab 81 plans sit before the first state section and read "Multi-state / other", several of them state-specific by name | → decision (file by name as at the bottom, or leave to the sheet)
+- FO-26-3 | web-app/70_kb.js + the lookup — no search was driven over the converted REAL tables: ranking with a state in the query, the "all other states" rows, the two District of Columbia groups | → this cycle (the next payor pass)
+- FO-26-4 | web-app/kb/script_kb.html — what the lookup shows for a BLANK item cell (the Manual Mobility tab's last four plans) was not checked | → this cycle (the next payor pass)
+- FO-26-5 | web-app/70_kb.js: kbImportDataTable — the real tabs were not run through `kbParseCsv_` (a CSV export of each tab was not available) | → this cycle (the next payor pass; S211 covers it on a deployed instance)
+- FO-26-6 | web-app/70_kb.js: insPayorValueTidy_ — the Manual Mobility standing note keeps a person's name ("… Referral"), where the converter names another person's exception by role | → decision
+- FO-26-7 | web-app/kb/script_kb.html — a bare "Y" (2 cells on BCBS, which has no key columns) and "Y ( 285-325 lb)" (2) stay neutral under the operator's earlier rule, though the other tabs' key defines Y | → decision
+- FO-26-8 | the sheets themselves — District of Columbia listed twice on Medicaid; a date in a code column on Medicare / MA row 26; the rows the preview names as misfiled | → won't do (the operator's sheet; listed in the operator log)
+
+DOCUMENTATION UPDATES NEEDED:
+- None outstanding — done in this batch: CLAUDE.md (clauses on g41, g156 and g33; the decisions index; the counts block, by `--write`), docs/gotchas.md (three amendments), docs/design-decisions.md, docs/modules.md, docs/operator-log.md, docs/test-harness-log.md, .cycle/config.md (INV-458, S211).
+---END BROAD SCAN IMPLEMENTATION SUMMARY---
