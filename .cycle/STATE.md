@@ -5,9 +5,9 @@ Cycle: 26 — closed 2026-11-20 (reflected net +18 (32 prod fixes − 14 new fai
 Phase: implement
 Scope: 26post — between-cycles operator work after cycle 26: the payor sheet tool (the scan's deferred F39 and F36, with what the operator's real workbooks showed)
 Test Command: manual
-Estimates: 26post Payor 1 (F39 — trailing rows filed by rule, every layout guess named in the preview, a state listed twice said, untitled columns in one line; the lookup reads the sheet's L / Y and an X with a condition; F36 — reps do not get the team's outbound totals): M (~8 h) — actual ~5 h
+Estimates: 26post Payor 1 (F39 — trailing rows filed by rule, every layout guess named in the preview, a state listed twice said, untitled columns in one line; the lookup reads the sheet's L / Y and an X with a condition; F36 — reps do not get the team's outbound totals): M (~8 h) — actual ~5 h · 26post Payor 2 (FO-26-3 + FO-26-4, measured over the real tables first — the District of Columbia read as DC, never as Washington, in a name, a State cell and a query; a search no plan holds every word of says so and gives the not-listed rule, and the count is of plans with every word; a card says which codes the sheet leaves blank): M (~6 h)
 Subsystem cycles since last Seams audit: 4 — reset to 0 by the Seams & Invariants audit of 2026-10-05 (cycle 24); incremented by cycle 24's /reflect (2026-10-06), cycle 25's /reflect (2026-10-16), the 25post stretch's /reflect (2026-11-12) and cycle 26's /reflect (2026-11-20). The cadence is every 4 — a Seams & Invariants audit is DUE.
-Updated: 2026-11-24 (26post Payor 1 implemented — F39 and F36, measured on the operator's two real workbooks first; CI green; not deployed)
+Updated: 2026-11-24 (26post Payor 2 started — estimate recorded before the first edit; Payor 1 implemented, CI green, not deployed)
 
 ## In progress (facts to carry forward — NOT judgments)
 - (none — cycle 26 is closed; its record is the top block of `.cycle/HISTORY.md`)
