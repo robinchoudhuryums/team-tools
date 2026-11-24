@@ -282,13 +282,26 @@ function hbConfirmPerson(email, ok) {
   const st = hbStore_();
   if (st.error) return { success: false, error: st.error };
   const isAdmin = hbAdmins_().indexOf(emp.email) >= 0;
+  // F52 (cycle 26): the CALLER is checked first, before the lock and before
+  // anything is said about the person named (g17). A reader who is neither an
+  // admin nor a manager was told "has not chosen a manager" or "only their
+  // manager" — which answered, for any address, whether it had picked one —
+  // and took the lock to be told so. A non-admin now gets ONE answer whatever
+  // the reason.
+  const refusal = 'Only their manager can answer this.';
+  if (!isAdmin) {
+    let manager = false;
+    try { manager = hbPeopleRead_(st.ss, false).some(function (p) { return p.email === emp.email && p.role === 'manager'; }); }
+    catch (err) { return { success: false, error: err.message }; }
+    if (!manager) return { success: false, error: refusal };
+  }
   return hbWithLock_(function () {
     try {
       const people = hbPeopleRead_(st.ss, true);
       const rec = people.filter(function (p) { return p.email === who; })[0];
-      if (!rec || !rec.manager) return { success: false, error: 'That person has not chosen a manager.' };
       const stillManager = people.some(function (p) { return p.email === emp.email && p.role === 'manager'; });
-      if (!(rec.manager === emp.email && stillManager) && !isAdmin) return { success: false, error: 'Only their manager can answer this.' };
+      if (!isAdmin && !(rec && rec.manager === emp.email && stillManager)) return { success: false, error: refusal };
+      if (!rec || !rec.manager) return { success: false, error: 'That person has not chosen a manager.' };
       const now = Date.now();
       const next = Object.assign({}, rec, ok === true
         ? { status: 'confirmed', confirmedMs: now, confirmedBy: emp.email, updatedMs: now }

@@ -2037,6 +2037,11 @@
     align-items: center; justify-content: center; padding: 20px;
   }
   .overlay.open { display: flex; animation: fadein .18s var(--ease); }
+  /* F62 (cycle 26): a confirm or a prompt is the one thing on screen that must
+     be answered, so it paints above the two non-modal panels that sit over the
+     overlay layer — the Reference drawer (55) and the floating Scratchpad (56).
+     The Scratchpad's own "New page" and "Delete page" dialogs opened UNDER it. */
+  .overlay.ui-dialog, .overlay.overlay-above-panels { z-index: 57; }
   /* Round 2 · 8c — hover-mode tethered popover. The backdrop becomes
      transparent + non-interactive so the rep can sweep across other
      calendar cells without dismissing; the modal itself catches pointer
@@ -2213,7 +2218,26 @@
   .de-act-note { margin-top: 6px; color: var(--muted-2); }
   .de-inf-tag { display: inline-block; margin-top: 4px; font-family: var(--ui); font-size: 11px; font-weight: 600;
     color: var(--info-deep); border: 1px dashed var(--info-deep); border-radius: var(--radius-pill); padding: 0 8px; }
-  .de-inf-tag[hidden], .de-act[hidden] { display: none; }
+  .de-inf-tag[hidden], .de-act[hidden], .de-inf-confirm[hidden] { display: none; }
+  /* DS1 (cycle 26): the rep's "Confirm" request on an inferred time (pay statement). */
+  .pay-stmt-confirm-row { padding: 0 0 3px 94px; }
+  .pay-stmt-confirm { margin: 0 6px 0 0; font: inherit; font-size: 11px; color: var(--accent-ink); background: none;
+    border: 1px solid var(--accent-ink); border-radius: 6px; padding: 1px 7px; cursor: pointer; }
+  .pay-stmt-confirm:hover { background: var(--accent-soft); }
+  .pay-stmt-confirm:disabled { opacity: .5; cursor: default; }
+  /* FR1 (cycle 26): the close card's unconfirmed inferred times; FR3: Team Punches' stale-bars notice. */
+  .payclose-inf { margin-top: 8px; }
+  .payclose-inf-head { font-size: 12px; color: var(--info-deep); margin-bottom: 2px; }
+  .payclose-inf-asked { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+  .tcal-act-stale { color: var(--warning-deep); }
+  /* DQ3 (cycle 26): confirm a saved inferred time without changing it. */
+  .de-inf-tag.confirmed { color: var(--success-deep); border-style: solid; border-color: var(--success-deep); }
+  .de-inf-tag + .de-inf-confirm { margin-left: 0; }
+  .de-inf-tag { margin-right: 6px; }
+  .de-inf-confirm { display: inline-block; margin: 4px 0 0; font: inherit; font-family: var(--ui); font-size: 11px; font-weight: 600;
+    color: var(--accent-ink); background: transparent; border: 1px solid var(--accent-ink); border-radius: var(--radius-pill);
+    padding: 0 8px; cursor: pointer; }
+  .de-inf-confirm:hover { background: var(--accent-soft); }
   /* The same mark on the timesheet surfaces (team calendar, pay statement). */
   .exp-inferred { margin-top: 8px; font-family: var(--ui); font-size: 12px; color: var(--info-deep); }
   .exp-inferred ul { margin: 6px 0 0 18px; padding: 0; color: var(--ink); }

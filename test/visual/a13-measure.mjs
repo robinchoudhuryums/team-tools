@@ -3,25 +3,12 @@
 // matrix does not reach Team Training (its `develop` shot lands on My Training),
 // so tr-card-title needs a direct measurement rather than a screenshot.
 import { chromium } from 'playwright';
+import { chromiumPath } from './chromium-path.cjs';   // F74 (cycle 26): the ONE resolver for every script here
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
-// Same Chromium resolution as shoot.mjs — the managed download is absent here.
-function chromiumPath() {
-  if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
-  for (const root of [process.env.PLAYWRIGHT_BROWSERS_PATH, '/opt/pw-browsers'].filter(Boolean)) {
-    try {
-      const hit = fs.readdirSync(root).filter((d) => /^chromium-\d+$/.test(d)).sort().pop();
-      if (hit) {
-        const exe = path.join(root, hit, 'chrome-linux', 'chrome');
-        if (fs.existsSync(exe)) return exe;
-      }
-    } catch (e) { /* keep looking */ }
-  }
-  return undefined;
-}
 const browser = await chromium.launch({ executablePath: chromiumPath() });
 const page = await browser.newPage();
 await page.setContent(fs.readFileSync(path.join(dir, 'page.html'), 'utf8'), { waitUntil: 'load' });

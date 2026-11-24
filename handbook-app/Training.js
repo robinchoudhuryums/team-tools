@@ -24,12 +24,16 @@
  * a due date never coerces — g144/g13):
  *   TeamQuizzes [Id, Author, QuizJson, UpdatedMs, Status]   live | archived
  *   Plans       [Id, Author, PlanJson, UpdatedMs, Status]   live | archived
- *   ReadMarks   [AtMs, Email, ItemKey, Done, Version]       append-only; the
- *               latest mark per (reader, item) wins; Done is yes / no (g09).
- *               Since HB3.4 a mark IS the sign-off ("I've read this"): it
- *               records the section's version (its body's stamp), and a change
- *               the changelog flags for retraining, dated after it, asks the
- *               reader to sign again — until they do, the item is not done.
+ *   ReadMarks   [AtMs, Email, ItemKey, Done, Version, Retrain]   append-only;
+ *               the latest mark per (reader, item) wins; Done is yes / no (g09).
+ *               Since HB3.4 a mark IS the sign-off ("I've read this"). It
+ *               records the VERSION signed (the stamp of the text) and, since
+ *               cycle 26 F49, the RETRAINING state the handbook was in when it
+ *               was signed (hbRetrainStamp_). A change the changelog flags for
+ *               retraining that the mark has not seen asks the reader to sign
+ *               again — until they do, the item is not done. The page sends
+ *               the version of the text it SHOWED, and a sign-off of text that
+ *               is no longer current is refused, never recorded as current.
  * A team quiz's answer key stays on the server like an official one's
  * (quizStripQuestion_); its author and the admin see it in the editor. */
 
@@ -38,7 +42,8 @@ const HB_TEAM_QUIZZES_HEADERS = ['Id', 'Author', 'QuizJson', 'UpdatedMs', 'Statu
 const HB_PLANS_TAB = 'Plans';
 const HB_PLANS_HEADERS = ['Id', 'Author', 'PlanJson', 'UpdatedMs', 'Status'];
 const HB_READS_TAB = 'ReadMarks';
-const HB_READS_HEADERS = ['AtMs', 'Email', 'ItemKey', 'Done', 'Version'];   // HB3.4: the version signed
+const HB_READS_HEADERS = ['AtMs', 'Email', 'ItemKey', 'Done', 'Version', 'Retrain'];   // HB3.4: the version signed; F49: the retraining state seen
+const HB_RETRAIN_NONE = 'none';   // a mark made when the changelog flagged nothing for the item ('' = not recorded: an older mark)
 const HB_TEAM_QUIZ_ID_RE = /^tq-[a-z0-9]{8,24}$/;
 const HB_PLAN_ID_RE = /^pl-[a-z0-9]{8,24}$/;
 const HB_QUIZ_ID_RE = /^(?:q-[a-z0-9]+(?:-[a-z0-9]+)*|tq-[a-z0-9]{8,24})$/;   // an official or a team quiz
@@ -75,7 +80,8 @@ function hbSignMarks_(values) {
     const ms = Number(r[0]), email = hbEmail_(r[1]), key = String(r[2] || '');
     if (!email || !key || !(ms > 0)) return;
     const k = email + '|' + key;
-    if (!latest[k] || ms >= latest[k].ms) latest[k] = { ms: ms, done: String(r[3] || '').toLowerCase() === 'yes', version: String(r[4] == null ? '' : r[4]) };
+    if (!latest[k] || ms >= latest[k].ms) latest[k] = { ms: ms, done: String(r[3] || '').toLowerCase() === 'yes', version: String(r[4] == null ? '' : r[4]),
+      retrain: String(r[5] == null ? '' : r[5]) };
   });
   return latest;
 }
@@ -91,12 +97,50 @@ function hbRetrainDate_(changelog, ids) {
   });
   return latest;
 }
+/** PURE — the retraining state of `ids` in the changelog, as a mark records
+ *  it: 'YYYY-MM-DD#n' (the latest flagged change's date and how many there
+ *  are), or HB_RETRAIN_NONE when nothing is flagged. */
+function hbRetrainStamp_(changelog, ids) {
+  const want = {};
+  (ids || []).forEach(function (id) { want[id] = 1; });
+  let latest = '', n = 0;
+  (Array.isArray(changelog) ? changelog : []).forEach(function (c) {
+    if (!c || c.retraining !== true || !want[c.id] || !/^\d{4}-\d{2}-\d{2}$/.test(String(c.date || ''))) return;
+    n++;
+    if (c.date > latest) latest = c.date;
+  });
+  return n ? latest + '#' + n : HB_RETRAIN_NONE;
+}
+/** PURE — does the changelog now flag something a mark has not seen? `now`
+ *  and `seen` are hbRetrainStamp_ values: a later date, or more flagged changes
+ *  on the same date. Nothing flagged now is never newer. */
+function hbRetrainNewer_(now, seen) {
+  const parse = function (v) { const m = /^(\d{4}-\d{2}-\d{2})#(\d+)$/.exec(String(v || '')); return m ? { d: m[1], n: Number(m[2]) } : null; };
+  const a = parse(now), b = parse(seen);
+  if (!a) return false;
+  if (!b) return true;
+  return a.d > b.d || (a.d === b.d && a.n > b.n);
+}
 /** PURE — where a sign-off stands: 'unsigned' (none, or withdrawn), 'resign'
- *  (a change flagged for retraining is dated AFTER the day it was signed), or
- *  'signed'. A change not flagged for retraining never asks again. */
-function hbSignState_(mark, signedDay, retrainDate) {
+ *  (a change flagged for retraining that this sign-off has not seen), or
+ *  'signed'. A change not flagged for retraining never asks again.
+ *  `cur` is the item now: { version, retrainStamp, retrainDate, signedDay }.
+ *  F49 (cycle 26): a mark that recorded the retraining state it saw is judged
+ *  by THAT — exact, whatever the dates. The rule had been "a flagged change
+ *  dated after the day it was signed", with the day in India time: a change
+ *  authored on the 28th and imported on the 12th never asked anyone who signed
+ *  the old text in between, nor one signed the same day.
+ *  A mark from BEFORE the state was recorded cannot be exact, so it fails
+ *  toward asking (g159): signed the text as it is now — signed; signed other
+ *  text, and the item has a flagged change at all — asked again, once (the new
+ *  mark records the state); no version on the mark — the date rule, on or
+ *  after the day signed. */
+function hbSignState_(mark, cur) {
   if (!mark || !mark.done) return 'unsigned';
-  return retrainDate && retrainDate > signedDay ? 'resign' : 'signed';
+  cur = cur || {};
+  if (mark.retrain) return hbRetrainNewer_(cur.retrainStamp, mark.retrain) ? 'resign' : 'signed';
+  if (mark.version && cur.version) return mark.version !== cur.version && cur.retrainDate ? 'resign' : 'signed';
+  return cur.retrainDate && cur.signedDay && cur.retrainDate >= cur.signedDay ? 'resign' : 'signed';
 }
 /** PURE — the people an author may assign to: an admin, everyone; a manager
  *  (still a manager), their confirmed team; anyone else, nobody. */
@@ -171,7 +215,8 @@ function hbTeamQuizValidate_(def, sectionIds) {
   if (JSON.stringify(v.quiz).length > TRAIN_QUIZ_JSON_MAX) return { error: 'The quiz is too large to store.' };
   return { quiz: v.quiz };
 }
-/** PURE — today in the app's timezone, YYYY-MM-DD, from fmtDate_'s output. */
+/** PURE — is a plan overdue: past its due day (`todayIso` is hbDay_'s — the
+ *  project's timezone, F53) with something still to do. */
 function hbPlanOverdue_(due, todayIso, allDone) { return !!due && !allDone && due < todayIso; }
 
 // ── Reads ────────────────────────────────────────────────────────────────
@@ -186,58 +231,75 @@ function hbPlanRows_(ss) { return hbJsonRows_(hbTrainTabValues_(ss, HB_PLANS_TAB
 function hbSignOffs_(ss) { return hbSignMarks_(hbTrainTabValues_(ss, HB_READS_TAB, HB_READS_HEADERS.length)); }
 /** The published handbook: its chapters, its sections (id → title), and
  *  each section's and chapter's VERSION — the stamp of its text (HB3.4). */
-function hbPublished_() {
-  const res = getManualParts();
+function hbPublished_(fresh) {
+  // `fresh` (F49): read the sheet now — a sign-off is judged against the text
+  // as it IS, not a five-minute-old answer.
+  const res = fresh ? (getEmployeeInfo_() ? hbPartsLoad_() : { error: 'Not authorized.' }) : getManualParts();
   if (!res || res.error || !Array.isArray(res.parts)) throw new Error('Could not read the handbook\'s chapters' + (res && res.error ? ': ' + res.error : '') + '.');
-  const out = { departments: [], sectionIds: {}, sectionTitle: {}, version: {}, chapterSections: {} };
+  const out = { departments: [], sectionIds: {}, sectionTitle: {}, version: res.versions || hbVersions_(res.parts), chapterSections: {} };
   res.parts.forEach(function (p) {
     if (!p || !p.department) return;
     const dept = String(p.department), ids = [];
     out.departments.push(dept);
     (p.sections || []).forEach(function (s) {
       out.sectionIds[s.id] = 1; out.sectionTitle[s.id] = String(s.title || '');
-      out.version[hbItemKey_('section', s.id)] = hbStamp_(String(s.bodyMd || ''));
       ids.push(s.id);
     });
     out.chapterSections[dept] = ids;
-    out.version[hbItemKey_('chapter', dept)] = hbStamp_(ids.map(function (id) { return out.version[hbItemKey_('section', id)]; }).join('|'));
   });
   return out;
 }
 /** Everything an item's progress is read from, for one request. */
 function hbProgressCtx_(ss) {
-  const meta = getManualMeta();
-  const titles = {};
-  hbQuizzes_().quizzes.forEach(function (q) { titles[q.id] = q.title; });
-  hbTeamQuizRows_(ss).rows.forEach(function (r) { titles[r.id] = String(r.body.title || ''); });
-  return { pub: hbPublished_(), changelog: meta && !meta.error && Array.isArray(meta.changelog) ? meta.changelog : [],
-    marks: hbSignOffs_(ss), attempts: hbQuizAttempts_(ss), resets: hbQuizResets_(ss), titles: titles, now: Date.now(), today: fmtDate_(new Date()) };
+  const changelog = hbChangelogRead_();   // F47: throws when it cannot be read — never "nothing flagged"
+  // F50: a title for every quiz ever written (an archived one is still named),
+  // and — separately — the quizzes that can be TAKEN now.
+  const titles = {}, liveQuiz = {};
+  hbQuizzes_().quizzes.forEach(function (q) { titles[q.id] = q.title; liveQuiz[q.id] = 1; });
+  hbTeamQuizRows_(ss).rows.forEach(function (r) { titles[r.id] = String(r.body.title || ''); if (r.live) liveQuiz[r.id] = 1; });
+  return { pub: hbPublished_(), changelog: changelog,
+    marks: hbSignOffs_(ss), attempts: hbQuizAttempts_(ss), resets: hbQuizResets_(ss), titles: titles, liveQuiz: liveQuiz, now: Date.now(), today: hbDay_(new Date()) };
 }
-/** One reader's sign-off on one reading item: { state, signedMs, version }. */
+/** One reader's sign-off on one reading item: { state, signedMs, changed }. */
 function hbSignOf_(ctx, email, kind, id) {
   const key = hbItemKey_(kind, id);
   const mark = ctx.marks[email + '|' + key] || null;
   const ids = kind === 'chapter' ? (ctx.pub.chapterSections[id] || []) : [id];
-  const signedDay = mark ? fmtDate_(new Date(mark.ms)) : '';
-  return { state: hbSignState_(mark, signedDay, hbRetrainDate_(ctx.changelog, ids)), signedMs: mark && mark.done ? mark.ms : 0,
-    changed: !!(mark && mark.done && mark.version && ctx.pub.version[key] && mark.version !== ctx.pub.version[key]) };
+  const cur = { version: ctx.pub.version[key] || '', retrainStamp: hbRetrainStamp_(ctx.changelog, ids), retrainDate: hbRetrainDate_(ctx.changelog, ids),
+    signedDay: mark ? hbDay_(new Date(mark.ms)) : '' };
+  return { state: hbSignState_(mark, cur), signedMs: mark && mark.done ? mark.ms : 0,
+    changed: !!(mark && mark.done && mark.version && cur.version && mark.version !== cur.version) };
+}
+/** PURE — can a plan item still be done? A quiz that is archived or gone, a
+ *  section or chapter no longer published, cannot (F50). `pub` is
+ *  hbPublished_'s answer, `liveQuiz` the quizzes that can be taken. */
+function hbItemMissing_(it, pub, liveQuiz) {
+  if (it.kind === 'quiz') return !liveQuiz[it.id];
+  if (it.kind === 'chapter') return pub.departments.indexOf(it.id) < 0;
+  return !pub.sectionIds[it.id];
 }
 /** A plan's items for one reader: each with whether it is done (a reading item
- *  signed and not asked again; a quiz passed), the progress, and overdue. */
+ *  signed and not asked again; a quiz passed), the progress, and overdue.
+ *  F50 (cycle 26): an item that can no longer be done is `missing` and is NOT
+ *  counted — it kept its plan unfinished, and overdue, for ever (an archived
+ *  quiz was still offered as "Take the quiz", and refused). `missing` is how
+ *  many were left out; a plan with nothing left to do is not overdue. */
 function hbPlanProgress_(ctx, plan, email) {
   const items = (plan.body.items || []).map(function (it) {
     const key = hbItemKey_(it.kind, it.id);
+    const missing = hbItemMissing_(it, ctx.pub, ctx.liveQuiz);
     if (it.kind === 'quiz') {
       const s = hbQuizStanding_(ctx.attempts, ctx.resets, email, it.id, ctx.now);
-      return { kind: 'quiz', id: it.id, key: key, title: ctx.titles[it.id] || '', missing: !ctx.titles[it.id], done: s.passed, quiz: s };
+      return { kind: 'quiz', id: it.id, key: key, title: ctx.titles[it.id] || '', missing: missing, done: !missing && s.passed, quiz: s };
     }
     const so = hbSignOf_(ctx, email, it.kind, it.id);
-    return { kind: it.kind, id: it.id, key: key, done: so.state === 'signed', sign: so };
+    return { kind: it.kind, id: it.id, key: key, missing: missing, done: !missing && so.state === 'signed', sign: so };
   });
-  const n = items.filter(function (i) { return i.done; }).length;
+  const live = items.filter(function (i) { return !i.missing; });
+  const n = live.filter(function (i) { return i.done; }).length;
   const due = String(plan.body.due || '');
   return { id: plan.id, title: String(plan.body.title || ''), author: plan.author, authorName: hbNameOf_(plan.author), due: due,
-    items: items, done: n, total: items.length, overdue: hbPlanOverdue_(due, ctx.today, n === items.length) };
+    items: items, done: n, total: live.length, missing: items.length - live.length, overdue: hbPlanOverdue_(due, ctx.today, n === live.length) };
 }
 /** A team quiz record as the quiz engine's shape. */
 function hbTeamQuizOf_(r) {
@@ -312,20 +374,41 @@ function hbMyTraining() {
 /** The reader signs off a chapter or section — "I've read this" — or
  *  withdraws it. Any signed-in reader; the item must be a published one.
  *  Appends a ReadMarks row with the version signed (HB3.4). */
-function hbMarkRead(kind, id, done) {
+function hbMarkRead(kind, id, done, shown) {
   const emp = getEmployeeInfo_();
   if (!emp) return { success: false, error: 'Not authorized.' };
   if (kind !== 'chapter' && kind !== 'section') return { success: false, error: 'Only a chapter or a section is marked read.' };
   const st = hbStore_();
   if (st.error) return { success: false, error: st.error };
-  let pub;
-  try { pub = hbPublished_(); } catch (err) { return { success: false, error: err.message }; }
-  const sid = String(id || '');
-  if (kind === 'chapter' ? pub.departments.indexOf(sid) < 0 : !pub.sectionIds[sid]) return { success: false, error: 'That ' + kind + ' is not in the handbook.' };
+  const sid = String(id || ''), key = hbItemKey_(kind, sid), signing = done !== false;
+  let pub, retrain = '';
+  try {
+    pub = hbPublished_();
+    if (kind === 'chapter' ? pub.departments.indexOf(sid) < 0 : !pub.sectionIds[sid]) return { success: false, error: 'That ' + kind + ' is not in the handbook.' };
+    if (signing) {
+      // F49 (cycle 26): the sign-off is of the text the reader SAW. The page
+      // sends that text's version; the mark recorded the server's current one,
+      // so "I've read this" on a page opened before an update was stored as a
+      // reading of the update.
+      const mine = String(shown || '');
+      if (!mine) return { success: false, reload: true, error: 'Reload the handbook, then sign — this page was opened before an update to the app.' };
+      // The retraining state the handbook is in now, read past the cache; and
+      // where the changelog flags this item, the text is read from the sheet
+      // too, so a mark never pairs a flagged change with the text before it.
+      const ids = kind === 'chapter' ? (pub.chapterSections[sid] || []) : [sid];
+      retrain = hbRetrainStamp_(hbChangelogNow_(), ids);
+      if (retrain !== HB_RETRAIN_NONE || mine !== pub.version[key]) {
+        pub = hbPublished_(true);
+        if (kind === 'chapter' ? pub.departments.indexOf(sid) < 0 : !pub.sectionIds[sid]) return { success: false, error: 'That ' + kind + ' is not in the handbook.' };
+      }
+      if (mine !== pub.version[key]) {
+        return { success: false, changed: true, error: 'This ' + kind + ' was updated after you opened it. Reload the handbook to read it as it is now, then sign.' };
+      }
+    }
+  } catch (err) { return { success: false, error: err.message }; }
   return hbWithLock_(function () {
     try {
-      const key = hbItemKey_(kind, sid);
-      hbQuizAppend_(st.ss, HB_READS_TAB, HB_READS_HEADERS, [Date.now(), emp.email, key, done === false ? 'no' : 'yes', pub.version[key] || '']);
+      hbQuizAppend_(st.ss, HB_READS_TAB, HB_READS_HEADERS, [Date.now(), emp.email, key, signing ? 'yes' : 'no', pub.version[key] || '', signing ? retrain : '']);
       return { success: true };
     } catch (err) { return { success: false, error: err.message }; }
   });
@@ -343,6 +426,11 @@ function hbTeamTraining() {
     const tq = hbTeamQuizRows_(c.ss), pl = hbPlanRows_(c.ss);
     const admins = hbAdmins_();
     const team = hbAuthorTeam_(c.people, c.emp.email, c.isAdmin);
+    // F50: how many of a plan's items can no longer be done, so its author
+    // can see why it is short (and take them out).
+    const pub = hbPublished_(), liveQuiz = {};
+    hbQuizzes_().quizzes.forEach(function (q) { liveQuiz[q.id] = 1; });
+    tq.rows.forEach(function (r) { if (r.live) liveQuiz[r.id] = 1; });
     return {
       isAdmin: c.isAdmin, unreadable: tq.unreadable + pl.unreadable,
       quizzes: tq.rows.filter(mine).map(function (r) {
@@ -351,7 +439,8 @@ function hbTeamTraining() {
       plans: pl.rows.filter(mine).map(function (r) {
         const t = hbAuthorTeam_(c.people, r.author, admins.indexOf(r.author) >= 0);
         return { id: r.id, author: r.author, authorName: hbNameOf_(r.author), live: r.live, updatedMs: r.updatedMs, plan: r.body,
-          reaches: r.live ? hbPlanRecipients_(r.body, t).length : 0 };
+          reaches: r.live ? hbPlanRecipients_(r.body, t).length : 0,
+          missing: (r.body.items || []).filter(function (it) { return it && hbItemMissing_(it, pub, liveQuiz); }).length };
       }),
       team: team.map(function (p) { return { email: p.email, name: hbNameOf_(p.email), department: p.department }; }),
       official: hbQuizzes_().quizzes.map(function (q) { return { id: q.id, title: q.title }; }),
@@ -432,7 +521,15 @@ function hbArchiveTraining(kind, id, archived) {
       if (!c.isAdmin && rec.author !== c.emp.email) return { success: false, error: 'Only its author can archive it.' };
       hbTrainWrite_(c.ss, isQuiz ? HB_TEAM_QUIZZES_TAB : HB_PLANS_TAB, isQuiz ? HB_TEAM_QUIZZES_HEADERS : HB_PLANS_HEADERS,
         Object.assign({}, rec, { live: archived === false, updatedMs: Date.now() }));
-      return { success: true };
+      // F50: archiving a quiz that live plans still list says so — the item
+      // stops counting in them (hbPlanProgress_), it does not block them.
+      const out = { success: true };
+      if (isQuiz && archived !== false) {
+        out.inPlans = hbPlanRows_(c.ss).rows.filter(function (p) {
+          return p.live && (p.body.items || []).some(function (it) { return it && it.kind === 'quiz' && it.id === sid; });
+        }).map(function (p) { return String(p.body.title || ''); });
+      }
+      return out;
     } catch (err) { return { success: false, error: err.message }; }
   });
 }
@@ -447,8 +544,7 @@ function hbMySignOffs() {
   if (!ss) return { setUp: false, signoffs: {} };
   try {
     const marks = hbSignOffs_(ss);
-    const meta = getManualMeta();
-    const ctx = { marks: marks, changelog: meta && !meta.error && Array.isArray(meta.changelog) ? meta.changelog : [], pub: hbPublished_() };
+    const ctx = { marks: marks, changelog: hbChangelogRead_(), pub: hbPublished_() };   // F47: an unreadable list is this read's error
     const out = {};
     Object.keys(marks).forEach(function (k) {
       const bar = k.indexOf('|');
@@ -465,7 +561,8 @@ function hbMySignOffs() {
  *  admin: everyone), each with every live plan that reaches them (whoever
  *  wrote it) — done, total, overdue; the quizzes they have attempted — best
  *  score, attempts, passed, locked; and their sign-offs — current and asked
- *  again. Whether reminder emails are on rides along. */
+ *  again. Whether reminder emails are on, and what the last run did (F54),
+ *  ride along. */
 function hbTeamProgress() {
   const c = hbAuthorCall_();
   if (c.error) return { error: c.error };
@@ -474,7 +571,7 @@ function hbTeamProgress() {
     const plans = hbPlanRows_(c.ss).rows;
     const ctx = hbProgressCtx_(c.ss);
     const team = hbAuthorTeam_(c.people, c.emp.email, c.isAdmin);
-    return { remindersOn: hbRemindersOn_(), people: team.map(function (p) {
+    return { remindersOn: hbRemindersOn_(), reminders: hbRemindersOutcome_(), people: team.map(function (p) {
       const mine = hbPlansFor_(plans, c.people, admins, p.email).map(function (pl) { return hbPlanProgress_(ctx, pl, p.email); });
       const tried = {};
       ctx.attempts.forEach(function (a) { if (a.email === p.email) tried[a.quizId] = 1; });

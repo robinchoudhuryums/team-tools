@@ -11,14 +11,14 @@
 // ════════════════════════════════════════════════════════════════════════════
 
 /** The host's state — the four fields the reader reads through state(). */
-var HB = { tree: [], isAdmin: false, currentId: null, landing: true };
+var HB = { tree: [], isAdmin: false, currentId: null, landing: true, versions: {} };
 var HB_SEARCH = { seq: 0, q: '', timer: null, showing: false };   // HB1.4: the search view's own state
 var HB_SEARCH_MIN = 2, HB_SEARCH_DEBOUNCE_MS = 300;
 // HB2.1: who is reading (hbGetMe's answer — undefined while it loads), the
 // people view's state, and the newest answer applied (an older one never
 // overwrites a newer — every action answers with the caller's whole view).
 var HB_ME = undefined;
-var HB_PP = { showing: false, dirty: false, sent: 0, applied: 0 };
+var HB_PP = { showing: false, dirty: false, sent: 0, applied: 0, lead: '' };   // lead: what the lock-outs were drawn for
 var HB_LS_DEPT = 'umsHbDept';      // the reader's chosen department (a chapter)
 var HB_LS_VISIT = 'umsHbVisit';    // { last, prev } — local dates, for "since your last visit"
 var HB_LS_PREFS = 'umsHbReader';   // the reader's own prefs (resume, card state)
@@ -132,6 +132,15 @@ function hbMain_() { return document.getElementById('kb-main'); }
 /** Open a section; `push` records it in the browser's history (a link and
  *  Back), a Back itself does not push again. */
 function hbOpen_(id, anchor, nav, push) {
+  if (hbHoldSitting_(function () { hbOpen_(id, anchor, nav, push); })) return;
+  // Cycle 26 (Batch 8 follow-on 3): a link to a section this app does not serve
+  // (not published yet, a Team Tools article, gone since it was bookmarked) is
+  // refused BEFORE the view is left — it wiped the chapter being read and put a
+  // one-line error in its place, with the toolbar still on the old section.
+  if (!HB.tree.some(function (it) { return it.id === id; })) {
+    showToast(HB.tree.length ? 'That section is not in the handbook.' : 'The handbook is still loading — try again in a moment.', 'toast-warn');
+    return;
+  }
   hbCloseSide_();
   hbLeaveSearch_(); HB_PP.showing = false; hbLeaveQuiz_();
   if (!kbOpenManualSection_(id, anchor || '', nav)) { hbMsg_('That section is not in the handbook.', true); return; }
@@ -140,6 +149,7 @@ function hbOpen_(id, anchor, nav, push) {
 }
 function hbGoHome_() { hbHome_(true); }
 function hbHome_(push) {
+  if (hbHoldSitting_(function () { hbHome_(push); })) return;
   hbCloseSide_();
   hbLeaveSearch_(); HB_PP.showing = false; hbLeaveQuiz_();
   HB.currentId = null; HB.landing = true;
@@ -158,10 +168,13 @@ function hbHistory_(op, state, params) {
 }
 function hbOnHistory_(e) {
   var st = e && e.state;
+  // F55: Back during a sitting asks first; "keep going" puts the quiz back on the history it was popped from.
+  var sitting = HB_QZ.taking;
+  if (hbHoldSitting_(function () { hbOnHistory_(e); }, function () { hbHistory_('push', { quiz: sitting.quiz.id }, {}); })) return;
   if (st && st.search) { var box = document.getElementById('hb-q'); if (box) box.value = st.search; hbSearch_(st.search, false); }
   else if (st && st.people) hbPeople_(false);
   else if (st && st.quizzes) hbQuizList_(false);
-  else if (st && st.quiz) hbTakeQuiz_(st.quiz, false);
+  else if (st && st.quiz) hbTakeQuiz_(st.quiz, false, true);   // F66: Back and Forward leave the focus where it was
   else if (st && st.training) hbTraining_(false);
   else if (st && st.saved) hbSaved_(false);
   else if (st && st.forms) hbFormList_(false);   // HB4.1
@@ -202,6 +215,8 @@ function hbLeaveSearch_() { HB_SEARCH.showing = false; HB_SEARCH.seq++; clearTim
 /** Run a search and show its results; `record` puts it in the history (the
  *  first result view pushes, a refinement replaces, so Back leaves search). */
 function hbSearch_(q, record) {
+  // F55: typing in the bar's search during a sitting asks first; "keep going" empties the box again.
+  if (hbHoldSitting_(function () { hbSearch_(q, record); }, function () { var b = document.getElementById('hb-q'); if (b) b.value = ''; })) return;
   hbCloseSide_();
   var main = hbMain_(); if (!main) return;
   var was = HB_SEARCH.showing;
@@ -219,7 +234,7 @@ function hbSearch_(q, record) {
   main.innerHTML = '<div class="hb-results"><h1 class="hb-results-h">Results for “' + esc(q) + '”</h1>' +
     (jump ? '<button type="button" class="hb-hit hb-hit-jump" data-kb-id="' + esc(jump.id) + '" data-kb-anchor="' + esc(jump.anchor || '') + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">' +
       icon('chevronRight', 14) + ' Go to <b>' + esc(jump.num) + '</b> ' + esc(kbManualSplitTitle_(jump.title).rest) + '</button>' : '') +
-    '<div class="hb-res-grid"><div class="hb-results-list" role="status">' + loSweep() + '</div><aside class="hb-res-side" aria-label="Narrow the results"></aside></div></div>';
+    '<div class="hb-res-grid"><div class="hb-results-list">' + loSweep() + '</div><aside class="hb-res-side" aria-label="Narrow the results"></aside></div></div>';
   main.scrollTop = 0;
   if (handOver) {
     var bar = document.getElementById('hb-q');
@@ -243,9 +258,12 @@ function hbSearch_(q, record) {
 /** The result rows: the section (its number as a chip), the part of it that
  *  matched, and a line of it. Router answers ("the caller said …") lead. */
 function hbResultsHtml_(results, q) {
-  if (!results.length) return '<p class="hb-quiet">Nothing in the handbook matches “' + esc(q) + '”.</p>' + hbSuggestTopicHtml_();
+  // Cycle 26 (Batch 8 follow-on 5): the COUNT is what is announced. The whole
+  // list was a role="status" region, so a screen reader read every result out
+  // at each search.
+  if (!results.length) return '<p class="hb-quiet" role="status">Nothing in the handbook matches “' + esc(q) + '”.</p>' + hbSuggestTopicHtml_();
   // HBR2: the first result is the best match; every hit carries its chapter (colour, icon, name) and a key the filters use.
-  return '<p class="hb-quiet">' + results.length + (results.length === 1 ? ' result' : ' results') + '</p>' +
+  return '<p class="hb-quiet" role="status">' + results.length + (results.length === 1 ? ' result' : ' results') + '</p>' +
     results.map(function (r, i) {
       var t = kbManualSplitTitle_(r.title || ''), ck = kbManualChapterKey_(r.department || ''), cp = kbManualChapterParts_(r.department || '');
       return '<button type="button" class="hb-hit' + (i === 0 ? ' hb-hit-best' : '') + (ck ? ' kb-man-' + ck : '') + '" data-dept="' + esc(r.department || '') + '" data-kb-id="' + esc(r.id) + '" data-kb-anchor="' + esc(r.anchor || '') + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">' +
@@ -364,6 +382,14 @@ function hbApplyMe_(seq, me, parts) {
       if (k === 'me') hbPaintPeopleMe_(); else if (k === 'team') hbPaintPeopleTeam_(); else hbPaintPeopleAdmin_();
     });
   }
+  // Cycle 26 (Batch 8 follow-on 2): what a manager sees was decided ONCE, when
+  // the view was painted — a manager who opened Training or Profile before this
+  // answer arrived got no Team training, no Mine / My team and no lock-outs
+  // until they left and came back. Each is redrawn when what it was drawn for
+  // (a manager, not one, not known yet, could not tell) has changed — and only then.
+  var lead = hbLeadState_();
+  if (HB_TR.showing && lead !== HB_TR.lead) { hbTrTabs_(); hbLoadTeamTraining_(); }
+  if (HB_PP.showing && lead !== HB_PP.lead) hbLoadLocks_();
   return true;
 }
 function hbPaintMeBtn_() {
@@ -395,6 +421,7 @@ function hbInitials_(name) {
 
 function hbGoPeople_() { hbPeople_(true); }
 function hbPeople_(push) {
+  if (hbHoldSitting_(function () { hbPeople_(push); })) return;
   hbCloseSide_();
   hbLeaveSearch_(); hbLeaveQuiz_();
   HB.currentId = null; HB.landing = false;
@@ -438,8 +465,11 @@ function hbPaintPeopleMe_() {
     '<option value="">Not chosen</option>' + depts.map(function (d) {
       return '<option value="' + esc(d) + '"' + (d === mine.department ? ' selected' : '') + '>' + esc(hbChapterLabel_(d)) + '</option>';
     }).join('') + '</select>';
+  // F46 (cycle 26): the managers there ARE — a reader whose manager was unmarked
+  // ("gone") is told to choose again, so the list must not be emptied for them
+  // (it was: the only option read "No managers have been set up yet"). The one
+  // who left is simply not in it, so nothing is selected.
   var mgrs = (me.managers || []).slice();
-  if (mine.manager && !mgrs.some(function (m) { return m.email === mine.manager; })) mgrs = [];   // gone: not offered again
   var mgrSel = '<select id="hb-pp-mgr" class="hb-pp-sel" onchange="HB_PP.dirty = true">' +
     '<option value="">' + (mgrs.length ? 'No manager' : 'No managers have been set up yet') + '</option>' + mgrs.map(function (m) {
       return '<option value="' + esc(m.email) + '"' + (m.email === mine.manager ? ' selected' : '') + '>' + esc(m.name) + ' (' + esc(m.email) + ')</option>';
@@ -616,6 +646,16 @@ function hbWhen_(ms) {
 }
 
 var HB_QZ = { list: undefined, seq: 0, lseq: 0, showing: false, taking: null, filter: 'all' };   // filter: the list's (HBR3)   // seq: the open view's; lseq: the list load's
+/** F45 (cycle 26) — the section the bar's tools are FOR: the one in view (the
+ *  scroll-spy's, or the one just opened) — hbMarkCurrent_ alone decides it.
+ *  Never HB.currentId, which is the section OPENED and stays put while the
+ *  reader scrolls on: a repaint for it after "I've read this" on 3.4 showed
+ *  3.1's unsigned button, and Listen read 3.1. `html`: what the bar last drew;
+ *  `pressed`: the bar control an action was started from (F66). */
+var HB_BAR = { id: null, html: null, pressed: '' };
+function hbBarId_() { return HB_BAR.id; }
+/** Repaint the bar where it is — after anything that changes what it says. */
+function hbRepaintBar_() { hbPaintQuizBar_(HB_BAR.id); }
 function hbLeaveQuiz_() { HB_FM.showing = false; HB_QZ.showing = false; HB_QZ.taking = null; HB_QZ.seq++; hbLeaveTraining_(); hbStopReading_(); }   // and read aloud (HB2.3)   // every other view leaves Training too (HB3.3)
 
 function hbLoadQuizzes_(then) {
@@ -624,7 +664,7 @@ function hbLoadQuizzes_(then) {
     if (lseq !== HB_QZ.lseq) return;   // a newer load is on its way
     // A failure never replaces a list that loaded (g129): the bar keeps it.
     if (!(res && res.error && HB_QZ.list && !HB_QZ.list.error)) HB_QZ.list = res;
-    hbPaintQuizBar_(HB.currentId);
+    hbRepaintBar_();
     hbPaintCounts_();
     if (then) then(res);
   };
@@ -639,16 +679,45 @@ function hbPaintQuizBar_(id) {
   var bar = document.getElementById('hb-quizbar'); if (!bar) return;
   var list = HB_QZ.list, mine = [];
   if (id && list && !list.error && Array.isArray(list.quizzes)) mine = list.quizzes.filter(function (q) { return q.section === id; });
-  var sign = HB_SO.setUp ? hbSignBarHtml_(id, HB_SO.signoffs['section:' + id], HB_SO.setUp) : '';
+  // F47 (cycle 26): sign-offs that could not be loaded are SAID, with a way to
+  // ask again — the bar showed no button at all for the whole visit.
+  var sign = HB_SO.setUp ? hbSignBarHtml_(id, HB_SO.signoffs['section:' + id], HB_SO.setUp, kbManualSplitTitle_(hbSectionTitle_(id)))
+    : (id && HB_SO.error ? '<span class="hb-so-t warn">' + icon('warning', 13) + ' Your sign-offs could not be loaded.</span>' +
+        '<button type="button" class="kb-btn" data-hb-bar="retry" onclick="hbRetrySignOffs_()">Try again</button>' : '');
   // HBR2: each quiz and form is one item, so a wide screen can leave them to the side column.
-  bar.innerHTML = (sign ? '<span class="hb-so">' + sign + '</span>' : '') + hbNoteBarHtml_(id) + hbListenBarHtml_(id) + mine.map(function (q) {
+  var html = (sign ? '<span class="hb-so">' + sign + '</span>' : '') + hbNoteBarHtml_(id) + hbListenBarHtml_(id) + mine.map(function (q) {
     return '<span class="hb-qb-item"><span class="hb-qb-t">' + icon('check', 13) + ' Quiz: ' + esc(q.title) + '</span>' +
-      '<button type="button" class="kb-btn hb-qb-go" data-quiz="' + esc(q.id) + '" onclick="hbTakeQuiz_(this.getAttribute(\'data-quiz\'), true)">Take the quiz</button></span>';
+      '<button type="button" class="kb-btn hb-qb-go" data-hb-bar="quiz:' + esc(q.id) + '" data-quiz="' + esc(q.id) + '" onclick="hbTakeQuiz_(this.getAttribute(\'data-quiz\'), true)">Take the quiz</button></span>';
   }).join('') + hbFormsFor_(id).map(function (f) {   // HB4.1: the forms this section offers
     return '<span class="hb-qb-item"><span class="hb-qb-t">' + icon('fileText', 13) + ' Form: ' + esc(f.title) + '</span>' +
-      '<button type="button" class="kb-btn hb-qb-go" data-form="' + esc(f.key) + '" onclick="hbOpenForm_(this.getAttribute(\'data-form\'))">Open the form</button></span>';
+      '<button type="button" class="kb-btn hb-qb-go" data-hb-bar="form:' + esc(f.key) + '" data-form="' + esc(f.key) + '" onclick="hbOpenForm_(this.getAttribute(\'data-form\'))">Open the form</button></span>';
   }).join('');
+  // F66 (cycle 26): rewritten only when it CHANGED — every load answer and every
+  // section boundary repaints it — and the control the reader was on keeps the
+  // focus: a rebuilt bar dropped it to <body>, so a keyboard reader who pressed
+  // Listen had to Tab from the top of the page to reach Stop (g141).
+  if (html !== HB_BAR.html) {
+    var keep = hbBarFocusKey_(bar);
+    bar.innerHTML = html; HB_BAR.html = html;
+    if (keep) hbBarFocus_(bar, keep);
+  }
   hbPaintAside_(id, mine);
+}
+/** The bar control the focus is on, by what it DOES (data-hb-bar) — or the one
+ *  an action was started from, when disabling it let the focus fall to <body>. */
+function hbBarFocusKey_(bar) {
+  var a = document.activeElement;
+  if (a && a !== document.body && bar.contains(a)) return a.getAttribute('data-hb-bar') || '';
+  return HB_BAR.pressed && (!a || a === document.body) ? HB_BAR.pressed : '';
+}
+/** Focus the control that does `key` in the redrawn bar: itself, else what
+ *  takes its place (Stop gives way to Listen), else the bar's first control —
+ *  the reader stays in the toolbar. */
+function hbBarFocus_(bar, key) {
+  var all = [].slice.call(bar.querySelectorAll('[data-hb-bar]')).filter(function (b) { return !b.disabled; });
+  var pick = function (k) { return all.filter(function (b) { return b.getAttribute('data-hb-bar') === k; })[0]; };
+  var to = pick(key) || (key === 'stop' ? pick('listen') : null) || all[0];
+  if (to) { try { to.focus({ preventScroll: true }); } catch (e) { to.focus(); } }
 }
 /** HBR2 — the side column beside a section (wide screens): its quizzes with where
  *  the reader stands, its forms, the headings in it and what it refers to — all
@@ -725,6 +794,7 @@ function hbQuizSecLink_(id, anchor, before, label) {
 }
 function hbGoQuizzes_() { hbQuizList_(true); }
 function hbQuizList_(push) {
+  if (hbHoldSitting_(function () { hbQuizList_(push); })) return;
   hbCloseSide_(); hbLeaveSearch_(); HB_PP.showing = false; hbLeaveQuiz_();
   HB.currentId = null; HB.landing = false;
   MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1;
@@ -846,19 +916,29 @@ function hbPaintQuizList_(res) {
 // ── Forms (HB4.1) ─────────────────────────────────────────────────────────
 // The handbook's form library: Team Tools' Import stores the PDFs (ManualFiles)
 // and this page lists them, offers each on the bar above the sections that name
-// it, shows one in an in-page viewer (pdf.js, loaded from cdnjs only when a
-// form is opened, run on the page's own thread — the sandbox cannot start a
-// worker from another origin) and downloads it. A failed list never replaces
+// it, shows one in an in-page viewer (pdf.js, loaded only when a form is
+// opened, run on the page's own thread — the sandbox cannot start a worker
+// from another origin) and downloads it. A failed list never replaces
 // one that loaded (g129), and a failure is said, never "no forms" (g53).
 var HB_FM = { list: undefined, lseq: 0, showing: false, seq: 0, vseq: 0, bytes: {} };   // seq: the list view's; vseq: the open viewer's
-var HB_PDFJS_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
-var HB_PDFJS = { state: '', waiting: [] };   // '' | 'loading' | 'ready' | 'failed'
+// Cycle 26 F56 — Team Tools' posture for pdf.js (its Employee Docs loader, the
+// same constants, pinned to agree): each file is fetched, its SHA-256 checked
+// against the npm package's (pdfjs-dist, the version the harness installs),
+// and run from the checked bytes; two sources serve those bytes and each is
+// tried in turn; a failed load is not kept.
+var HB_PDFJS_VERSION = '3.11.174';
+var HB_PDFJS_SOURCES = ['https://cdnjs.cloudflare.com/ajax/libs/pdf.js/' + HB_PDFJS_VERSION + '/',
+  'https://cdn.jsdelivr.net/npm/pdfjs-dist@' + HB_PDFJS_VERSION + '/build/'];
+var HB_PDFJS_FILES = [['pdf.min.js', '5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946'],
+  ['pdf.worker.min.js', 'feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b']];
+var HB_PDFJS_TIMEOUT_MS = 20000;
+var HB_PDFJS = { state: '', waiting: [] };   // '' | 'loading' | 'ready' — a failure is not kept (g129)
 function hbLoadForms_(then) {
   var lseq = ++HB_FM.lseq;
   var take = function (res) {
     if (lseq !== HB_FM.lseq) return;
     if (!(res && res.error && HB_FM.list && !HB_FM.list.error)) HB_FM.list = res;
-    hbPaintQuizBar_(HB.currentId);
+    hbRepaintBar_();
     if (then) then(res);
   };
   google.script.run
@@ -878,6 +958,7 @@ function hbFormByKey_(key) {
 }
 function hbGoForms_() { hbFormList_(true); }
 function hbFormList_(push) {
+  if (hbHoldSitting_(function () { hbFormList_(push); })) return;
   hbCloseSide_(); hbLeaveSearch_(); HB_PP.showing = false; hbLeaveQuiz_();
   HB.currentId = null; HB.landing = false;
   MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1;
@@ -930,32 +1011,57 @@ function hbFormBytes_(key, done) {
     .withFailureHandler(function (err) { done(null, (err && err.message) || 'The server did not answer.'); })
     .hbGetForm(key);
 }
+/** F56 — one script, from the first source whose bytes match `sha256`:
+ *  fetched (with a time limit), hashed, and run from the bytes that were
+ *  hashed. Resolves once it has run; rejects when no source gave those bytes. */
+function hbCheckedScript_(sources, file, sha256, timeoutMs) {
+  var hex = function (buf) { return Array.prototype.map.call(new Uint8Array(buf), function (x) { return ('0' + x.toString(16)).slice(-2); }).join(''); };
+  var tryAt = function (i) {
+    if (i >= sources.length) return Promise.reject(new Error(file + ' could not be loaded from any source'));
+    var ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    var timer = ctl ? setTimeout(function () { ctl.abort(); }, timeoutMs) : null;
+    var stop = function () { if (timer) clearTimeout(timer); };
+    // Inside a promise, so a browser with no fetch (or no crypto.subtle) is a
+    // failed load like any other, never an uncaught error.
+    return Promise.resolve().then(function () { return fetch(sources[i] + file, ctl ? { signal: ctl.signal } : undefined); })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
+      .then(function (buf) {
+        return crypto.subtle.digest('SHA-256', buf).then(function (d) {
+          if (hex(d) !== sha256) throw new Error(file + ' did not match its checksum');
+          return buf;
+        });
+      })
+      .then(function (buf) {
+        stop();
+        var sc = document.createElement('script');
+        sc.textContent = new TextDecoder().decode(buf);
+        document.head.appendChild(sc);
+      }, function () { stop(); return tryAt(i + 1); });
+  };
+  return tryAt(0);
+}
 /** pdf.js, loaded once: the library, then its worker code as a plain script
  *  so it runs on this thread (pdf.js uses a global pdfjsWorker when one is
- *  there). done(lib) or done(null) when either cannot load. */
+ *  there). done(lib) or done(null) when either cannot load — and a failure is
+ *  not kept: opening a form again tries again. */
 function hbPdfJs_(done) {
-  if (HB_PDFJS.state === '' && window.pdfjsLib && window.pdfjsWorker) HB_PDFJS.state = 'ready';   // already on the page
+  if (window.pdfjsLib && window.pdfjsWorker) HB_PDFJS.state = 'ready';   // already on the page
   if (HB_PDFJS.state === 'ready') { done(window.pdfjsLib); return; }
-  if (HB_PDFJS.state === 'failed') { done(null); return; }
   HB_PDFJS.waiting.push(done);
   if (HB_PDFJS.state === 'loading') return;
   HB_PDFJS.state = 'loading';
   var finish = function (ok) {
-    HB_PDFJS.state = ok ? 'ready' : 'failed';
-    if (ok) { try { window.pdfjsLib.GlobalWorkerOptions.workerSrc = HB_PDFJS_BASE + 'pdf.worker.min.js'; } catch (e) {} }
+    HB_PDFJS.state = ok ? 'ready' : '';
+    if (ok) { try { window.pdfjsLib.GlobalWorkerOptions.workerSrc = HB_PDFJS_SOURCES[0] + 'pdf.worker.min.js'; } catch (e) {} }
     var w = HB_PDFJS.waiting; HB_PDFJS.waiting = [];
     w.forEach(function (fn) { fn(ok ? window.pdfjsLib : null); });
   };
-  var load = function (file, next) {
-    var sc = document.createElement('script');
-    sc.src = HB_PDFJS_BASE + file;
-    sc.onload = next; sc.onerror = function () { finish(false); };
-    document.head.appendChild(sc);
-  };
-  load('pdf.min.js', function () {
-    if (!window.pdfjsLib) { finish(false); return; }
-    load('pdf.worker.min.js', function () { finish(!!window.pdfjsWorker); });
-  });
+  hbCheckedScript_(HB_PDFJS_SOURCES, HB_PDFJS_FILES[0][0], HB_PDFJS_FILES[0][1], HB_PDFJS_TIMEOUT_MS)
+    .then(function () {
+      if (!window.pdfjsLib) throw new Error('pdf.js did not start');
+      return hbCheckedScript_(HB_PDFJS_SOURCES, HB_PDFJS_FILES[1][0], HB_PDFJS_FILES[1][1], HB_PDFJS_TIMEOUT_MS);
+    })
+    .then(function () { finish(!!window.pdfjsWorker); }, function () { finish(false); });
 }
 /** Open a form in the viewer: its pages drawn one under another, each named
  *  for a screen reader; Download beside Close. */
@@ -986,7 +1092,7 @@ function hbOpenForm_(key) {
     if (!bytes) { fail('The form could not be loaded: ' + String(err || '').replace(/\.$/, '') + '.'); return; }
     hbPdfJs_(function (lib) {
       if (!body()) return;
-      if (!lib) { fail('The viewer could not load in this browser. Use Download to open the form on your computer.'); return; }
+      if (!lib) { fail('The viewer could not be loaded just now. Close and open the form to try again, or use Download to open it on your computer.'); return; }
       // A copy: pdf.js takes ownership of the buffer it is given.
       lib.getDocument({ data: bytes.slice(0), isEvalSupported: false }).promise.then(function (doc) {
         var b = body(); if (!b) return;
@@ -1082,7 +1188,8 @@ function hbDownloadForm_(key) {
 
 /** Open a quiz to take: its questions shuffled for this sitting, shown one
  *  per screen (HBR3). */
-function hbTakeQuiz_(id, push) {
+function hbTakeQuiz_(id, push, quiet) {
+  if (hbHoldSitting_(function () { hbTakeQuiz_(id, push, quiet); })) return;
   hbCloseSide_(); hbLeaveSearch_(); HB_PP.showing = false; hbLeaveQuiz_();
   HB.currentId = null; HB.landing = false;
   MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1;
@@ -1094,9 +1201,19 @@ function hbTakeQuiz_(id, push) {
   main.scrollTop = 0;
   if (push) hbHistory_('push', { quiz: id }, {});
   google.script.run
-    .withSuccessHandler(function (res) { if (seq === HB_QZ.seq && HB_QZ.showing === 'take') hbPaintTake_(res || { error: 'The server did not answer.' }); })
-    .withFailureHandler(function (err) { if (seq === HB_QZ.seq && HB_QZ.showing === 'take') hbPaintTake_({ error: (err && err.message) || 'The server did not answer.' }); })
+    .withSuccessHandler(function (res) { if (seq === HB_QZ.seq && HB_QZ.showing === 'take') hbQuizOpened_(res || { error: 'The server did not answer.' }, quiet); })
+    .withFailureHandler(function (err) { if (seq === HB_QZ.seq && HB_QZ.showing === 'take') hbQuizOpened_({ error: (err && err.message) || 'The server did not answer.' }, quiet); })
     .hbGetQuiz(id);
+}
+/** F66 (cycle 26) — the quiz arrived: draw it and take the focus to it. The
+ *  button that opened it is gone with the old view, so the focus fell to
+ *  <body> and nothing announced the first question — the one view that opened
+ *  without moving it (HB2.4: focus follows the reader). `quiet`: reached by
+ *  Back or Forward, which leave the focus where it was. */
+function hbQuizOpened_(res, quiet) {
+  hbPaintTake_(res);
+  var host = document.getElementById('hb-qz-take');
+  if (host && !quiet) hbFocusEl_(host.querySelector('.hb-qz-ht') || host.querySelector('[role="alert"]'));
 }
 /** HBR3 — a sitting's header: the chapter's colour wash (light, decision 4 —
  *  never a dark bar), its icon, the quiz, where the reader is, and Leave. */
@@ -1185,18 +1302,29 @@ function hbQuizStep_(d) {
   t.k = k;
   hbPaintQuestion_(true);
 }
-/** Leave a sitting: straight back to the list with nothing chosen, or after
- *  asking when answers would be lost (a sitting is not recorded until it is
- *  submitted, so leaving uses no try). */
-function hbLeaveSitting_() {
+/** F55 (cycle 26) — a sitting with answers chosen is not thrown away by
+ *  leaving the view: the reader is asked, once (g166). Only the header's
+ *  "Leave quiz" asked — two characters typed in the bar's search, Back, the
+ *  rail, a phone tab, the brand or Profile all discarded the answers silently.
+ *  EVERY view switch opens with this (the F55 net derives them from
+ *  hbLeaveQuiz_'s callers): true means "wait — the reader is being asked";
+ *  `again` re-runs the switch if they leave, `stay` runs if they do not.
+ *  A sitting is not recorded until it is submitted, so leaving uses no try —
+ *  and answers already SENT are not lost by leaving, so nothing is asked then. */
+function hbHoldSitting_(again, stay) {
   var t = HB_QZ.taking;
-  var any = t && t.picked.some(function (p) { return p && p.length; });
-  if (!any) { hbGoQuizzes_(); return; }
-  var seq = HB_QZ.seq;
-  uiConfirm({ title: 'Leave this quiz?', message: 'Your answers so far are not kept. Leaving does not use a try.', confirmLabel: 'Leave quiz', tone: 'danger' }).then(function (ok) {
-    if (ok && seq === HB_QZ.seq && HB_QZ.taking === t) hbGoQuizzes_();
+  if (!t || t.sent || !t.picked.some(function (p) { return p && p.length; })) return false;
+  if (t.asking) return true;   // one question, however many clicks
+  t.asking = true;
+  uiConfirm({ title: 'Leave this quiz?', message: 'Your answers so far are not kept. Leaving does not use a try.', confirmLabel: 'Leave quiz', cancelLabel: 'Keep going', tone: 'danger' }).then(function (ok) {
+    t.asking = false;
+    if (HB_QZ.taking !== t) return;
+    if (ok) { HB_QZ.taking = null; again(); } else if (stay) stay();
   });
+  return true;
 }
+/** The header's "Leave quiz": back to the list — the guard asks when answers would be lost. */
+function hbLeaveSitting_() { hbGoQuizzes_(); }
 function hbSubmitQuiz_(e) {
   if (e) e.preventDefault();
   var t = HB_QZ.taking; if (!t) return;
@@ -1214,9 +1342,22 @@ function hbSubmitQuiz_(e) {
   var btn = document.getElementById('hb-qz-submit'); if (btn) btn.disabled = true;
   var answers = hbQuizAnswers_(t.quiz.questions, t.order, picked);
   var seq = HB_QZ.seq;
+  t.sent = true;   // F55: from here leaving loses nothing — the attempt is the server's
   var done = function (res) {
-    if (seq !== HB_QZ.seq || HB_QZ.showing !== 'take') return;
+    if (seq !== HB_QZ.seq || HB_QZ.showing !== 'take') {
+      // F55: the reader left while the answers were being checked. The attempt
+      // is recorded all the same — it was dropped without a word, and the list
+      // and the bar kept the old standing.
+      if (res && res.success) {
+        showToast('“' + t.quiz.title + '” was submitted: ' + res.scorePct + '% — ' + (res.passed ? 'passed' : 'not passed') + '.', res.passed ? 'toast-success' : 'toast-warn', { sticky: true });
+        hbLoadQuizzes_(function () { if (HB_QZ.showing === 'list' && HB_QZ.list) hbPaintQuizList_(HB_QZ.list); });
+      } else {
+        showToast('“' + t.quiz.title + '” was not submitted: ' + String((res && res.error) || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-error', { sticky: true });
+      }
+      return;
+    }
     if (!res || !res.success) {
+      t.sent = false;   // the answers are only on this page again
       if (btn && btn.isConnected) btn.disabled = false;
       if (res && res.locked) { hbPaintTake_({ quiz: t.quiz, me: res.me }); return; }
       showToast('Not submitted: ' + String((res && res.error) || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-error');
@@ -1282,8 +1423,8 @@ function hbPaintResult_(quiz, res, sitting) {
 /** People view: the manager's (or admin's) people locked out of a quiz. */
 function hbLoadLocks_() {
   var host = document.getElementById('hb-pp-locks'); if (!host) return;
-  var me = HB_ME;
-  if (!me || me.error || me.setUp === false || !(me.isManager || me.isAdmin)) { host.innerHTML = ''; return; }
+  HB_PP.lead = hbLeadState_();   // what this was drawn for (follow-on 2)
+  if (HB_PP.lead !== 'yes') { host.innerHTML = ''; return; }   // a failed profile is said by "Your profile", above
   google.script.run
     .withSuccessHandler(function (res) { hbPaintLocks_(res || { error: 'The server did not answer.' }); })
     .withFailureHandler(function (err) { hbPaintLocks_({ error: (err && err.message) || 'The server did not answer.' }); })
@@ -1344,10 +1485,11 @@ function hbDueLabel_(due) {
   try { return new Date(due + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }); } catch (e) { return due; }
 }
 
-var HB_TR = { seq: 0, showing: false, mine: undefined, team: undefined, tab: '' };   // tab: HBR4's Mine / My team ('' = the default for the role)
+var HB_TR = { seq: 0, showing: false, mine: undefined, mineStale: '', team: undefined, tab: '', lead: '' };   // tab: HBR4's Mine / My team ('' = the default for the role)
 function hbLeaveTraining_() { HB_TR.showing = false; HB_TR.seq++; hbLeaveSaved_(); }   // and the Saved page (HB2.2)
 function hbGoTraining_() { hbTraining_(true); }
 function hbTraining_(push) {
+  if (hbHoldSitting_(function () { hbTraining_(push); })) return;
   hbCloseSide_(); hbLeaveSearch_(); HB_PP.showing = false; hbLeaveQuiz_(); hbLeaveTraining_();
   HB.currentId = null; HB.landing = false;
   MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1;
@@ -1370,6 +1512,15 @@ function hbTraining_(push) {
 /** HBR4 — the Mine / My team toggle, for a manager or the admin only (a
  *  reader has one view). A manager opens on My team. */
 function hbTrIsLead_() { var me = HB_ME; return !!(me && !me.error && me.setUp !== false && (me.isManager || me.isAdmin)); }
+/** PURE-ish — what the page knows of whether the reader leads a team: 'wait'
+ *  (the profile has not answered), 'error' (it could not be read — NOT "no"),
+ *  'yes', 'no'. The manager surfaces record the state they were drawn for. */
+function hbLeadState_() {
+  var me = HB_ME;
+  if (me === undefined) return 'wait';
+  if (!me || me.error) return 'error';
+  return hbTrIsLead_() ? 'yes' : 'no';
+}
 function hbTrTabs_() {
   var bar = document.getElementById('hb-tr-tabs'), mine = document.getElementById('hb-tr-mine'), team = document.getElementById('hb-tr-team');
   if (!bar || !mine || !team) return;
@@ -1383,16 +1534,33 @@ function hbTrTabs_() {
   team.hidden = tab !== 'team';
 }
 function hbTrTab_(t) { HB_TR.tab = t === 'mine' ? 'mine' : 'team'; hbTrTabs_(); }
-function hbLoadMine_() {
+/** F47 (cycle 26): a refresh that FAILED never replaces plans that loaded
+ *  (g129) — home's "Due for you" and the rail's count read the same list, and
+ *  one failed open of Training turned both to "nothing". The page shows the
+ *  plans it has and says they could not be refreshed (`mineStale`). `refocus`:
+ *  asked for from the page's own Try again, whose button the repaint removes. */
+function hbLoadMine_(refocus) {
   var seq = HB_TR.seq;
-  var take = function (res) { if (seq !== HB_TR.seq || !HB_TR.showing) return; HB_TR.mine = res; hbPaintMine_(); };
+  var take = function (res) {
+    if (seq !== HB_TR.seq || !HB_TR.showing) return;
+    if (res && res.error && HB_TR.mine && !HB_TR.mine.error) HB_TR.mineStale = String(res.error);
+    else { HB_TR.mine = res; HB_TR.mineStale = ''; }
+    hbPaintMine_(); hbPaintCounts_();
+    if (refocus) { var host = document.getElementById('hb-tr-mine'); hbFocusEl_(host && host.querySelector('h2')); }
+  };
   google.script.run.withSuccessHandler(function (r) { take(r || { error: 'The server did not answer.' }); })
     .withFailureHandler(function (e) { take({ error: (e && e.message) || 'The server did not answer.' }); }).hbMyTraining();
 }
 function hbLoadTeamTraining_() {
   var host = document.getElementById('hb-tr-team'); if (!host) return;
-  var me = HB_ME;
-  if (!me || me.error || me.setUp === false || !(me.isManager || me.isAdmin)) { host.innerHTML = ''; return; }
+  HB_TR.lead = hbLeadState_();   // what this was drawn for — hbApplyMe_ redraws when it changes
+  // A profile that could not be read is not "not a manager": say so, with a way to ask again.
+  if (HB_TR.lead === 'error') {
+    host.innerHTML = '<p class="hb-msg bad" role="alert">Could not tell whether you manage a team, so team training is not shown: ' +
+      esc(String((HB_ME && HB_ME.error) || 'the server did not answer').replace(/\.$/, '')) + '.</p><button type="button" class="kb-btn hb-retry" onclick="hbLoadMe_()">Try again</button>';
+    return;
+  }
+  if (HB_TR.lead !== 'yes') { host.innerHTML = ''; return; }
   host.innerHTML = '<h2 class="hb-pp-h2">Team training</h2>' + loSweep();
   var seq = HB_TR.seq;
   var take = function (res) { if (seq !== HB_TR.seq || !HB_TR.showing) return; HB_TR.team = res; hbPaintTeamTraining_(); };
@@ -1412,22 +1580,32 @@ function hbItemLabel_(it) {
 function hbPaintMine_() {
   var host = document.getElementById('hb-tr-mine'); if (!host) return;
   var res = HB_TR.mine, head = '<h2 class="hb-pp-h2">My training</h2>';
-  if (!res || res.error) { host.innerHTML = head + '<p class="hb-msg bad" role="alert">Your training could not be loaded: ' + esc(String((res && res.error) || 'the server did not answer').replace(/\.$/, '')) + '. Try again.</p>'; return; }
+  var again = '<button type="button" class="kb-btn hb-retry" onclick="hbLoadMine_(true)">Try again</button>';
+  if (!res || res.error) { host.innerHTML = head + '<p class="hb-msg bad" role="alert">Your training could not be loaded: ' + esc(String((res && res.error) || 'the server did not answer').replace(/\.$/, '')) + '.</p>' + again; return; }
   if (res.setUp === false) { host.innerHTML = head + '<p class="hb-quiet">Training plans start once the handbook\'s admin sets up the Handbook spreadsheet.</p>'; return; }
+  // F47: what loaded earlier, said to be that — never a silent stale list, never "nothing".
+  if (HB_TR.mineStale) head += '<p class="hb-msg bad" role="alert">Your training could not be refreshed: ' + esc(String(HB_TR.mineStale).replace(/\.$/, '')) + '. This is what loaded earlier.</p>' + again;
   if (!res.plans.length) { host.innerHTML = head + '<p class="hb-quiet">Nothing is assigned to you right now.</p>'; return; }
   host.innerHTML = head + res.plans.map(function (p) {
     var pct = p.total ? Math.round(100 * p.done / p.total) : 0;
+    // F50 (cycle 26): an item that can no longer be done (an archived quiz, a
+    // section taken out of the handbook) is shown, said, and not counted.
+    var gone = p.missing || 0;
     return '<div class="hb-tr-plan' + (p.overdue ? ' overdue' : '') + '"><div class="hb-tr-ph"><span class="hb-tr-pk">' + p.total + ' item' + (p.total === 1 ? '' : 's') + ' · from ' + esc(p.authorName) + '</span>' +
       '<span class="hb-pp-row-n">' + esc(p.title) + '</span>' +
-      (p.overdue ? '<span class="hb-qz-chip lock">Overdue' + (p.due ? ' · due ' + esc(hbDueLabel_(p.due)) : '') + '</span>' : (p.done === p.total ? '<span class="hb-qz-chip pass">Done</span>' : (p.due ? '<span class="hb-qz-chip">Due ' + esc(hbDueLabel_(p.due)) + '</span>' : ''))) + '</div>' +
+      (p.overdue ? '<span class="hb-qz-chip lock">Overdue' + (p.due ? ' · due ' + esc(hbDueLabel_(p.due)) : '') + '</span>'
+        : (!p.total ? '<span class="hb-qz-chip">Nothing to do</span>'
+        : (p.done === p.total ? '<span class="hb-qz-chip pass">Done</span>' : (p.due ? '<span class="hb-qz-chip">Due ' + esc(hbDueLabel_(p.due)) + '</span>' : '')))) + '</div>' +
       '<div class="hb-tr-bar" role="progressbar" aria-valuemin="0" aria-valuemax="' + p.total + '" aria-valuenow="' + p.done + '" aria-label="' + esc(p.title) + ' progress"><span style="width:' + pct + '%"></span></div>' +
-      '<div class="hb-quiet hb-tr-count">' + p.done + ' of ' + p.total + ' done</div>' +
+      '<div class="hb-quiet hb-tr-count">' + p.done + ' of ' + p.total + ' done' + (gone ? ' · ' + gone + ' no longer available, not counted' : '') + '</div>' +
       '<ul class="hb-tr-items">' + p.items.map(function (it) {
         var label = '<span class="hb-tr-it-t">' + esc(hbItemLabel_(it)) + '</span>';
         var act = '';
-        if (it.kind === 'quiz') {
-          act = hbQuizChip_(it.quiz) + (it.missing ? '' : '<button type="button" class="kb-btn" data-quiz="' + esc(it.id) + '"' + (it.quiz && it.quiz.locked ? ' disabled' : '') +
-            ' onclick="hbTakeQuiz_(this.getAttribute(\'data-quiz\'), true)">' + (it.done ? 'Take again' : 'Take the quiz') + '</button>');
+        if (it.missing) {
+          act = '<span class="hb-quiet">No longer available</span>';
+        } else if (it.kind === 'quiz') {
+          act = hbQuizChip_(it.quiz) + '<button type="button" class="kb-btn" data-quiz="' + esc(it.id) + '"' + (it.quiz && it.quiz.locked ? ' disabled' : '') +
+            ' onclick="hbTakeQuiz_(this.getAttribute(\'data-quiz\'), true)">' + (it.done ? 'Take again' : 'Take the quiz') + '</button>';
         } else {
           var openId = it.kind === 'section' ? it.id : kbManualDepts_().first(it.id);
           act = (openId && (it.kind === 'chapter' || HB.tree.some(function (x) { return x.id === it.id; }))
@@ -1445,7 +1623,8 @@ function hbPaintMine_() {
 function hbPaintTeamTraining_() {
   var host = document.getElementById('hb-tr-team'); if (!host) return;
   var res = HB_TR.team, head = '<h2 class="hb-pp-h2">Team training</h2>';
-  if (!res || res.error) { host.innerHTML = head + '<p class="hb-msg bad" role="alert">Team training could not be loaded: ' + esc(String((res && res.error) || 'the server did not answer').replace(/\.$/, '')) + '.</p>'; return; }
+  if (!res || res.error) { host.innerHTML = head + '<p class="hb-msg bad" role="alert">Team training could not be loaded: ' + esc(String((res && res.error) || 'the server did not answer').replace(/\.$/, '')) + '.</p>' +
+    '<button type="button" class="kb-btn hb-retry" onclick="hbLoadTeamTraining_()">Try again</button>'; return; }
   // HBR4: plans and quizzes as cards — the kicker says what it holds, the title, who it reaches.
   var row = function (title, sub, kind, id, live, kick) {
     return '<div class="hb-tr-card' + (live ? '' : ' hb-tr-arch') + '"><div class="hb-pp-row-b"><span class="hb-tr-pk">' + esc(kick) + '</span><span class="hb-pp-row-n">' + esc(title) + (live ? '' : ' <span class="hb-qz-chip">Archived</span>') + '</span>' +
@@ -1457,7 +1636,8 @@ function hbPaintTeamTraining_() {
   host.innerHTML = head + '<section id="hb-tr-progress"></section>' + (res.unreadable ? '<p class="hb-quiet">' + res.unreadable + ' saved item' + (res.unreadable === 1 ? '' : 's') + ' could not be read and ' + (res.unreadable === 1 ? 'is' : 'are') + ' not shown.</p>' : '') +
     '<h3 class="hb-pp-h3">Plans <span class="hb-quiet">Assigned to your team</span></h3>' + (ps.length ? '<div class="hb-tr-cards">' + ps.map(function (p) {
       var b = p.plan || {}, n = (b.items || []).length;
-      return row(b.title, (p.live ? 'Reaches ' + p.reaches + (p.reaches === 1 ? ' person' : ' people') : 'Reaches nobody while archived') + (res.isAdmin ? ' · by ' + p.authorName : ''), 'plan', p.id, p.live,
+      return row(b.title, (p.live ? 'Reaches ' + p.reaches + (p.reaches === 1 ? ' person' : ' people') : 'Reaches nobody while archived') + (res.isAdmin ? ' · by ' + p.authorName : '') +
+          (p.live && p.missing ? ' · ' + p.missing + ' item' + (p.missing === 1 ? '' : 's') + ' no longer available (not counted) — edit the plan to take ' + (p.missing === 1 ? 'it' : 'them') + ' out' : ''), 'plan', p.id, p.live,
         n + ' item' + (n === 1 ? '' : 's') + (b.due ? ' · due ' + hbDueLabel_(b.due) : ' · ongoing'));
     }).join('') + '</div>' : '<p class="hb-quiet">No plans yet.</p>') +
     '<div class="hb-qz-actions"><button type="button" class="kb-btn hb-pp-yes" onclick="hbEditPlan_(\'\')">' + icon('plus', 12) + ' New plan</button></div>' +
@@ -1475,7 +1655,9 @@ function hbArchive_(btn) {
     var done = function (res) {
       if (btn.isConnected) btn.disabled = false;
       if (!res || !res.success) { showToast('Not saved: ' + String((res && res.error) || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-error'); return; }
-      showToast(live ? 'Archived.' : 'Restored.', 'toast-success');
+      var used = live && res.inPlans && res.inPlans.length ? res.inPlans : null;
+      showToast(used ? 'Archived. ' + (used.length === 1 ? 'One live plan still lists it (' : used.length + ' live plans still list it (') + used.slice(0, 3).join(', ') + (used.length > 3 ? ', …' : '') + ') — it no longer counts there.'
+        : (live ? 'Archived.' : 'Restored.'), used ? 'toast-warn' : 'toast-success', used ? { sticky: true } : undefined);
       hbLoadTeamTraining_();
     };
     google.script.run.withSuccessHandler(done).withFailureHandler(function (e) { done({ error: e && e.message }); }).hbArchiveTraining(kind, id, live);
@@ -1655,43 +1837,72 @@ function hbPlanRemoveItem_(btn) {
 // retraining asks the reader to sign again. A manager (or the admin) sees each
 // person's progress, which copies as a table or downloads as CSV.
 
-var HB_SO = { setUp: undefined, signoffs: {} };
+var HB_SO = { setUp: undefined, signoffs: {}, error: '' };
+/** F47 (cycle 26): a failure keeps what was loaded (g129) — and with NOTHING
+ *  loaded it is kept as `error`, which the bar, home's shelf and "Due for you"
+ *  say: an unanswered read showed no sign-off button for the whole visit, a
+ *  loading bar that never ended, and "Nothing is due". */
 function hbLoadSignOffs_() {
+  var take = function (r) {
+    if (!r || r.error) { if (HB_SO.setUp === undefined) HB_SO.error = String((r && r.error) || 'the server did not answer'); }
+    else { HB_SO.error = ''; HB_SO.setUp = r.setUp !== false; HB_SO.signoffs = r.signoffs || {}; }
+    hbRepaintBar_();
+    hbPaintCounts_(); hbPatchHome_();   // HBR1: the rail's shares, home's reading
+  };
   google.script.run
-    .withSuccessHandler(function (r) {
-      if (!r || r.error) return;   // a failure keeps what was loaded (g129); the bar simply offers the button
-      HB_SO.setUp = r.setUp !== false; HB_SO.signoffs = r.signoffs || {};
-      hbPaintQuizBar_(HB.currentId);
-      hbPaintCounts_(); hbPatchHome_();   // HBR1: the rail's shares, home's reading
-    })
-    .withFailureHandler(function () {})
+    .withSuccessHandler(function (r) { take(r && typeof r === 'object' ? r : { error: 'The server did not answer.' }); })
+    .withFailureHandler(function (e) { take({ error: (e && e.message) || 'The server did not answer.' }); })
     .hbMySignOffs();
+}
+/** Ask again: back to "loading" everywhere it shows, then the read. */
+function hbRetrySignOffs_() {
+  HB_SO.error = '';
+  hbRepaintBar_(); hbPaintCounts_(); hbPatchHome_();
+  hbLoadSignOffs_();
 }
 /** PURE — the bar's sign-off part for a section: the button, the date it was
  *  signed, or the ask to read it again. `so` is the section's sign-off or
- *  undefined; '' when sign-offs are not set up. */
-function hbSignBarHtml_(id, so, setUp) {
+ *  undefined; '' when sign-offs are not set up.
+ *  `name` is the section's title split by kbManualSplitTitle_ ({num, rest}).
+ *  The bar is for the section IN VIEW (F45), and "this" named it only by where
+ *  the bar sat: a reader at a section boundary, or one who hears the button and
+ *  does not see the page, could not tell which section a press would sign. The
+ *  group opens with the section's number, and every button's accessible name
+ *  carries the title (it still begins with the words on the button — 2.5.3). */
+function hbSignBarHtml_(id, so, setUp, name) {
   if (!id || setUp === false) return '';
+  var n = name || { num: '', rest: '' };
+  var full = ((n.num ? n.num + ' ' : '') + (n.rest || '')).trim();
+  var chip = full ? '<span class="hb-so-n" title="' + esc(full) + '">' + esc(n.num || n.rest) + '</span>' : '';
   var btn = function (label, done, cls) {
-    return '<button type="button" class="kb-btn ' + (cls || '') + '" data-kind="section" data-id="' + esc(id) + '" data-done="' + (done ? '1' : '') + '" onclick="hbSignOff_(this)">' + label + '</button>';
+    return '<button type="button" class="kb-btn ' + (cls || '') + '" data-hb-bar="sign" data-kind="section" data-id="' + esc(id) + '" data-done="' + (done ? '1' : '') + '"' +
+      (full ? ' aria-label="' + esc(label + ': ' + full) + '"' : '') + ' onclick="hbSignOff_(this)">' + label + '</button>';
   };
   if (so && so.state === 'resign') {
-    return '<span class="hb-so-t warn">' + icon('warning', 13) + ' Changed since you read it — please read it again.</span>' + btn("I've read it again", true, 'hb-pp-yes');
+    return chip + '<span class="hb-so-t warn">' + icon('warning', 13) + ' Changed since you read it — please read it again.</span>' + btn("I've read it again", true, 'hb-pp-yes');
   }
   if (so && so.state === 'signed') {
-    return '<span class="hb-so-t ok">' + icon('checkCircle', 13) + ' You read this on ' + esc(new Date(so.signedMs).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })) +
+    return chip + '<span class="hb-so-t ok">' + icon('checkCircle', 13) + ' You read this on ' + esc(new Date(so.signedMs).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })) +
       (so.changed ? ' — it has been updated since' : '') + '</span>' + btn('Undo', false, 'hb-so-undo');
   }
-  return btn("I've read this", true, 'hb-pp-yes');
+  return chip + btn("I've read this", true, 'hb-pp-yes');
 }
 /** Sign off (or withdraw) a section or chapter, from the bar or My training. */
 function hbSignOff_(btn) {
   var kind = btn.getAttribute('data-kind'), id = btn.getAttribute('data-id'), done = !!btn.getAttribute('data-done');
+  // F66: pressed in the bar — the redrawn bar gives the focus back (a disabled button can drop it to <body>).
+  var inBar = !!(btn.closest && btn.closest('#hb-quizbar'));
+  if (inBar) HB_BAR.pressed = 'sign';
   btn.disabled = true;
   var key = kind + ':' + id;
   var fin = function (res) {
     if (btn.isConnected) btn.disabled = false;
-    if (!res || !res.success) { showToast('Not saved: ' + String((res && res.error) || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-error'); return; }
+    if (!res || !res.success) {
+      if (inBar) { HB_BAR.pressed = ''; if (btn.isConnected) { try { btn.focus({ preventScroll: true }); } catch (e) {} } }
+      // A refusal that asks for a reload stays until it is dismissed.
+      showToast('Not saved: ' + String((res && res.error) || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-error', res && (res.changed || res.reload) ? { sticky: true } : undefined);
+      return;
+    }
     var so = done ? { state: 'signed', signedMs: Date.now(), changed: false } : null;
     if (so) HB_SO.signoffs[key] = so; else delete HB_SO.signoffs[key];
     // Every plan with this item agrees: one sign-off serves them all.
@@ -1701,11 +1912,14 @@ function hbSignOff_(btn) {
       p.done = p.items.filter(function (it) { return it.done; }).length;
       if (p.done === p.total) p.overdue = false;
     });
-    hbPaintQuizBar_(HB.currentId);
+    hbRepaintBar_();
+    HB_BAR.pressed = '';
     hbPaintCounts_();   // HBR1: the rail's share and Training count follow it
     if (HB_TR.showing) hbPaintMine_();
   };
-  google.script.run.withSuccessHandler(fin).withFailureHandler(function (e) { fin({ error: e && e.message }); }).hbMarkRead(kind, id, done);
+  // F49: the version of the text on this page — the server refuses a sign-off
+  // of text that is no longer the handbook's, and says to reload.
+  google.script.run.withSuccessHandler(fin).withFailureHandler(function (e) { fin({ error: e && e.message }); }).hbMarkRead(kind, id, done, done ? (HB.versions[key] || '') : '');
 }
 
 // — team progress —
@@ -1755,12 +1969,29 @@ function hbCsvCell_(v) {
   var s = tsvCell_(v == null ? '' : v);
   return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
+/** PURE (Node-pinned) — F54 (cycle 26): what the last reminder run did, as a
+ *  sentence after "…once a day." — '' only for an outcome that says nothing
+ *  (reminders were off). No run on record is SAID: the daily trigger may not
+ *  be installed. */
+function hbReminderRunText_(o, nowMs) {
+  if (!o || !(Number(o.at) > 0)) return ' No run is on record yet — if this stays, the daily trigger is not installed.';
+  var when = new Date(Number(o.at)).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  if (o.status === 'off') return '';
+  if (o.status === 'running') {
+    return nowMs - Number(o.at) > 900000 ? ' The last run started ' + when + ' and did not finish.' : ' A run started ' + when + '.';
+  }
+  var n = function (v) { return Number(v) || 0; };
+  var counts = n(o.sent) + ' sent' + (n(o.failed) ? ', ' + n(o.failed) + ' could not be sent' : '') + ' (' + n(o.overdue) + (n(o.overdue) === 1 ? ' person' : ' people') + ' overdue)';
+  if (o.status === 'ok') return ' Last run ' + when + ': ' + counts + '.';
+  if (o.status === 'partial') return ' Last run ' + when + ': ' + counts + (o.error ? ' — ' + String(o.error).replace(/\.$/, '') : '') + (o.notRecorded ? '; who was emailed could not be recorded, so a second run today may email them again' : '') + '.';
+  return ' The last run (' + when + ') failed' + (o.error ? ': ' + String(o.error).replace(/\.$/, '') : '') + '.';
+}
 function hbPaintProgress_() {
   var host = document.getElementById('hb-tr-progress'); if (!host) return;
   var res = HB_TR.progress, head = '<h3 class="hb-pp-h3">Progress</h3>';
   if (!res || res.error) { host.innerHTML = head + '<p class="hb-msg bad" role="alert">Progress could not be loaded: ' + esc(String((res && res.error) || 'the server did not answer').replace(/\.$/, '')) + '.</p>'; return; }
   var rows = hbProgressRows_(res.people);
-  var reminders = '<p class="hb-quiet hb-tr-rem">Reminder emails are ' + (res.remindersOn ? '<b>on</b> — anyone with an overdue plan is emailed once a day.' : '<b>off</b>.') + '</p>';
+  var reminders = '<p class="hb-quiet hb-tr-rem">Reminder emails are ' + (res.remindersOn ? '<b>on</b> — anyone with an overdue plan is emailed once a day.' + esc(hbReminderRunText_(res.reminders, Date.now())) : '<b>off</b>.') + '</p>';
   var sub = document.getElementById('hb-tr-sub'), me = HB_ME || {};
   var people = res.people || [];
   if (sub && hbTrIsLead_()) sub.textContent = (me.me && me.me.department ? hbChapterLabel_(me.me.department) + ' · ' : '') + people.length + (people.length === 1 ? ' person' : ' people');
@@ -1821,15 +2052,45 @@ function hbDownloadProgress_() {
 // information — does one reach the server, by MERGE: per section the later
 // note wins, and a deletion is a tombstone (empty text, its time) so it
 // travels too. The same merge rule is the server's hbNotesMerge_ (pinned).
+// Cycle 26 (Batch 8 follow-on 6): these three are kept PER ACCOUNT in the
+// browser — `umsHbNotes:<u>`, where u is the short key doGet hands the page
+// for the signed-in account (HB_PARAMS.u; hbAccountKey_ on the server). They
+// were shared by everyone using that browser profile. With no key (a page
+// served without one) they are the unscoped keys, as before. What was stored
+// before the change is adopted once by the first account to open the handbook
+// in that browser, and the shared copy removed (hbAdoptLegacy_ — operator
+// 2026-11-17: one person per browser profile). The reader's department, the
+// resume point, the visit day and the display settings stay the browser's.
+var HB_U = /^[a-f0-9]{8,32}$/.test(String((window.HB_PARAMS || {}).u || '')) ? String(window.HB_PARAMS.u) : '';
+function hbKey_(base) { return HB_U ? base + ':' + HB_U : base; }
 var HB_LS_BOOKMARKS = 'umsHbBookmarks';   // the list (the account's copy, or the browser's own while unset)
 var HB_LS_NOTES = 'umsHbNotes';           // { sectionId: { t, ms } } — tombstones included
 var HB_LS_NOTES_SYNC = 'umsHbNotesSync';  // '1' while this browser keeps its notes in the account
 var HB_NOTE_MAX = 4000;
-var HB_SV = { setUp: undefined, bookmarks: [], seq: 0, showing: false };
+var HB_SV = { setUp: undefined, bookmarks: [], seq: 0, showing: false, error: '' };
 
-function hbNotes_() { var n = hbLsJson_(HB_LS_NOTES); return n && typeof n === 'object' && !Array.isArray(n) ? n : {}; }
-function hbNotesPut_(map) { hbLsSet_(HB_LS_NOTES, JSON.stringify(map || {})); }
-function hbNotesSyncOn_() { return hbLs_(HB_LS_NOTES_SYNC) === '1'; }
+function hbNotes_() { var n = hbLsJson_(hbKey_(HB_LS_NOTES)); return n && typeof n === 'object' && !Array.isArray(n) ? n : {}; }
+function hbNotesPut_(map) { hbLsSet_(hbKey_(HB_LS_NOTES), JSON.stringify(map || {})); }
+function hbNotesSyncOn_() { return hbLs_(hbKey_(HB_LS_NOTES_SYNC)) === '1'; }
+function hbNotesSyncSet_(on) { hbLsSet_(hbKey_(HB_LS_NOTES_SYNC), on ? '1' : ''); }
+/** Follow-on 6 — once, at boot, before anything reads them: what this browser
+ *  stored under the shared keys becomes this account's, and the shared copy
+ *  goes. Notes are MERGED into any the account already has here (the later
+ *  note per section wins) — a tab still on the old page may have written the
+ *  shared key after the first adoption; the bookmark copy and the switch are
+ *  taken only where the account has none. */
+function hbAdoptLegacy_() {
+  if (!HB_U) return;
+  try {
+    var old = hbLsJson_(HB_LS_NOTES);
+    if (old && typeof old === 'object' && !Array.isArray(old)) hbNotesPut_(hbNotesMergeLocal_(hbNotes_(), old));
+    [HB_LS_BOOKMARKS, HB_LS_NOTES_SYNC].forEach(function (base) {
+      var v = hbLs_(base);
+      if (v !== null && hbLs_(hbKey_(base)) === null) hbLsSet_(hbKey_(base), v);
+    });
+    [HB_LS_NOTES, HB_LS_BOOKMARKS, HB_LS_NOTES_SYNC].forEach(function (base) { localStorage.removeItem(base); });
+  } catch (e) {}
+}
 /** The note for a section, or '' (a tombstone is no note). */
 function hbNoteText_(id) { var n = hbNotes_()[id]; return n && typeof n.t === 'string' ? n.t : ''; }
 /** PURE — the server's hbNotesMerge_, for an import: per section the later
@@ -1883,26 +2144,38 @@ function hbRepaintStars_() {
   });
 }
 function hbLoadBookmarks_() {
-  var kept = hbLsJson_(HB_LS_BOOKMARKS);
+  var kept = hbLsJson_(hbKey_(HB_LS_BOOKMARKS));
   if (Array.isArray(kept)) HB_SV.bookmarks = kept;
-  google.script.run
-    .withSuccessHandler(function (r) {
-      // A failure keeps what this browser had (g129); the next toggle asks the server again.
-      if (!r || r.error) return;
+  // A failure keeps what this browser had (g129) — and F47 (cycle 26) SAYS so:
+  // with no copy here the Saved page read "Nothing bookmarked yet" under "Kept
+  // in your account", for a reader whose bookmarks simply had not arrived.
+  var take = function (r) {
+    if (!r || r.error) HB_SV.error = String((r && r.error) || 'the server did not answer');
+    else {
+      HB_SV.error = '';
       HB_SV.setUp = r.setUp !== false;
-      if (HB_SV.setUp) { HB_SV.bookmarks = r.bookmarks || []; hbLsSet_(HB_LS_BOOKMARKS, JSON.stringify(HB_SV.bookmarks)); }
-      hbRepaintStars_();
-      if (HB_SV.showing) hbPaintSaved_();
-    })
-    .withFailureHandler(function () {})
+      if (HB_SV.setUp) { HB_SV.bookmarks = r.bookmarks || []; hbLsSet_(hbKey_(HB_LS_BOOKMARKS), JSON.stringify(HB_SV.bookmarks)); }
+    }
+    hbRepaintStars_();
+    if (HB_SV.showing) hbPaintSaved_();
+  };
+  google.script.run
+    .withSuccessHandler(function (r) { take(r && typeof r === 'object' ? r : { error: 'The server did not answer.' }); })
+    .withFailureHandler(function (e) { take({ error: (e && e.message) || 'The server did not answer.' }); })
     .hbMyBookmarks();
+}
+/** F47 — ask for the bookmarks again from the Saved page. */
+function hbRetryBookmarks_() {
+  HB_SV.error = '';
+  if (HB_SV.showing) { hbPaintSaved_(); hbFocusEl_(document.querySelector('#hb-sv .hb-sv-h')); }
+  hbLoadBookmarks_();
 }
 function hbToggleBookmark_(btn) {
   var id = btn.getAttribute('data-kb-id'), title = btn.getAttribute('data-kb-title') || '';
   if (!id) return;
   var on = !hbBookmarked_(id);
   var done = function () {
-    hbLsSet_(HB_LS_BOOKMARKS, JSON.stringify(HB_SV.bookmarks));
+    hbLsSet_(hbKey_(HB_LS_BOOKMARKS), JSON.stringify(HB_SV.bookmarks));
     hbRepaintStars_();
     if (HB_SV.showing) hbPaintSaved_();
     showToast(on ? 'Bookmarked' : 'Removed bookmark', 'toast-success');
@@ -1915,7 +2188,7 @@ function hbToggleBookmark_(btn) {
   var fin = function (r) {
     if (btn.isConnected) btn.disabled = false;
     if (!r || !r.success) { showToast('Not saved: ' + String((r && r.error) || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-error'); return; }
-    HB_SV.setUp = true; HB_SV.bookmarks = r.bookmarks || [];
+    HB_SV.setUp = true; HB_SV.error = ''; HB_SV.bookmarks = r.bookmarks || [];   // the server's own list answered
     done();
   };
   google.script.run.withSuccessHandler(fin).withFailureHandler(function (e) { fin({ error: e && e.message }); }).hbToggleBookmark(id, on);
@@ -1926,7 +2199,7 @@ function hbToggleBookmark_(btn) {
 function hbNoteBarHtml_(id) {
   if (!id) return '';
   var has = !!hbNoteText_(id);
-  return '<button type="button" class="kb-btn hb-note-btn' + (has ? ' on' : '') + '" data-id="' + esc(id) + '" onclick="hbEditNote_(this.getAttribute(\'data-id\'))">' +
+  return '<button type="button" class="kb-btn hb-note-btn' + (has ? ' on' : '') + '" data-hb-bar="note" data-id="' + esc(id) + '" onclick="hbEditNote_(this.getAttribute(\'data-id\'))">' +
     icon('fileText', 13) + (has ? ' Your note' : ' Add a note') + '</button>';
 }
 function hbSectionTitle_(id) {
@@ -1948,13 +2221,34 @@ function hbPutNote_(id, text, after) {
   });
 }
 /** Send notes to the account and keep the merged answer. */
-function hbSyncNotes_(map, cb) {
+var HB_NOTES_REFUSED_SAID = 0;
+function hbSyncNotes_(map, cb, turnOn) {
   var fin = function (r) {
+    // F55 (cycle 26): sync was turned off for the ACCOUNT — on another computer,
+    // where the reader was told the copies were deleted. This browser's own
+    // switch was still on, so its next visit sent every note back. It obeys the
+    // account now: off here too, said once, the notes kept in this browser.
+    if (r && r.off) {
+      hbNotesSyncSet_(false);
+      showToast('Keeping your notes in your account was turned off on another computer, so it is off here too. Your notes stay in this browser — you can turn it on again on the Saved page.', 'toast-warn', { sticky: true });
+      if (HB_SV.showing) hbPaintSaved_();
+      cb(true); return;
+    }
     if (!r || !r.success) { cb(false, r && r.error); return; }
     hbNotesPut_(hbNotesMergeLocal_(hbNotes_(), r.notes || {}));
+    // F52 (cycle 26): the account takes a note only for a section in the
+    // handbook, so a note it did not take is SAID (once per count, not at
+    // every sync) — it stays in this browser.
+    var refused = Number(r.refused) || 0;
+    if (refused && refused !== HB_NOTES_REFUSED_SAID) {
+      HB_NOTES_REFUSED_SAID = refused;
+      showToast(refused + (refused === 1 ? ' note was' : ' notes were') + ' not kept in your account — ' + (refused === 1 ? 'its section is' : 'their sections are') +
+        ' no longer in the handbook. ' + (refused === 1 ? 'It stays' : 'They stay') + ' in this browser.', 'toast-warn', { sticky: true });
+    }
     cb(true);
   };
-  google.script.run.withSuccessHandler(fin).withFailureHandler(function (e) { fin({ error: e && e.message }); }).hbSyncNotes(map);
+  // `turnOn`: the reader's own choice on the Saved page — the one call that may turn the account's sync back on.
+  google.script.run.withSuccessHandler(fin).withFailureHandler(function (e) { fin({ error: e && e.message }); }).hbSyncNotes(map, turnOn === true);
 }
 function hbEditNote_(id) {
   if (!id) return;
@@ -1968,7 +2262,7 @@ function hbEditNote_(id) {
       saving = false;
       closeOverlay(ov, { discard: true });
       showToast(msg, 'toast-success');
-      hbPaintQuizBar_(HB.currentId);
+      hbRepaintBar_();
       if (HB_SV.showing) hbPaintSaved_();
     });
   };
@@ -1995,6 +2289,7 @@ function hbEditNote_(id) {
 function hbLeaveSaved_() { HB_SV.showing = false; HB_SV.seq++; }
 function hbGoSaved_() { hbSaved_(true); }
 function hbSaved_(push) {
+  if (hbHoldSitting_(function () { hbSaved_(push); })) return;
   hbCloseSide_(); hbLeaveSearch_(); HB_PP.showing = false; hbLeaveQuiz_();
   HB.currentId = null; HB.landing = false;
   MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1;
@@ -2008,7 +2303,12 @@ function hbSaved_(push) {
 }
 function hbPaintSaved_() {
   var host = document.getElementById('hb-sv'); if (!host) return;
+  // F47: three different things — failed, still loading, loaded — and only the last may say "nothing".
+  var bmFailed = !!HB_SV.error && HB_SV.setUp !== false, bmLoading = HB_SV.setUp === undefined && !HB_SV.error;
   var where = HB_SV.setUp === false ? 'Kept in this browser — saving to your account is not set up yet.' : 'Kept in your account, on every computer you sign in on.';
+  var whereHtml = bmFailed ? '<p class="hb-msg bad hb-sv-where" role="alert">Your bookmarks could not be loaded from your account: ' + esc(String(HB_SV.error).replace(/\.$/, '')) + '.' +
+      (HB_SV.bookmarks.length ? ' These are the ones this browser last saw.' : '') + '</p><button type="button" class="kb-btn hb-retry" onclick="hbRetryBookmarks_()">Try again</button>'
+    : '<p class="hb-quiet hb-sv-where">' + where + '</p>';
   // HBR4: each bookmark with its chapter's icon tile and name; the star removes it.
   var chapOf = function (id) { var it = HB.tree.filter(function (x) { return x.id === id; })[0]; return it ? it.department : ''; };
   var bms = HB_SV.bookmarks.map(function (b) {
@@ -2036,8 +2336,9 @@ function hbPaintSaved_() {
         : 'Off: your notes stay in this browser only — clearing the browser, or another computer, will not have them. Export them to keep a copy.') + '</p>';
   // HBR4: Bookmarks and My notes side by side, each a card with its header.
   host.innerHTML = '<div class="hb-qz-ph"><div><h1 class="hb-pp-h">Saved</h1><p class="hb-quiet">Bookmarks follow your account. Notes stay in this browser unless you keep them in your account.</p></div></div>' +
-    '<div class="hb-sv-cols"><section class="hb-sv-card"><h2 class="hb-sv-h">' + icon('star', 16) + ' Bookmarks <span class="hb-quiet">' + HB_SV.bookmarks.length + '</span></h2><p class="hb-quiet hb-sv-where">' + where + '</p>' +
-    (bms ? '<ul class="hb-tr-items hb-sv-list">' + bms + '</ul>' : '<p class="hb-quiet hb-sv-none">Nothing bookmarked yet — press the ' + icon('star', 12) + ' on a section to keep it here.</p>') + '</section>' +
+    '<div class="hb-sv-cols"><section class="hb-sv-card"><h2 class="hb-sv-h">' + icon('star', 16) + ' Bookmarks <span class="hb-quiet">' + (bmFailed || bmLoading ? '' : HB_SV.bookmarks.length) + '</span></h2>' + whereHtml +
+    (bms ? '<ul class="hb-tr-items hb-sv-list">' + bms + '</ul>' : bmFailed ? '' : bmLoading ? loSweep()
+      : '<p class="hb-quiet hb-sv-none">Nothing bookmarked yet — press the ' + icon('star', 12) + ' on a section to keep it here.</p>') + '</section>' +
     '<section class="hb-sv-card"><h2 class="hb-sv-h">' + icon('fileText', 16) + ' My notes <span class="hb-quiet">' + (syncOn ? 'In your account' : 'In this browser') + '</span></h2><div class="hb-sv-where">' + sync + '</div>' +
     (nrows ? '<ul class="hb-tr-items hb-sv-list hb-sv-notes">' + nrows + '</ul>' : '<p class="hb-quiet hb-sv-none">No notes yet — use "Add a note" above a section.</p>') +
     '<div class="hb-qz-actions hb-sv-foot">' + (ids.length ? '<button type="button" class="kb-btn" onclick="hbExportNotes_(this)">' + icon('download', 12) + ' Export notes</button>' +
@@ -2080,7 +2381,7 @@ function hbImportNotes_(input) {
     hbNotesPut_(merged);
     var msg = 'Imported ' + took.length + ' note' + (took.length === 1 ? '' : 's') + (Object.keys(got.notes).length > took.length ? ' — newer notes here were kept' : '') +
       (got.skipped ? '; ' + got.skipped + ' could not be read' : '') + '.';
-    var after = function () { showToast(msg, 'toast-success'); hbPaintSaved_(); hbPaintQuizBar_(HB.currentId); };
+    var after = function () { showToast(msg, 'toast-success'); hbPaintSaved_(); hbRepaintBar_(); };
     if (!hbNotesSyncOn_() || !took.length) { after(); return; }
     var sub = {}; took.forEach(function (id) { sub[id] = merged[id]; });
     hbSyncNotes_(sub, function (ok, err) {
@@ -2105,22 +2406,22 @@ function hbSetNotesSync_(box) {
         hbSyncNotes_(hbNotes_(), function (ok, err) {
           box.disabled = false;
           if (!ok) { showToast('Not turned on: ' + String(err || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-error'); return; }
-          hbLsSet_(HB_LS_NOTES_SYNC, '1');
+          hbNotesSyncSet_(true);
           showToast('Your notes are kept in your account.', 'toast-success');
-          hbPaintSaved_(); hbPaintQuizBar_(HB.currentId);
-        });
+          hbPaintSaved_(); hbRepaintBar_();
+        }, true);
       });
     return;
   }
   uiConfirm({ title: 'Stop keeping notes in your account?', confirmLabel: 'Stop', tone: 'danger',
-    message: 'Your notes stay in this browser. The copies in your account are deleted.' })
+    message: 'Your notes stay in this browser. The copies in your account are deleted, and other computers stop sending theirs.' })
     .then(function (yes) {
       if (!yes) return;
       box.disabled = true;
       var fin = function (r) {
         box.disabled = false;
         if (!r || !r.success) { showToast('Not turned off: ' + String((r && r.error) || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-error'); return; }
-        hbLsSet_(HB_LS_NOTES_SYNC, '');
+        hbNotesSyncSet_(false);
         showToast('Your notes are kept in this browser only.', 'toast-success');
         hbPaintSaved_();
       };
@@ -2130,7 +2431,7 @@ function hbSetNotesSync_(box) {
 /** At boot, with sync on: send this browser's notes, keep the merge. */
 function hbBootNotes_() {
   if (!hbNotesSyncOn_()) return;
-  hbSyncNotes_(hbNotes_(), function (ok) { if (ok) { hbPaintQuizBar_(HB.currentId); if (HB_SV.showing) hbPaintSaved_(); } });
+  hbSyncNotes_(hbNotes_(), function (ok) { if (ok) { hbRepaintBar_(); if (HB_SV.showing) hbPaintSaved_(); } });
 }
 
 // ── Display settings and read aloud (HB2.3) ─────────────────────────────
@@ -2316,20 +2617,24 @@ function hbBlockText_(el) {
 function hbListenBarHtml_(id) {
   if (!id || !hbSpeech_()) return '';
   var mine = HB_RA.id === id && HB_RA.state !== 'idle';
-  if (!mine) return '<button type="button" class="kb-btn hb-ra-btn" onclick="hbReadAloud_()">' + icon('waveform', 13) + ' Listen</button>';
+  if (!mine) return '<button type="button" class="kb-btn hb-ra-btn" data-hb-bar="listen" onclick="hbReadAloud_()">' + icon('waveform', 13) + ' Listen</button>';
   return '<span class="hb-ra">' + (HB_RA.state === 'paused'
-    ? '<button type="button" class="kb-btn hb-ra-btn" onclick="hbReadResume_()">' + icon('waveform', 13) + ' Resume</button>'
-    : '<button type="button" class="kb-btn hb-ra-btn on" onclick="hbReadPause_()">' + icon('waveform', 13) + ' Pause</button>') +
-    '<button type="button" class="kb-btn" onclick="hbStopReading_()">Stop</button></span>';
+    ? '<button type="button" class="kb-btn hb-ra-btn" data-hb-bar="listen" onclick="hbReadResume_()">' + icon('waveform', 13) + ' Resume</button>'
+    : '<button type="button" class="kb-btn hb-ra-btn on" data-hb-bar="listen" onclick="hbReadPause_()">' + icon('waveform', 13) + ' Pause</button>') +
+    '<button type="button" class="kb-btn" data-hb-bar="stop" onclick="hbStopReading_()">Stop</button></span>';
 }
 function hbReadAloud_() {
-  var speech = hbSpeech_(), id = HB.currentId;
+  var speech = hbSpeech_(), id = hbBarId_();   // F45: the section the Listen button is shown FOR
   if (!speech) { showToast('This browser cannot read aloud.', 'toast-warn'); return; }
   hbStopReading_();
+  // Cycle 26 (Batch 8 follow-on 4): whatever the engine still holds goes first —
+  // a page reloaded while paused left it paused, so Listen showed Pause and
+  // Stop and nothing was heard. (hbStopReading_ cancels only what THIS page started.)
+  try { speech.cancel(); } catch (e) {}
   var blocks = hbReadBlocks_(document.getElementById('kb-man-sec-' + id));
   if (!blocks.length) { showToast('Nothing to read in this section.', 'toast-warn'); return; }
   HB_RA = { id: id, blocks: blocks, i: 0, state: 'playing', seq: HB_RA.seq + 1 };
-  hbPaintQuizBar_(HB.currentId);
+  hbRepaintBar_();
   hbReadBlock_(HB_RA.seq);
 }
 function hbReadBlock_(seq) {
@@ -2355,15 +2660,15 @@ function hbReadBlock_(seq) {
   };
   next();
 }
-function hbReadPause_() { var s = hbSpeech_(); if (!s || HB_RA.state !== 'playing') return; s.pause(); HB_RA.state = 'paused'; hbPaintQuizBar_(HB.currentId); }
-function hbReadResume_() { var s = hbSpeech_(); if (!s || HB_RA.state !== 'paused') return; s.resume(); HB_RA.state = 'playing'; hbPaintQuizBar_(HB.currentId); }
+function hbReadPause_() { var s = hbSpeech_(); if (!s || HB_RA.state !== 'playing') return; s.pause(); HB_RA.state = 'paused'; hbRepaintBar_(); }
+function hbReadResume_() { var s = hbSpeech_(); if (!s || HB_RA.state !== 'paused') return; s.resume(); HB_RA.state = 'playing'; hbRepaintBar_(); }
 /** Stop reading and clear the mark; every navigation calls it. */
 function hbStopReading_() {
   var was = HB_RA.state !== 'idle';
   HB_RA.seq++; HB_RA.state = 'idle'; HB_RA.blocks = []; HB_RA.id = null;
   var s = hbSpeech_(); if (s && was) { try { s.cancel(); } catch (e) {} }
   document.querySelectorAll('.hb-ra-on').forEach(function (n) { n.classList.remove('hb-ra-on'); });
-  if (was) hbPaintQuizBar_(HB.currentId);
+  if (was) hbRepaintBar_();
 }
 
 // ── Contents ──────────────────────────────────────────────────────────────
@@ -2412,10 +2717,13 @@ function hbReadShare_(sectionIds, signoffs) {
 function hbPaintCounts_() {
   var due = hbDueItems_();
   var n = { quizzes: hbQuizzesOpen_(), training: due === null ? null : due.length };
+  // F47: a count over a source that failed would be a number that leaves things out — "?" instead.
+  var dueFailed = hbDueFailedText_(hbDueFailed_(HB_TR.mine, HB_SO.error));
   document.querySelectorAll('[data-count]').forEach(function (el) {
-    var v = n[el.getAttribute('data-count')];
+    var which = el.getAttribute('data-count'), v = n[which];
+    if (which === 'training' && dueFailed) { el.textContent = '?'; el.setAttribute('title', dueFailed); return; }
     el.textContent = v ? String(v) : '';
-    if (v) el.setAttribute('title', el.getAttribute('data-count') === 'quizzes' ? v + ' not passed yet' : v + ' due for you'); else el.removeAttribute('title');
+    if (v) el.setAttribute('title', which === 'quizzes' ? v + ' not passed yet' : v + ' due for you'); else el.removeAttribute('title');
   });
   var on = HB_SO.setUp === true;
   document.querySelectorAll('[data-share]').forEach(function (el) {
@@ -2474,7 +2782,8 @@ function hbFocusSection_(id) {
 }
 function hbMarkCurrent_(id) {
   if (HB_FOCUS_SEC && id === HB_FOCUS_SEC) hbFocusSection_(id);
-  hbPaintQuizBar_(id);   // HB3.2: the quizzes on the section in view
+  HB_BAR.id = id || null;   // F45: the ONE place the bar's section is decided
+  hbPaintQuizBar_(HB_BAR.id);   // HB3.2: the quizzes on the section in view
   document.querySelectorAll('#hb-toc .hb-it').forEach(function (b) {
     var on = !!id && b.getAttribute('data-kb-id') === id;
     b.classList.toggle('on', on);
@@ -2672,6 +2981,9 @@ function hbShelfHtml_() {
       hbBooksHtml_(chapters, b.books, 'calls', b.top) +
       '<div class="hb-shelf-f">The whole team — the handbook opened during calls' + (res.truncated ? ' (the newest ' + HB_SHELF_ROWS_NOTE + ')' : '') + '</div>';
   } else {
+    // F47: a read that failed is not "still loading" — it says so, and offers to ask again.
+    if (HB_SO.setUp === undefined && HB_SO.error) return head + '<p class="hb-shelf-msg" role="status">Your reading could not be loaded.</p>' +
+      '<button type="button" class="kb-btn hb-retry" onclick="hbRetrySignOffs_()">Try again</button>';
     if (HB_SO.setUp === undefined) return head + '<div class="hb-shelf-msg">' + loSweep() + '</div>';
     if (HB_SO.setUp === false) return head + '<p class="hb-shelf-msg" role="status">Your reading shows here once the handbook’s admin sets up profiles.</p>';
     var m = hbShelfBooks_(chapters, 'me', null, HB_SO.signoffs);
@@ -2777,15 +3089,36 @@ function hbDueList_(mine, signoffs, soSetUp, tree) {
   return out;
 }
 function hbDueItems_() { return hbDueList_(HB_TR.mine, HB_SO.signoffs, HB_SO.setUp, HB.tree); }
+/** PURE (Node-pinned) — F47 (cycle 26): which of Due's two sources FAILED to
+ *  load ('training', 'signoffs'). A source that failed is not a source with
+ *  nothing in it: the card said "Nothing is due — you're up to date" to a
+ *  reader with an overdue plan (g53). */
+function hbDueFailed_(mine, soError) {
+  var out = [];
+  if (mine && mine.error) out.push('training');
+  if (soError) out.push('signoffs');
+  return out;
+}
+/** PURE (Node-pinned) — the line that says it. */
+function hbDueFailedText_(failed) {
+  if (!failed || !failed.length) return '';
+  return (failed.length > 1 ? 'Your training plans and your sign-offs' : failed[0] === 'training' ? 'Your training plans' : 'Your sign-offs') +
+    ' could not be loaded, so this list may be missing something.';
+}
 function hbDueHtml_() {
   var head = '<h2 class="hb-hc-h">Due for you</h2>';
   var items = hbDueItems_();
+  var failed = hbDueFailed_(HB_TR.mine, HB_SO.error);
+  var said = failed.length ? '<p class="hb-msg bad" role="alert">' + esc(hbDueFailedText_(failed)) + '</p>' +
+    '<button type="button" class="kb-btn hb-retry" onclick="hbRetryDue_()">Try again</button>' : '';
   if (items === null) {
+    if (said) return head + said;
     if ((HB_TR.mine === undefined) || HB_SO.setUp === undefined) return head + loSweep();
     return head + '<p class="hb-quiet">Training and sign-offs show here once the handbook’s admin sets up profiles.</p>';
   }
-  if (!items.length) return head + '<p class="hb-quiet">Nothing is due — you’re up to date.</p>';
-  return head + '<ul class="hb-due">' + items.slice(0, 4).map(function (it) {
+  // Never "you're up to date" over a source that could not be read.
+  if (!items.length) return head + (said || '<p class="hb-quiet">Nothing is due — you’re up to date.</p>');
+  return head + said + '<ul class="hb-due">' + items.slice(0, 4).map(function (it) {
     if (it.kind === 'reread') {
       return '<li><button type="button" class="hb-due-row" data-kb-id="' + esc(it.id) + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'))">' +
         '<span class="hb-due-ic warn" aria-hidden="true">' + icon('warning', 17) + '</span><span class="hb-due-b"><b>Read ' + esc(it.title) + ' again</b><span class="hb-quiet">Changed since you read it</span></span>' +
@@ -2808,6 +3141,14 @@ function hbTakeDue_(res) {
   if (res && res.error && HB_TR.mine && !HB_TR.mine.error) return;
   HB_TR.mine = res;
   hbPaintCounts_(); hbPatchHome_();
+}
+/** F47 — ask again for whichever of Due's sources failed; the card reads
+ *  "loading" meanwhile, and the focus stays on it. */
+function hbRetryDue_() {
+  var failed = hbDueFailed_(HB_TR.mine, HB_SO.error);
+  if (failed.indexOf('training') >= 0) { HB_TR.mine = undefined; hbPaintCounts_(); hbPatchHome_(); hbLoadDue_(); }
+  if (failed.indexOf('signoffs') >= 0) hbRetrySignOffs_();
+  hbFocusEl_(document.getElementById('hb-due'));
 }
 
 // ── What changed ──────────────────────────────────────────────────────────
@@ -2916,6 +3257,7 @@ function hbBoot_() {
     if (!e.target.closest('#hb-side') && !e.target.closest('#hb-menu')) hbCloseSide_(true);
   });
   try { if (window.google && google.script && google.script.history) google.script.history.setChangeHandler(hbOnHistory_); } catch (e) {}
+  hbAdoptLegacy_();   // follow-on 6: before anything reads the notes, the bookmark copy or the sync switch
   hbPaintChrome_();   // HBR1: the bar's icons and the phone's tabs
   hbLoadMe_();
   hbLoadShelf_();     // HBR1: home's shelf — the team's lookups on calls
@@ -2928,10 +3270,19 @@ function hbBoot_() {
   hbApplyDisplay_(hbDisplay_(), false);   // HB2.3: the head applied the stored attributes; this loads the font if it is on
   var sp = hbSpeech_();
   if (sp) { try { sp.addEventListener('voiceschanged', hbVoicesChanged_); } catch (e) {} }
+  // Follow-on 4: leaving or reloading the page stops the reading with it.
+  window.addEventListener('pagehide', function () { var s = hbSpeech_(); if (s) { try { s.cancel(); } catch (e) {} } });
   var vis = hbVisitStep_(hbLsJson_(HB_LS_VISIT), hbIsoDay_(new Date()));
   HB_SINCE = vis.since;
   hbLsSet_(HB_LS_VISIT, JSON.stringify(vis.rec));
-  var main = hbMain_(); if (main) main.innerHTML = '<div class="hb-msg">' + loSweep() + '</div>';
+  var main = hbMain_(); if (main) main.innerHTML = '<div class="hb-msg" id="hb-boot">' + loSweep() + '</div>';
+  // F66 (cycle 26): "Match my device" follows the device WHILE the page is open
+  // — it was read once, so a shift that ran into the evening stayed light.
+  try {
+    var mq = window.matchMedia('(prefers-color-scheme: dark)');
+    var onScheme = function () { if (!hbDisplay_().theme) hbApplyTheme_(''); };
+    if (mq.addEventListener) mq.addEventListener('change', onScheme); else if (mq.addListener) mq.addListener(onScheme);
+  } catch (e) {}
   kbEnsureManualMeta_(function () {
     hbPaintVer_();
     if (document.querySelector('.hb-home')) hbPatchHome_();   // HBR1: patched, never redrawn — home's search may hold typing (g141)
@@ -2963,16 +3314,81 @@ function hbBoot_() {
 function hbLoadFailed_(kept, msg) {
   if (kept && kbManualPartsAccept_(kept.res)) {
     hbReady_(kept.res);
-    showToast('Could not reach the handbook — showing the copy kept on this device, which may be out of date.', 'toast-warn');
+    // F55 (cycle 26): said for as long as it is true — a 3.5-second toast was the
+    // only mark on text that may be superseded, for the whole visit.
+    HB_STALE.on = true; hbPaintStale_();
     return;
   }
-  hbMsg_('The handbook could not be loaded: ' + String(msg || 'the server did not answer').replace(/\.$/, '') + '. Reload the page to try again.', true);
+  var text = 'The handbook could not be loaded: ' + String(msg || 'the server did not answer').replace(/\.$/, '') + '. Reload the page to try again.';
+  // F55: only the boot placeholder is replaced — a reader already on Profile or in a quiz keeps their view, and is told.
+  if (document.getElementById('hb-boot')) hbMsg_(text, true); else showToast(text, 'toast-error', { sticky: true });
 }
-function hbReady_(res) {
+/** F55 (cycle 26) — the banner over a kept copy the server could not confirm:
+ *  it stays until a read succeeds. Try again asks for the chapters; a good
+ *  answer replaces the copy, the contents and the text on screen. */
+var HB_STALE = { on: false, busy: false };
+function hbPaintStale_() {
+  var el = document.getElementById('hb-stale'); if (!el) return;
+  el.innerHTML = !HB_STALE.on ? '' : '<span class="hb-stale-t">' + icon('warning', 14) + ' The handbook could not be reached — this is the copy kept on this device, and it may be out of date.</span>' +
+    '<button type="button" class="kb-btn" id="hb-stale-retry"' + (HB_STALE.busy ? ' disabled' : '') + ' onclick="hbStaleRetry_()">' + (HB_STALE.busy ? 'Trying…' : 'Try again') + '</button>';
+}
+function hbStaleRetry_() {
+  if (HB_STALE.busy) return;
+  HB_STALE.busy = true; hbPaintStale_();
+  var fin = function (res) {
+    HB_STALE.busy = false;
+    if (!res || res.error || !kbManualPartsAccept_(res)) {
+      hbPaintStale_();
+      var b = document.getElementById('hb-stale-retry'); if (b) b.focus();
+      showToast('Still could not reach the handbook: ' + String((res && res.error) || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-warn');
+      return;
+    }
+    HB_STALE.on = false; hbPaintStale_();
+    if (res.stamp) hbKeptPut_({ stamp: res.stamp, res: res });
+    hbFreshChapters_(res);
+    showToast('The handbook is up to date.', 'toast-success');
+  };
+  google.script.run.withSuccessHandler(fin).withFailureHandler(function (e) { fin({ error: e && e.message }); }).getManualParts();
+}
+/** The chapters were replaced while the page is open: the contents and the
+ *  versions follow; a section on screen is redrawn from the new text (at the
+ *  section in view), home is patched, any other view repaints what names a section. */
+function hbFreshChapters_(res) {
+  hbTakeChapters_(res);
+  var at = hbBarId_() || HB.currentId;
+  if (at) {
+    MANUAL_STATE.manualPart = null;   // the reader would keep the chapter it already drew
+    if (HB.tree.some(function (it) { return it.id === at; })) hbOpen_(at, '', null, false); else hbHome_(false);
+  } else hbChaptersLanded_();
+  hbFocusView_();   // the banner's button is gone — the focus goes to the page, not to <body>
+}
+/** The chapters' answer, taken: the tree, each item's version, the contents. */
+function hbTakeChapters_(res) {
   HB.tree = hbTreeOf_(res);
+  // F49 (cycle 26): each section's and chapter's version, as the server sent it
+  // WITH this text — a sign-off hands it back, so the server knows what was read.
+  HB.versions = (res && res.versions) || {};
   hbPaintToc_();
   hbPaintDeptPicker_();
+}
+/** The view on screen is not the boot placeholder: repaint only what needed the
+ *  chapters' names — never the view itself. */
+function hbChaptersLanded_() {
   if (HB_PP.showing) hbPaintPeopleMe_();   // the department list needed the chapters
+  if (HB_SV.showing) hbPaintSaved_();
+  if (HB_TR.showing && HB_TR.mine !== undefined) hbPaintMine_();
+  if (HB_QZ.showing === 'list' && HB_QZ.list !== undefined) hbPaintQuizList_(HB_QZ.list);
+  if (HB_FM.showing && HB_FM.list !== undefined) hbPaintFormList_(HB_FM.list);
+  if (document.querySelector('.hb-home')) hbPatchHome_();
+}
+function hbReady_(res) {
+  hbTakeChapters_(res);
+  // F55 (cycle 26): the chapters can land seconds after the page (a first visit
+  // ships the whole handbook). The bar's search, the avatar and the phone's tabs
+  // already work by then — and this painted Home (or the link's section) over
+  // Profile, a search still in flight, a quiz in progress. Only the boot
+  // placeholder is routed away from; any other view stays (g81).
+  if (!document.getElementById('hb-boot')) { hbChaptersLanded_(); return; }
   if (!HB.tree.length) { hbMsg_('No handbook has been published yet.'); return; }
   var asked = (window.HB_PARAMS || {}).s || '';
   var t = hbTargetOf_(asked, HB.tree);

@@ -742,6 +742,12 @@ function ttSearchReference_(query, opts) {
     // in the key), so admin-triggered retrieval must never include drafts or
     // reps get guidance text + source titles derived from unpublished content.
     const publishedOnly = !!(opts && opts.publishedOnly);
+    // F48 (cycle 26): manualOnly keeps handbook sections only — applied to the
+    // ROWS, before anything is scored or the list is cut to its length. The
+    // handbook app filtered the finished list instead, so twenty Reference
+    // articles that outscored the handbook left it nothing to show. Narrowing
+    // only, like publishedOnly: it cannot widen what a caller sees.
+    const manualOnly = !!(opts && opts.manualOnly === true);
     const q = String(query || '').trim().toLowerCase();
     if (q.length < 2) return { results: [] };
     const tokens = [];
@@ -769,6 +775,7 @@ function ttSearchReference_(query, opts) {
       const status = row.status;
       if (status === KB_STATUS_DRAFT && (publishedOnly || !emp.isAdmin)) continue;
       const id = row.id;
+      if (manualOnly && !KB_MANUAL_ID_RE.test(id)) continue;   // F48
       const title = row.title;
       const dept = row.department;
       const type = row.type;

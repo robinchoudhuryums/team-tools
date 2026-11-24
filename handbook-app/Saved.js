@@ -28,6 +28,12 @@ const HB_BOOKMARKS_MAX = 100;
 const HB_NOTE_MAX = 4000;
 const HB_NOTES_SYNC_MAX = 500;
 const HB_SECTION_ID_RE = /^man-[a-z0-9-]{1,60}$/;
+// F55 (cycle 26): the account's own "sync is off" — a row in the Notes tab
+// whose SectionId is this word (never a section's id), written when the reader
+// turns sync off and removed when they turn it on again. Without it "off" was
+// one browser's flag: another browser, its flag still on, sent every note back
+// at its next visit, after the reader had been told the copies were deleted.
+const HB_NOTES_OFF_ID = 'sync-off';
 
 // ── Pure helpers ─────────────────────────────────────────────────────────
 
@@ -65,20 +71,23 @@ function hbNotesMerge_(a, b) {
   return out;
 }
 /** PURE — the Notes tab's rows for one reader: {map: {id: {t, ms, row}},
- *  unreadable}. A row whose JSON will not read is counted, never served. */
+ *  unreadable, off}. A row whose JSON will not read is counted, never served.
+ *  `off`: the reader's "sync is off" marker rows (F55) — their row numbers, []
+ *  when sync was never turned off for the account (or was turned on again). */
 function hbNotesRows_(values, email) {
-  const map = {};
+  const map = {}, off = [];
   let unreadable = 0;
   (values || []).slice(1).forEach(function (r, i) {
     if (hbEmail_(r[0]) !== email) return;
     const id = String(r[1] || '');
+    if (id === HB_NOTES_OFF_ID) { off.push(i + 2); return; }
     let body = null;
     try { body = JSON.parse(String(r[2] || '')); } catch (e) { body = null; }
     const ms = Number(r[3]);
     if (!HB_SECTION_ID_RE.test(id) || !body || typeof body.t !== 'string' || !(ms > 0)) { unreadable++; return; }
     if (!map[id] || ms > map[id].ms) map[id] = { t: body.t, ms: ms, row: i + 2 };
   });
-  return { map: map, unreadable: unreadable };
+  return { map: map, unreadable: unreadable, off: off };
 }
 
 // ── The tabs ─────────────────────────────────────────────────────────────
@@ -162,43 +171,76 @@ function hbToggleBookmark(id, on) {
 
 /** Sync the reader's notes: `local` ({sectionId: {t, ms}}) is merged with the
  *  account's copy, later wins per section; what changed is written; the
- *  merged map comes back for the browser to keep. A note for a section no
- *  longer in the handbook is kept as it is (the reader may still want it). */
-function hbSyncNotes(local) {
+ *  merged map comes back for the browser to keep. A note the account already
+ *  holds for a section no longer in the handbook is kept as it is (the reader
+ *  may still want it).
+ *  F52 (cycle 26): the limit is on what the ACCOUNT holds, not on one call —
+ *  it was checked against the keys sent, so calls with fresh ids grew the tab
+ *  without end; a note is taken only for a published section (or one the
+ *  account already has); and the new rows are written in ONE block, where each
+ *  was its own append under the project lock.
+ *  F55 (cycle 26): sync that was turned OFF for the account is obeyed — the
+ *  call is refused with `off` and nothing is written — unless `turnOn` is true:
+ *  the reader's own choice on the Saved page, which removes the marker. */
+function hbSyncNotes(local, turnOn) {
   const c = hbSavedCall_();
   if (c.error) return { success: false, error: c.error };
   if (!c.ss) return { success: false, error: hbSavedNotSetUp_() };
   if (!local || typeof local !== 'object' || Array.isArray(local)) return { success: false, error: 'Those notes could not be read.' };
   const ids = Object.keys(local);
-  if (ids.length > HB_NOTES_SYNC_MAX) return { success: false, error: 'At most ' + HB_NOTES_SYNC_MAX + ' notes can be kept in your account.' };
+  const tooMany = 'At most ' + HB_NOTES_SYNC_MAX + ' notes can be kept in your account.';
+  if (ids.length > HB_NOTES_SYNC_MAX) return { success: false, error: tooMany };
+  let pub;
+  try { pub = hbPublished_(); } catch (err) { return { success: false, error: err.message }; }
   const maxMs = Date.now() + 86400000;
-  const clean = {};
-  let refused = 0;
-  ids.forEach(function (id) {
-    const n = HB_SECTION_ID_RE.test(id) ? hbNoteClean_(local[id], maxMs) : null;
-    if (n) clean[id] = n; else refused++;
-  });
   return hbWithLock_(function () {
     try {
       const mine = hbNotesRows_(hbNotesValues_(c.ss), c.emp.email);
+      if (mine.off.length && turnOn !== true) return { success: false, off: true, error: 'Keeping notes in your account was turned off.' };
+      const clean = {};
+      let refused = 0;
+      ids.forEach(function (id) {
+        const known = HB_SECTION_ID_RE.test(id) && (pub.sectionIds[id] || mine.map[id]);
+        const n = known ? hbNoteClean_(local[id], maxMs) : null;
+        if (n) clean[id] = n; else refused++;
+      });
       const merged = hbNotesMerge_(mine.map, clean);
+      if (Object.keys(merged).length > HB_NOTES_SYNC_MAX) return { success: false, error: tooMany + ' Delete some first.' };
       const sheet = hbSavedSheet_(c.ss, HB_NOTES_TAB, HB_NOTES_HEADERS, true);
+      // Turned on again: the marker goes (its rows are emptied, like a forgotten note's).
+      mine.off.forEach(function (row) { sheet.getRange(row, 1, 1, HB_NOTES_HEADERS.length).clearContent(); });
+      const fresh = [];
       let written = 0;
       Object.keys(merged).forEach(function (id) {
         const had = mine.map[id];
         if (had && had.ms === merged[id].ms && had.t === merged[id].t) return;
         const row = [c.emp.email, id, JSON.stringify({ t: merged[id].t }), merged[id].ms];
         if (had) sheet.getRange(had.row, 1, 1, row.length).setValues(sheetSafeRows_([row]));
-        else sheet.appendRow(sheetSafeRow_(row));
+        else fresh.push(row);
         written++;
       });
+      hbAppendBlock_(sheet, fresh);
       return { success: true, notes: merged, written: written, refused: refused, unreadable: mine.unreadable };
     } catch (err) { return { success: false, error: err.message }; }
   });
 }
+/** Rows added below a tab's last row in ONE write — the grid grown first, since
+ *  a block written past its last row throws (g145). The caller holds the lock;
+ *  only this project writes the Handbook spreadsheet. */
+function hbAppendBlock_(sheet, rows) {
+  if (!rows.length) return;
+  const at = sheet.getLastRow() + 1;
+  const short = at + rows.length - 1 - sheet.getMaxRows();
+  if (short > 0) sheet.insertRowsAfter(sheet.getMaxRows(), short);
+  sheet.getRange(at, 1, rows.length, rows[0].length).setValues(sheetSafeRows_(rows));
+}
 
 /** Sync turned off: the account's copies of the reader's notes are removed
- *  (their rows emptied — the browser keeps its own). */
+ *  (their rows emptied — the browser keeps its own), and — F55 (cycle 26) —
+ *  the ACCOUNT is marked off, so a browser whose own switch is still on is
+ *  refused at its next sync instead of sending every note back. The marker
+ *  takes the first row this emptied (one row per reader, however often it is
+ *  turned off), or a new one. */
 function hbForgetNotes() {
   const c = hbSavedCall_();
   if (c.error) return { success: false, error: c.error };
@@ -206,13 +248,17 @@ function hbForgetNotes() {
   return hbWithLock_(function () {
     try {
       const values = hbNotesValues_(c.ss);
-      const sheet = hbSavedSheet_(c.ss, HB_NOTES_TAB, HB_NOTES_HEADERS, false);
-      let removed = 0;
+      const sheet = hbSavedSheet_(c.ss, HB_NOTES_TAB, HB_NOTES_HEADERS, true);
+      let removed = 0, first = 0;
       values.slice(1).forEach(function (r, i) {
         if (hbEmail_(r[0]) !== c.emp.email) return;
         sheet.getRange(i + 2, 1, 1, HB_NOTES_HEADERS.length).clearContent();
-        removed++;
+        if (!first) first = i + 2;
+        if (String(r[1] || '') !== HB_NOTES_OFF_ID) removed++;
       });
+      const mark = [c.emp.email, HB_NOTES_OFF_ID, '', Date.now()];
+      if (first) sheet.getRange(first, 1, 1, mark.length).setValues(sheetSafeRows_([mark]));
+      else hbAppendBlock_(sheet, [mark]);
       return { success: true, removed: removed };
     } catch (err) { return { success: false, error: err.message }; }
   });

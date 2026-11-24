@@ -14,7 +14,16 @@
 // EXPAND cache + open state — the A5 spanishExpand_ shape. State, not the
 // DOM, is the source of truth, so a card repaint keeps an open card open and
 // a second Expand costs no RPC.
-const DR_STATE = { data: null, bodies: {}, expanded: {}, replies: {}, replyOpen: {}, foldOpen: {} };
+const DR_STATE = { data: null, bodies: {}, expanded: {}, replies: {}, replyOpen: {}, foldOpen: {}, changeSeq: 0 };
+/** F41 (cycle 26): a change made HERE (a resolve, a reopen, an answer to a held
+ *  reply) — the cached payload was patched, so it is no longer a fresh round,
+ *  and any list read ASKED FOR before now describes the page before the change. */
+function drLocalChange_() {
+  DR_STATE.entry = null;
+  DR_STATE.changeSeq = (DR_STATE.changeSeq || 0) + 1;
+}
+/** PURE (Node-pinned) — was a list read asked for before a change made here? */
+function drAnswerPredatesChange_(seqWhenAsked, seqNow) { return Number(seqNow || 0) !== Number(seqWhenAsked || 0); }
 
 function enterDeptRequestsView(area) {
   stopClock();
@@ -35,10 +44,17 @@ function enterDeptRequestsView(area) {
   } else {
     renderLoading(area, 'Loading requests…', 'outbox');
   }
+  const seqAsked = DR_STATE.changeSeq || 0;
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requestedView) return;
       if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(false);
+      // F41 (cycle 26): the seeded cards are live while this read is on its
+      // way. A resolve clicked in that window patched the page; this answer
+      // was computed before it and would paint the request back as open — and
+      // stamp the round fresh for 45 seconds. It is dropped; the stamp stays
+      // cleared, so the next enter reads again.
+      if (drAnswerPredatesChange_(seqAsked, DR_STATE.changeSeq)) return;
       if (res && res.error) {
         DR_STATE.entry = null;
         if (!seeded) drRender_(area, null, res.error);   // seeded: keep last-good
@@ -538,11 +554,16 @@ function drCardStatusHtml_(item) {
 /** PURE (Node-pinned) — the TRX number in a "patient name & TRX" cell, as a
  *  key: what follows "TRX" ("TRX 12345", "trx#12345", "TRX: A-1234"), else
  *  the cell's ONE run of 5+ digits; '' when there is neither, or more than
- *  one bare run (two numbers cannot be told apart). */
+ *  one bare run (two numbers cannot be told apart).
+ *
+ *  F41 (cycle 26): what follows "TRX" is a key only when it holds a DIGIT.
+ *  "Maria Lopez TRX pending" and "John Smith trx pending" keyed as `pending`
+ *  and folded two patients into "2 open requests for this TRX", one card
+ *  hidden behind the other. A word is not a number (g156). */
 function drTrxKey_(patientTrx) {
   const s = String(patientTrx || '');
   const m = /\btrx\s*[#:.]?\s*([A-Za-z0-9][A-Za-z0-9-]{2,})/i.exec(s);
-  if (m) return m[1].toLowerCase();
+  if (m && /\d/.test(m[1])) return m[1].toLowerCase();
   const runs = s.match(/\b\d{5,}\b/g) || [];
   return runs.length === 1 ? runs[0] : '';
 }
@@ -570,19 +591,63 @@ function drFoldList_(list) {
   out.forEach(function (e) {
     if (!e.key) return;
     if (e.items.length < 2) { delete e.key; return; }
-    const asc = e.items.slice().sort(function (a, b) { return (a.createdMs || Infinity) - (b.createdMs || Infinity); });
-    let unanswered = 0;
-    for (let i = 1; i < asc.length; i++) {
-      const sent = asc[i].createdMs;
-      if (!sent) continue;
-      const answered = asc.slice(0, i).some(function (p) { return p.repliedMs && p.repliedMs <= sent; });
-      if (!answered) unanswered++;
-    }
-    e.followUps = asc.length - 1;
-    e.unanswered = unanswered;
-    e.items = asc.slice().reverse();   // newest first
+    const st = drFoldStats_(e.items);
+    e.followUps = st.followUps;
+    e.unanswered = st.unanswered;
+    e.items = st.asc.slice().reverse();   // newest first
   });
   return out;
+}
+/** PURE (Node-pinned) — a fold's follow-up counts over its requests (any
+ *  order): {asc (oldest first), followUps, unanswered}. */
+function drFoldStats_(items) {
+  const asc = (items || []).slice().sort(function (a, b) { return (a.createdMs || Infinity) - (b.createdMs || Infinity); });
+  let unanswered = 0;
+  for (let i = 1; i < asc.length; i++) {
+    const sent = asc[i].createdMs;
+    if (!sent) continue;
+    const answered = asc.slice(0, i).some(function (p) { return p.repliedMs && p.repliedMs <= sent; });
+    if (!answered) unanswered++;
+  }
+  return { asc: asc, followUps: Math.max(0, asc.length - 1), unanswered: unanswered };
+}
+/** PURE (Node-pinned) — the fold's header line for the requests on it that are
+ *  still OPEN (`total` = every card in the fold). F41 (cycle 26): the line was
+ *  written once, when the list was drawn — after "Mark resolved" on the top
+ *  card it went on reading "3 open requests" over a resolved card. */
+function drFoldHeadHtml_(openItems, total) {
+  const n = (openItems || []).length;
+  const done = Math.max(0, Number(total || 0) - n);
+  const doneTxt = done ? ' · ' + esc(String(done)) + ' resolved' : '';
+  if (n === 0) return icon('outbox', 12) + ' <b>No open request left</b> for this TRX' + doneTxt;
+  if (n === 1) return icon('outbox', 12) + ' <b>1 open request</b> for this TRX' + doneTxt;
+  const st = drFoldStats_(openItems);
+  const fu = st.unanswered
+    ? '<span class="dr-fold-fu">' + esc(String(st.unanswered)) + ' follow-up' + (st.unanswered === 1 ? '' : 's') + ' with no response</span>'
+    : esc(String(st.followUps)) + ' follow-up' + (st.followUps === 1 ? '' : 's');
+  return icon('outbox', 12) + ' <b>' + esc(String(n)) + ' open requests</b> for this TRX · ' + fu + doneTxt;
+}
+/** F41 — after a card in a fold was repainted in place: the header counts the
+ *  requests still open, and an open request is never left hidden behind a
+ *  resolved one — the earlier requests are shown. Only the header and the
+ *  toggle are touched; the cards (and anything typed in one) stay (g141). */
+function drFoldRefresh_(wrap) {
+  if (!wrap) return;
+  const cards = wrap.querySelectorAll('.sp-task[data-req]');
+  const items = [], open = [];
+  for (let i = 0; i < cards.length; i++) {
+    const it = drFindItem_(cards[i].getAttribute('data-req'));   // null = the server dropped it from every list: resolved
+    items.push(it);
+    if (it && it.status !== 'resolved') open.push(it);
+  }
+  const head = wrap.querySelector('.dr-fold-head');
+  if (head) head.innerHTML = drFoldHeadHtml_(open, cards.length);
+  const top = items[0];
+  const more = wrap.querySelector('.dr-fold-more');
+  if (open.length && (!top || top.status === 'resolved') && more && more.hidden) {
+    const btn = wrap.querySelector('.dr-fold-toggle');
+    if (btn) drFoldToggle_(btn);
+  }
 }
 /** The card HTML for a sorted list, folds included — one entry per card slot
  *  (the display cap counts a fold once). */
@@ -594,11 +659,8 @@ function drFoldHtml_(e) {
   const n = e.items.length, earlier = n - 1;
   const open = !!(DR_STATE.foldOpen || {})[e.key];
   const moreId = drFoldId_(e.key);
-  const fu = e.unanswered
-    ? '<span class="dr-fold-fu">' + esc(String(e.unanswered)) + ' follow-up' + (e.unanswered === 1 ? '' : 's') + ' with no response</span>'
-    : esc(String(e.followUps)) + ' follow-up' + (e.followUps === 1 ? '' : 's');
   return '<div class="dr-fold" data-dr-fold="' + esc(e.key) + '">' +
-    '<div class="dr-fold-head">' + icon('outbox', 12) + ' <b>' + esc(String(n)) + ' open requests</b> for this TRX · ' + fu + '</div>' +
+    '<div class="dr-fold-head">' + drFoldHeadHtml_(e.items, n) + '</div>' +
     drRequestCardHtml_(e.items[0]) +
     // g133: the fold's key is read off the wrapper, never written into the handler.
     '<button type="button" class="sp-more dr-fold-toggle" aria-expanded="' + (open ? 'true' : 'false') + '" aria-controls="' + moreId +
@@ -1016,7 +1078,10 @@ function drRepaintMgr_() {
  *  whole change exists to remove. */
 function drRepaintRequest_(id) {
   const item = drFindItem_(id);
+  const folds = [];
   drCardNodes_(id).forEach(function (node) {
+    const fold = node.closest ? node.closest('.dr-fold') : null;   // F41: its fold's header follows
+    if (fold && folds.indexOf(fold) < 0) folds.push(fold);
     // No item = the reconcile dropped it from every list (the server keeps
     // resolved requests out of incoming/allOpen). The optimistic card already
     // reads resolved, so leave it standing and just clear the busy state.
@@ -1028,6 +1093,7 @@ function drRepaintRequest_(id) {
     fresh.classList.add('swap-in');   // the shared list-swap motion; reduced-motion-safe
     node.parentNode.replaceChild(fresh, node);
   });
+  folds.forEach(drFoldRefresh_);
   drRepaintKpi_();
 }
 
@@ -1038,10 +1104,12 @@ function drRepaintRequest_(id) {
  *  number they can see (the KPI strip) is derived client-side from data.mine,
  *  and the patch above keeps it exact. */
 function drReconcile_(requestedView, id) {
+  const seqAsked = DR_STATE.changeSeq || 0;
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requestedView) return;
       if (!res || res.error) { DR_STATE.entry = null; return; }   // INV-129: a failed round is never stamped fresh
+      if (drAnswerPredatesChange_(seqAsked, DR_STATE.changeSeq)) return;   // F41: a second change since — its own reconcile is on the way
       DR_LAST_DATA = res; DR_STATE.data = res; DR_STATE.entry = { at: Date.now() };
       drRepaintMgr_();
       drRepaintKpi_();   // 22post A-7: a manager's strip is server-derived too
@@ -1079,7 +1147,7 @@ function drResolveClick_(btn) {
         // The stamp is busted even on success: the patch is an approximation
         // (resolvedBy, deptStats, the server's own list membership), so the
         // next ENTER refetches rather than serving it as fresh.
-        DR_STATE.entry = null;
+        drLocalChange_();
         if (currentView !== requestedView) return;
         // DR-4: a resolved request leaves "Replies to check" too.
         const looksHost = document.getElementById('dr-looks');
@@ -1165,7 +1233,7 @@ function drLookAnswerClick_(btn) {
         else ['mine', 'incoming', 'allOpen'].forEach(function (k) {
           ((DR_LAST_DATA && DR_LAST_DATA[k]) || []).forEach(function (r) { if (String(r.requestId) === String(id)) r.replyVerdict = 'kept-open'; });
         });
-        DR_STATE.entry = null;
+        drLocalChange_();
         if (currentView !== requestedView) return;
         const host = document.getElementById('dr-looks');
         if (host) host.outerHTML = drLooksHtml_(DR_LAST_DATA);
@@ -1223,7 +1291,7 @@ function drReopenClick_(btn) {
         showToast(res.already ? 'Already open.' : 'Reopened — it is open again.', 'toast-success');
         if (typeof clkNeedsYouInvalidate_ === 'function') clkNeedsYouInvalidate_();   // it is a task again
         drApplyReopened_(id);
-        DR_STATE.entry = null;
+        drLocalChange_();
         if (currentView !== requestedView) return;
         const area = getDeptRequestsArea_();
         if (area) enterDeptRequestsView(area);

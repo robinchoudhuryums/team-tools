@@ -99,6 +99,7 @@ const CONFIG = {
   // digest (the "now a meeting is warranted" reminder). 'praise' never nags.
   COACHING_UNACK_REMINDER_DAYS: 7,
   COACHING_RECAP_DAYS: 7,               // K8 — the weekly agent recap's lookback window (the cadence itself is the Friday trigger)
+  COACHING_RECAP_OVERLAP_MIN: 10,       // cycle 26 F44 — how far before the previous recap's stamp the next one reaches (the run stamps when it ends)
   COACHING_ONE_ON_ONE_DAYS: 14,         // Batch F (operator 2026-11-02) — the default 1-on-1 cadence; each manager adjusts their own in the CoachingSettings tab (0 = no reminders)
   QA_AUDIT_TARGET_PER_PERIOD: 3,        // Q4 (design handoff PR 5) — sampled calls owed per employee per audit period (Script Property QA_AUDIT_TARGET_PER_PERIOD overrides, 1..50)
   // Spanish-inbox efficiency tracking (Gmail). All bilingual-assistance requests
@@ -206,6 +207,10 @@ const CONFIG = {
   // export family (call-data-reporting's outboundCallsExport.js; read here BY
   // HEADER — Call Date / Agent Name / Connected / Talk Sec).
   CDR_OUTBOUND_TAB:  'Outbound Calls',
+  // Batch PD (cycle 26, operator 2026-11-18): the Department Dashboard's
+  // Partial Days tab — a day an agent worked only part of. Columns A–C only
+  // (Date | Agent | Credit); see CDR_PARTIAL_COLS.
+  CDR_PARTIAL_DAYS_TAB: 'Partial Days',
   // PST(stored) → CST(anchor). A HAND-MIRROR of call-data-reporting's
   // INBOUND_HEATMAP_CST_SHIFT_HOURS (both zones observe DST together, so a
   // fixed 2h holds year-round). Change both or the two dashboards disagree.
@@ -482,6 +487,14 @@ const ADP = { EMP_ID:0, EMP_NAME:1, DATE:2, TIME:3, DIR:4, LOCATION:5, REASON:6,
   // Clock In / Clock Out a manager saved from the app-activity suggestion.
   INFERRED:9 };
 const ADP_INFERRED_MARK = 'Inferred (app activity)';
+// Cycle 26 DQ3 (operator 2026-11-19): the same column once a manager has
+// CONFIRMED an inferred time as it stands. The time did not change; who
+// confirmed it is the AuditLog's PunchConfirm row. No surface draws the
+// Inferred chip for it, and the export counts it apart from the inferred.
+const ADP_CONFIRMED_MARK = 'Confirmed (app activity)';
+// Cycle 26 FR1: how many unconfirmed inferred times one period of the Pay
+// Period Close card names; the count is always the whole number.
+const PAY_CLOSE_INFERRED_LIST_MAX = 40;
 // Phase 7: columns I (ANNUAL_LEAVE) and J (SICK_LEAVE)
 // Phase 8 (Call Notes): column L (CALL_NOTES_SHEET_ID) — per-rep Sheet ID
 const EMP = {
@@ -1012,6 +1025,14 @@ const ACTIVITY_COUNTS_KIND = 'counts';
 const ACTIVITY_COUNTS_MAX_ENTRIES = 48;     // one send's blocks — 8 hours, far past any real gap
 const ACTIVITY_COUNTS_MAX_PER_BLOCK = 5000; // a block's clicks (or keys) past this are not a person
 const ACTIVITY_COUNTS_MAX_AGE_MS = 6 * 3600000;   // a block older than this when it arrives is dropped (a laptop asleep overnight)
+// FS3 (cycle 26): the most ActivityLog rows ONE person may add in one
+// 10-minute block, pings and counts rows together. A window sends at most one
+// ping per gap and one counts row per two-minute pause — six a block at the
+// very most — so this is five windows at that ceiling, plus margin. Past it
+// the sender is not a person at a keyboard, and the tab must not grow by it.
+const ACTIVITY_ROWS_MAX_PER_BLOCK = 40;
+const ACTIVITY_ROWS_PREFIX = 'act_rows_v1:';
+const ACTIVITY_ROWS_TTL_SEC = 1200;   // two blocks — the key names its block, so it only has to outlive it
 // Batch G (operator 2026-11-02 — "condense, archive condensed, then delete"):
 // each night every FINISHED day's pings become ONE ActivitySummary row per rep
 // (the day's 10-minute map included, so Day Edit draws it unchanged), kept
@@ -1019,6 +1040,14 @@ const ACTIVITY_COUNTS_MAX_AGE_MS = 6 * 3600000;   // a block older than this whe
 // and never purged before their day is summarised. The purge has its own
 // per-run budget, apart from DIAG_PURGE_MAX_ROWS_PER_RUN, so the busiest tab
 // cannot starve the others.
+// F30 (cycle 26): an ActivityLog row that could not be written is counted here
+// — {count, firstMs, lastMs, lastError} — because the append is best-effort
+// and its failure reached only console.warn: the day then read "No app
+// activity recorded". Read by Automation Health (while the latest failure is
+// inside ACTIVITY_LOG_FAIL_RECENT_MS) and by the two activity views (for a day
+// the failures touch). Auto-managed; delete to reset.
+const ACTIVITY_LOG_FAIL_PROP = 'ACTIVITY_LOG_FAILS';
+const ACTIVITY_LOG_FAIL_RECENT_MS = 48 * 3600000;
 const ACTIVITY_LOG_DAYS = 14;
 const ACTIVITY_LOG_PURGE_MAX_PER_RUN = 6000;
 const ACTIVITY_SUMMARY_TAB = 'ActivitySummary';
@@ -1190,6 +1219,24 @@ const CN_REP_LEASE_PREFIX = 'CN_REP_LEASE_';
 const CN_REP_LEASE_MS = 60000;
 const CN_REP_LEASE_WAIT_MS = 15000;
 const CN_REP_LEASE_POLL_MS = 200;
+// FU1 (cycle 26): a leased save refuses to WRITE once less than this much of
+// its lease is left (cnAssertLeaseLive_) — it can no longer be sure the Sheet
+// is still its own. A healthy save writes within a second or two of taking a
+// 60-second lease.
+const CN_REP_LEASE_GUARD_MS = 10000;
+// F42 (cycle 26): how long a writer that HOLDS the ScriptLock waits for a
+// rep's note-save lease before it refuses by name (getCallNotesSheetForWrite_).
+// Under the 15 s every other waiter gives the ScriptLock — so they outlast the
+// wait — and far past a healthy save (a second or two).
+const CN_REP_LEASE_HOLDER_WAIT_MS = 8000;
+// F42: the Scratchpad's own lease — `CN_SCRATCH_LEASE_<sheetId>`, the same
+// {token, until} shape, present only while a Scratchpad save or page change
+// runs. It replaced the USER lock, which is one lock for every rep (the web
+// app runs as the deployer). FU2: that same fact makes the user lock a usable
+// MUTEX — the Scratchpad lease's check-and-set (a few milliseconds) is taken
+// under it, so a pad save never waits on, or fails with, the project lock.
+const CN_SCRATCH_LEASE_PREFIX = 'CN_SCRATCH_LEASE_';
+const SCRATCHPAD_LEASE_TIMEOUT_MSG = 'Your scratchpad is still saving from another window — try again in a moment.';
 // 25post — Admin → System's daily email-quota line warns at or below this many
 // recipients left (MailApp.getRemainingDailyQuota; ~1,500 a day on Workspace).
 const MAIL_QUOTA_WARN_REMAINING = 300;
@@ -1688,7 +1735,7 @@ const FEATURE_FLAGS = [
     description: 'One branded morning email (manager-tz 8am) consolidating the daily manager streams — urgent notes, missed clock-outs, overdue training / unsigned docs / un-acknowledged coaching, and dept requests past SLA. While ON, the separate manager emails for those streams are suppressed (employee-facing reminders, the weekly training/review digests, and the automation-failure watchdog still send independently). Run installAutomationTriggers() once after first enabling so the 8am trigger exists. Silent on an all-clear morning.',
     default: false, scope: 'server' },
   { key: 'spanishResolveReply', label: 'Spanish Inbox resolved reply',
-    description: 'When someone marks a Spanish request resolved, reply on its email thread (from the mailbox the app runs as, to the requester and the inbox) with who resolved it, the outcome they chose and their note. A voicemail-only request gets no reply. Off = no reply is sent; the resolve itself is unchanged.',
+    description: 'When someone marks a Spanish request resolved, reply on its email thread (from the mailbox the app runs as, to everyone on the request’s email — the requester and anyone copied) with who resolved it, the outcome they chose and their note. A voicemail-only request gets no reply, and neither does an email that includes an address outside the company. Off = no reply is sent; the resolve itself is unchanged.',
     default: true, scope: 'server' },
   { key: 'spanishAutoAssign', label: 'Scheduled Spanish Inbox auto-assign',
     description: 'Every hour during business hours (weekdays inside the Coverage business window, US holidays excluded), hand every UNCLAIMED pending Spanish Inbox request — voicemails included — to the least-loaded configured bilingual member, exactly as the manager "Auto-assign N unclaimed" button does. Needs the Spanish bilingual members list; existing claims are never reassigned. Run installAutomationTriggers() once after first enabling so the hourly trigger exists; it heartbeats even while off.',
@@ -1817,6 +1864,11 @@ const SPANISH_BULK_RESOLVE_MAX = 50;
 const SPANISH_RESOLVE_OUTCOMES = { reached: 'Reached the patient', voicemail: 'Left a voicemail', noanswer: 'No answer', wrong: 'Wrong number' };
 const SPANISH_RESOLVE_NOTE_MAX = 500;
 const SPANISH_APP_REPLY_MARKER = 'Sent automatically by UMS Team Tools when this request was marked resolved.';
+// Cycle 26 F3: the marker alone was not proof — a requester's follow-up QUOTES
+// the app's reply, marker included, and was read as that reply (so it never
+// became a request). The app's own reply also OPENS with this lead; a message
+// that quotes it opens with the person's own words or a quote header.
+const SPANISH_APP_REPLY_LEAD = 'This request was marked resolved by ';
 // ── Scheduled-call reminders (pilot round 2, 2026-08-24) ────────────────────
 // Pilot ask #3: "sometimes a translated call is scheduled for a certain time"
 // — a rep schedules a reminder for a specific call and the SHELL reminder
@@ -1972,6 +2024,21 @@ var _cdrNameMapExpiry = 0;
 // read the whole column once, not once per window. _resetCdrCaches_ clears both.
 var _cdrStampMemo = null;
 var _cdrDateColMemo = {};
+// Batch PD (cycle 26): the Partial Days tab, read once per execution
+// (getCdrPartialDays_; its CacheService tier is keyed by the data stamp) —
+// and whether that read FAILED, so nothing computed without the marks is kept.
+// _resetCdrCaches_ clears both.
+var _cdrPartialMemo = null;
+var _cdrPartialFailed = false;
+// THE WIDTH of every read of the Partial Days tab: Date | Agent | Credit.
+// Column D is the Reason — for admins of the Department Dashboard only — and
+// E–F are who added the row and when. This app never reads past column C:
+// not for a header check, not for the data stamp. One constant, so the pin
+// can require it at every read.
+var CDR_PARTIAL_COLS = 3;
+// FQ9 / FQ7 (cycle 26): how many likely name mismatches a diagnostic lists.
+var CDR_PARTIAL_LIKELY_MAX = 12;
+var CDR_OUTBOUND_OFFROSTER_MAX = 200;   // off-roster outbound agent names kept beside a window (names only)
 // H1: the Company Holidays tab, memoized per execution (the CacheService tier
 // is inside getCdrCompanyHolidayRanges_); _resetCdrCaches_ clears it.
 var _cdrHolidaysMemo = null;
@@ -2022,7 +2089,7 @@ var DASHBOARD_CACHE_TTL = 21600;
 // window, the 30-day breakdown) is cached against a STAMP of the data rather
 // than for five minutes: each tab's row count and a digest of its newest
 // CDR_STAMP_TAIL_ROWS rows (where the daily import writes), and the alias tab
-// whole. The stamp itself is re-probed every CDR_STAMP_TTL seconds, so new or
+// whole — the DQE, transfer and (cycle 26 F24) Outbound Calls tabs. The stamp itself is re-probed every CDR_STAMP_TTL seconds, so new or
 // corrected data reaches every reader within that — sooner than the old
 // five-minute tier — and an unchanged tab is never re-scanned for the window
 // TTL. A stamp that cannot be read caches nothing longer than before.
@@ -2030,6 +2097,11 @@ var CDR_STAMP_CACHE_KEY = 'cdr_stamp_v1';
 var CDR_STAMP_TTL = 120;
 var CDR_STAMP_TAIL_ROWS = 300;
 var CDR_WINDOW_CACHE_TTL = 21600;
+// F25 (cycle 26): CacheService caps a value at 100 KB and an oversize put
+// THROWS. Every CDR window reader skips a payload over this headroom on
+// purpose and notes it (cdrCacheOversizeNote_), so the hourly read-ahead can
+// say which window it could not keep.
+var CDR_CACHE_VALUE_MAX = 95000;
 var CDR_WARM_CACHE_KEY = 'cdr_warm_stamp_v1';
 var DASH_MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 // ── Dashboard "Needs you" — one rep-callable aggregate of pending tasks ─────
@@ -2068,6 +2140,11 @@ const INTAKE_ADDR_CHECK_CAP = 1000;
 const INTAKE_ADDR_CACHE_SECONDS = 21600;
 const PAY_WEEK_MONTHLY_MIN_DAYS = 4;
 const PAY_WEEK_REMINDER_HOUR = 9;
+// F28 (cycle 26): who has been sent TODAY's pay-week reminder — {day, to:
+// [addresses]} — so the hourly job sends at or after the hour exactly once per
+// person, and a run that was missed or failed is made up by the next one.
+// Auto-managed; one day only (the next remind day replaces it).
+const PAY_WEEK_SENT_PROP = 'PAY_WEEK_REMINDER_SENT';
 const INTAKE_PPD_SUB_HEADERS  = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','Language','AnswersJSON','Recommendations','Selections','Recipient','AmendsId'];
 const INTAKE_ACCT_SUB_HEADERS = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','DOB','Language','AnswersJSON','Recipient','ImageCount','AmendsId'];
 // F49 (cycle 25): the DOB is typed text, and an ordinary cell COERCES it —
@@ -2196,6 +2273,14 @@ let _intakeOfferingsCache = null;
 // Intake spreadsheet (feedback may reference the patient, so it stays in the
 // PHI store — never the shared AuditLog).
 const INTAKE_FEEDBACK_HEADERS = ['Timestamp', 'SubmissionId', 'FormType', 'FromEmail', 'FromName', 'Feedback'];
+// FV2 (cycle 26): the most feedback calls ONE sender may make in an hour.
+// Since F22 the sender may be any org account, and nothing limited the rows
+// one could add (or the submission ids one could try). A person writes one or
+// two about a recommendation; past this the caller is not a person reading
+// an intake email.
+const INTAKE_FEEDBACK_MAX_PER_HOUR = 12;
+const INTAKE_FEEDBACK_RATE_PREFIX = 'intk_fb_v1:';
+const INTAKE_FEEDBACK_RATE_TTL_SEC = 7200;   // two hours — the key names its hour, so it only has to outlive it
 const INTAKE_FEEDBACK_MAX_CHARS = 4000;
 const INTAKE_FEEDBACK_SCAN_MAX = 2000;   // bounded tail — feedback is recent-biased
 // 25post B7 — how the PPD email groups and colours its answers (the client
@@ -2941,6 +3026,7 @@ const TRAIN_ATTEMPT_TAB = 'QuizAttempts';
 const TRAIN_QUIZ_HEADERS = ['QuizId','Title','KbItemId','PassPct','QuestionsJson','UpdatedBy','UpdatedAt'];
 const TRAIN_ATTEMPT_HEADERS = ['AttemptId','QuizId','EmpId','SubmittedAt','ScorePct','Passed','PerQuestionJson'];
 const TQ = { QUIZ_ID:0, TITLE:1, KB_ITEM_ID:2, PASS_PCT:3, QUESTIONS_JSON:4, UPDATED_BY:5, UPDATED_AT:6 };
+const TRAIN_QUIZ_TEXT_IDX = [TQ.TITLE];   // cycle 26 F44: a quiz title is free text — an '@' cell
 const TQA = { ATTEMPT_ID:0, QUIZ_ID:1, EMP_ID:2, SUBMITTED_AT:3, SCORE_PCT:4, PASSED:5, PER_QUESTION_JSON:6 };
 const TRAIN_QUIZ_MAX_QUESTIONS = 50;
 const TRAIN_QUIZ_MAX_OPTIONS = 6;
@@ -3002,6 +3088,9 @@ const EMPDOC_TYPES = ['review','pip','policy','other'];
 const EMPDOC_TPL_TAB = 'EmpDocTemplates';
 const EMPDOC_TPL_HEADERS = ['TemplateId','Name','DocType','BodyMd','FieldsJson','RequiresSignature','CreatedBy','CreatedAt'];
 const EDT = { TPL_ID:0, NAME:1, DOC_TYPE:2, BODY_MD:3, FIELDS:4, REQUIRES_SIG:5, CREATED_BY:6, CREATED_AT:7 };
+// Cycle 26 F44: a template's name and body are free text — '@' cells, like an
+// issued document's (a template named "3/4" read back as a date).
+const EMPDOC_TPL_TEXT_IDX = [EDT.NAME, EDT.BODY_MD];
 // v2 — employee-completable fields on a doc (in addition to the signature).
 const EMPDOC_FIELD_TYPES = ['text','textarea','date','signature','initials'];
 // ED1 (operator 2026-11-05 — "a 'signature' box type that allows for a
@@ -3016,10 +3105,12 @@ const EMPDOC_INITIALS_MAX_CHARS = 20000;   // the pad exports at <= 300px wide
 const EMPDOC_FIELD_CAP = 40;              // max fields per doc/template
 const EMPDOC_FIELD_LABEL_MAX = 200;
 const EMPDOC_RESPONSE_MAX = 8000;         // per free-text response
+const EMPDOC_RESPONSES_TOTAL_MAX = 45000; // cycle 26 F44: every answer together, as stored JSON — under the 50k cell limit
 const EMPDOC_TPL_NAME_MAX = 120;
 const EMPDOC_TITLE_MAX = 200;
 const EMPDOC_BODY_MAX = 49000;        // under the 50k Sheets cell limit
 const EMPDOC_SIG_MAX_CHARS = 45000;   // INV-96 cap; the pad export downscales to <=600px
+const EMPDOC_SIG_MIN_CHARS = 200;     // cycle 26 F44: shorter than any drawn PNG — a blank or hand-made value is not a signature
 // ── Batch H (operator 2026-11-02 — "it needs to at least work with PDFs; can I
 // add highlighted boxes that indicate what needs to be completed, like a date"):
 // a document may be ISSUED AS A PDF. The bytes live in the HR store's
@@ -3039,6 +3130,11 @@ const EMPDOC_PDF_MAX_PAGES = 200;              // the highest page a field box m
 // to the employee, the managers if chosen, and at most this many other addresses.
 const EMPDOC_COPY_MAX_BYTES = 10485760;        // 10 MB
 const EMPDOC_COPY_EXTRA_MAX = 5;
+// Cycle 26 F15: how many copies one person may email inside the window. The
+// attachment is made in the sender's browser, so the server cannot vouch for
+// its bytes — the cap bounds what one account can send under the app's name.
+const EMPDOC_COPY_WINDOW_MAX = 10;
+const EMPDOC_COPY_WINDOW_SECS = 21600;       // 6 hours — the longest a ScriptCache entry lives
 // ED4 (operator 2026-11-09): the company letterheads an employee document is
 // dressed in — each a name, an address (lines), a footer and a logo. The admin
 // keeps them (Manage → Admin → Config → Letterheads) in ONE Script Property;
@@ -3056,6 +3152,10 @@ const EMPDOC_LOGO_TYPES = ['image/png', 'image/jpeg'];   // what the certificate
 const EMPDOC_ACK_VERSION = 1;
 const EMPDOC_ACK_TEXT = 'I acknowledge that I have read and understood this document. ' +
   'I understand this electronic acknowledgment has the same effect as a handwritten signature.';
+// Cycle 26 F44: the acknowledgement as it read at EACH version. A certificate
+// prints the text for the version on the signature row — when the wording is
+// bumped, add the new version here and keep the old ones.
+const EMPDOC_ACK_TEXTS = { 1: EMPDOC_ACK_TEXT };
 /** Content hash — freezes what was issued (body+title+type+empId, + the v2
  *  fillable-field SCHEMA when present). `fieldsJson` is appended ONLY when
  *  non-empty so legacy 4-arg callers / fieldless rows hash identically to

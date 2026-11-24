@@ -75,6 +75,18 @@ function calArchiveNoteHtml_(data) {
     : '';
 }
 
+/** FX6 (cycle 26) — the same fact on the pay-period tile. `getTimesheetData`
+ *  has shipped `archiveError` since TC2-9, and the calendar says it (above);
+ *  the tile beside it drew its hours and "all complete" without a word, so a
+ *  period whose older days sit in an archive that would not open read as a
+ *  short one (g53). Only the fact rides into the page, as on the calendar. */
+function tsArchiveNoteHtml_(data) {
+  return (data && data.archiveError)
+    ? '<div role="status" style="margin-top:8px;font-size:12px;color:var(--warning-deep)">' + icon('warning', 11) +
+      ' The timesheet archive could not be read, so hours worked earlier in this period may be missing from this total. Reload, or ask a manager for an export.</div>'
+    : '';
+}
+
 /** P1 (operator 2026-11-05) — the pay-week banner over the calendar: from
  *  the reminder day to the period's end, what to check and by when. The
  *  server decides the window (payWeekReminder_); null outside it. */
@@ -669,6 +681,7 @@ function renderTimesheetSideRail_(d) {
         <span>${daysWorked}d worked</span>
         <span>${incompleteHtml}</span>
       </div>
+      ${tsArchiveNoteHtml_(d)}
     </div>
     <button type="button" onclick="openPayStatement_(0, '', '')"
       style="width:100%;margin-top:10px;padding:9px 12px;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:10px;background:var(--paper-card);color:var(--info-deep);cursor:pointer;text-align:center">
@@ -749,6 +762,12 @@ function payStmtLoad_() {
       slot.querySelectorAll('.pay-stmt-edit').forEach(function (b) {
         b.addEventListener('click', function () { payStmtEditDay_(b.getAttribute('data-edit-date'), d.timezone); });
       });
+      // DS1 (cycle 26): the rep asks that an inferred time be confirmed.
+      slot.querySelectorAll('.pay-stmt-confirm').forEach(function (b) {
+        b.addEventListener('click', function () {
+          payStmtConfirmInferred_(b, b.getAttribute('data-cf-date'), b.getAttribute('data-cf-type'), b.getAttribute('data-cf-time'));
+        });
+      });
     })
     .withFailureHandler(function (e) {
       if (seq !== PAY_STMT.seq) return;
@@ -801,12 +820,58 @@ function payStmtAdjLine_(a) {
   const labels = { ClockIn: 'Clock in', LunchOut: 'Break out', LunchIn: 'Break in', ClockOut: 'Clock out' };
   const what = a.action === 'resume'
     ? 'Resume after ' + (labels.ClockOut) + ' at ' + dispTime(a.time + ':00') + (a.endTime ? ' · finished ' + dispTime(a.endTime + ':00') : '')
+    : a.action === 'confirm'   // DS1: no time is changed — the rep vouches for the one that stands
+    ? 'Confirm ' + (labels[a.punchType] || a.punchType) + ' at ' + (a.time ? dispTime(a.time + ':00') : '—') + ' as it is'
     : (labels[a.punchType] || a.punchType) + ' → ' + (a.time ? dispTime(a.time + ':00') : '—');
   const st = String(a.status || '').toLowerCase();
   const tone = st === 'approved' ? 'var(--success-deep)' : st === 'denied' ? 'var(--danger-deep)' : 'var(--warning-deep)';
   return `<div style="font-size:12px;color:var(--muted);padding:2px 0 2px 94px;line-height:1.4">` +
     `Adjustment: ${esc(what)} · <b style="color:${tone}">${esc(a.status || 'Pending')}</b>` +
     (a.reason ? ` — <span style="color:var(--ink)">“${esc(a.reason)}”</span>` : '') + `</div>`;
+}
+
+/** PURE (Node + DOM pinned) — DS1 (cycle 26, operator 2026-11-19): the rep's
+ *  "Confirm" buttons for a day's clock times that a manager set from app
+ *  activity. One per inferred time, and only when the rep can act: their own
+ *  statement, the day inside the adjust window, and no request already
+ *  pending for that punch (an adjustment or an earlier confirm — its line
+ *  under the day says where it stands). The press files a REQUEST; a manager
+ *  approves it. data-* only (g133). */
+function payStmtConfirmBtnsHtml_(x, adjList, canAct) {
+  if (!canAct || !x) return '';
+  const pending = {};
+  (adjList || []).forEach(function (a) { if (a && String(a.status || '').trim().toLowerCase() === 'pending') pending[a.punchType] = true; });
+  const mk = function (type, label, time) {
+    const hm = String(time || '').substring(0, 5);
+    if (!/^\d{2}:\d{2}$/.test(hm) || pending[type]) return '';
+    return '<button type="button" class="pay-stmt-confirm no-print" data-cf-date="' + esc(x.date) + '" data-cf-type="' + type + '" data-cf-time="' + esc(hm) +
+      '" title="Ask your manager to confirm this time as your actual ' + label + '">Confirm ' + label + '</button>';
+  };
+  return (x.infClockIn ? mk('ClockIn', 'Clock In', x.clockIn) : '') + (x.infClockOut ? mk('ClockOut', 'Clock Out', x.clockOut) : '');
+}
+/** DS1: file the confirm request. Nothing changes on the timesheet until a
+ *  manager approves it — the dialog and the toast both say so. */
+function payStmtConfirmInferred_(btn, date, type, time) {
+  if (!date || !type || !time) return;
+  const label = type === 'ClockOut' ? 'Clock Out' : 'Clock In';
+  uiConfirm({
+    title: 'Confirm this ' + label + '?',
+    message: label + ' ' + dispTime(time + ':00') + ' on ' + date + ' was set by a manager from your app activity.\n\n' +
+      'If that is when you actually ' + (type === 'ClockOut' ? 'finished' : 'started') + ', send it to your manager to confirm. ' +
+      'If it is wrong, cancel and use Adjust to request the right time.',
+    confirmLabel: 'Send for approval',
+  }).then(function (ok) {
+    if (!ok) return;
+    if (btn) btn.disabled = true;
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (!res || !res.success) { if (btn) btn.disabled = false; showToast((res && res.error) || 'Could not send the request', 'toast-error'); return; }
+        showToast('Sent to your manager — the time stays marked Inferred until they approve', 'toast-success');
+        openPayStatement_(PAY_STMT.offset, PAY_STMT.repId, PAY_STMT.repName);   // the day now shows the pending request
+      })
+      .withFailureHandler(function (e) { if (btn) btn.disabled = false; showToast((e && e.message) || 'Could not send the request', 'toast-error'); })
+      .submitPunchAdjustRequests([{ date: date, time: time, punchType: type, action: 'confirm', reason: '' }]);
+  });
 }
 
 function payStmtFmtMoney_(n) {
@@ -881,11 +946,16 @@ function payStmtHtml_(d) {
            style="margin-left:8px;font:inherit;font-size:11px;color:var(--info-deep);background:none;border:1px solid var(--line);border-radius:6px;padding:1px 7px;cursor:pointer">Edit day</button>`
       : '';
     const adjLines = (adjByDate[x.date] || []).map(payStmtAdjLine_).join('');
-    rows += `<div class="pay-stmt-row" style="display:flex;align-items:baseline;gap:10px;padding:5px 0;${adjLines ? '' : 'border-bottom:1px dashed var(--line);'}font-size:13px">
+    // DS1: the Confirm button(s) sit on their OWN line under the day. Beside the
+    // hours they were an unshrinkable sibling of the times column, which the
+    // phone-width shot measured at 44px (g72).
+    const confirmBtns = payStmtConfirmBtnsHtml_(x, adjByDate[x.date], !d.viewingOther && inWindow);
+    const below = (confirmBtns ? `<div class="pay-stmt-confirm-row no-print">${confirmBtns}</div>` : '') + adjLines;
+    rows += `<div class="pay-stmt-row" style="display:flex;align-items:baseline;gap:10px;padding:5px 0;${below ? '' : 'border-bottom:1px dashed var(--line);'}font-size:13px">
       <span style="flex:0 0 84px;color:var(--muted)">${esc(x.dayLabel)}</span>
       <span style="flex:1;min-width:0">${x.hasData ? esc(inOut) + esc(lunch) + adj + inf : ptoBit || '<span style="color:var(--muted-3)">no punches</span>'}${x.hasData && pto ? ' · ' + ptoBit : ''}</span>
       <span style="flex:0 0 auto">${right}${fixBtn}${editBtn}</span>
-    </div>` + (adjLines ? `<div style="padding-bottom:5px;border-bottom:1px dashed var(--line)">${adjLines}</div>` : '');
+    </div>` + (below ? `<div style="padding-bottom:5px;border-bottom:1px dashed var(--line)">${below}</div>` : '');
   });
   if (!rows) rows = '<div class="no-data" style="padding:14px 0">No activity in this period yet</div>';
 

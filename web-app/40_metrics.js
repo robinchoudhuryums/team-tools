@@ -307,8 +307,13 @@ function cdrStampFromProbes_(probes, digest) {
  *  across all users (a CacheService entry) and once per execution. Watches the
  *  DQE tab and the transfer tab (row count + the newest CDR_STAMP_TAIL_ROWS
  *  rows of the columns the readers use) and the alias overrides whole — an
- *  alias edit changes who a row counts for. Never under the CDR test override
- *  (the callers bypass every cache there). */
+ *  alias edit changes who a row counts for. Since cycle 26 F24 the Outbound
+ *  Calls tab too (row count + the newest rows, every column — it is read by
+ *  header, so no fixed width is ours to name): its reader is keyed by this
+ *  stamp like the rest. Since Batch PD the Partial Days tab too — columns A–C
+ *  only (CDR_PARTIAL_COLS), whole like the aliases: a mark changes what a
+ *  day counts for. Never under the CDR test override (the callers bypass
+ *  every cache there). */
 function cdrDataStamp_() {
   if (_cdrStampMemo !== null) return _cdrStampMemo;
   var cache = CacheService.getScriptCache();
@@ -316,13 +321,22 @@ function cdrDataStamp_() {
   var stamp = '';
   try {
     var ss = getCdrSS_();
-    var probes = [['DQE Historical Data', CDR.ATT], [CSR_TRANSFER_TAB, CSRT.TRANSFERRED + 1], ['Agent Alias Overrides', 3]].map(function (t) {
+    // [tab, width (0 = every column the tab has), whole tab rather than its newest rows]
+    var probes = [['DQE Historical Data', CDR.ATT], [CSR_TRANSFER_TAB, CSRT.TRANSFERRED + 1], ['Agent Alias Overrides', 3, true], [CONFIG.CDR_OUTBOUND_TAB, 0],
+      [CONFIG.CDR_PARTIAL_DAYS_TAB, CDR_PARTIAL_COLS, true]].map(function (t) {
       var sh = ss.getSheetByName(t[0]);
       if (!sh) return { name: t[0], missing: true };
       var last = sh.getLastRow();
-      var n = t[0] === 'Agent Alias Overrides' ? Math.max(0, last) : Math.min(CDR_STAMP_TAIL_ROWS, Math.max(0, last - 1));
-      var first = t[0] === 'Agent Alias Overrides' ? 1 : last - n + 1;
-      return { name: t[0], lastRow: last, tail: n > 0 ? sh.getRange(first, 1, n, t[1]).getDisplayValues() : [] };
+      var n = t[2] ? Math.max(0, last) : Math.min(CDR_STAMP_TAIL_ROWS, Math.max(0, last - 1));
+      var first = t[2] ? 1 : last - n + 1;
+      // FQ10 (cycle 26): never wider than the tab. A fixed width past the
+      // tab's last column THROWS, and one throw is no stamp for every reader —
+      // a tab trimmed narrower cost the whole call-data cache. Clamped, the
+      // probe reads what is there (and never more than its own width: the
+      // Partial Days probe stays inside column C).
+      var lastCol = sh.getLastColumn();
+      var width = Math.min(t[1] || lastCol, lastCol);   // F24: 0 = every column the tab has (a tab read by header)
+      return { name: t[0], lastRow: last, tail: n > 0 && width > 0 ? sh.getRange(first, 1, n, width).getDisplayValues() : [] };
     });
     stamp = cdrStampFromProbes_(probes, cdrDigestHex_);
   } catch (e) {
@@ -640,6 +654,189 @@ function cdrAgentsOrThrow_(res) {
   if (res && res.meta && res.meta.error) throw new Error('Call data unavailable: ' + res.meta.error);
   return (res && res.agents) || {};
 }
+// ── Batch PD (cycle 26, operator 2026-11-18): partial days ─────────────────
+// The Department Dashboard (call-data-reporting) lets its admins mark a day
+// an agent worked only part of: the CDR Report's `Partial Days` tab, one row
+// per (date, agent) — Date | Agent | Credit | Reason | Added By | Added At.
+// A marked day counts as its Credit (a share of a day) wherever a call COUNT
+// is divided by or compared across DAYS; the calls themselves stay in every
+// count, and rates, totals and talk time never change. This app reads columns
+// A–C only (CDR_PARTIAL_COLS) and never writes to the workbook.
+/** PURE (Node-pinned) — a Credit cell as a share of a day, or null. A number
+ *  (or numeric text) with 0 <= credit < 1; blank, non-numeric, negative and
+ *  anything >= 1 is no mark — a Credit of 1 is the dashboard's "reviewed: a
+ *  whole day" dismissal. A blank is NOT zero (Number('') is 0, g09's class). */
+function cdrPartialCredit_(v) {
+  if (typeof v === 'number') return (isFinite(v) && v >= 0 && v < 1) ? v : null;
+  if (typeof v !== 'string') return null;
+  var t = v.trim();
+  if (!/^(\d+(\.\d+)?|\.\d+)$/.test(t)) return null;
+  var n = Number(t);
+  return (n >= 0 && n < 1) ? n : null;
+}
+/** PURE (Node-pinned) — is row 1 the tab this app knows? Date | Agent | Credit
+ *  in A–C, by name (case and padding aside). Anything else is a tab whose
+ *  columns have moved, and it is not read by position (g121, g41). */
+function cdrPartialHeaderOk_(head) {
+  var want = ['date', 'agent', 'credit'];
+  for (var i = 0; i < want.length; i++) {
+    if (String((head || [])[i] == null ? '' : head[i]).trim().toLowerCase() !== want[i]) return false;
+  }
+  return true;
+}
+/** PURE (Node-pinned) — the tab's data rows (A–C cells) as marks:
+ *  {marks: {agent: {'YYYY-MM-DD': credit}}, kept}. `opts.dateOf(cell)` gives
+ *  the ISO day ('' when it is not one); `opts.aliasMap` is the Agent Alias
+ *  Overrides map, so a mark written under the phone system's spelling counts
+ *  for the roster name the call data counts for. One mark per (date, agent):
+ *  the FIRST row wins (a hand edit can leave two). */
+function cdrPartialParse_(rows, opts) {
+  var o = opts || {}, aliasMap = o.aliasMap || {};
+  var marks = {}, kept = 0;
+  (rows || []).forEach(function (r) {
+    var raw = String(r[1] == null ? '' : r[1]).trim();
+    if (!raw) return;
+    var iso = o.dateOf(r[0]);
+    if (!iso) return;
+    var credit = cdrPartialCredit_(r[2]);
+    if (credit == null) return;
+    var agent = aliasMap[raw] || raw;
+    var m = marks[agent] || (marks[agent] = {});
+    if (m[iso] != null) return;
+    m[iso] = credit; kept++;
+  });
+  return { marks: marks, kept: kept };
+}
+/** Batch PD — the Partial Days marks: {source, marks, rows, kept[, error]}.
+ *  `source` is the tab's state — 'sheet' (marks read), 'empty' (the tab is
+ *  there with no mark in it), 'no-tab' (the dashboard creates it on first use:
+ *  a steady state, said nowhere but Storage Health), 'bad-header' (row 1 is
+ *  not Date | Agent | Credit — not read by position), 'unavailable' (the read
+ *  THREW). Every state but 'sheet' is NO MARKS, so an unmarked rep's numbers
+ *  are what they were; a thrown read also sets cdrPartialDaysDegraded_, and
+ *  nothing computed in that execution is kept (g129). Read once per execution
+ *  and kept against the data stamp, which watches the same three columns.
+ *  THE RULE: every range read here is CDR_PARTIAL_COLS wide from column 1. */
+function getCdrPartialDays_() {
+  if (_cdrPartialMemo) return _cdrPartialMemo;
+  var useCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
+  var stamp = useCache ? cdrDataStamp_() : '';
+  var key = stamp ? CONFIG.CDR_CACHE_KEY + ':pd:' + stamp : '';
+  var cache = CacheService.getScriptCache();
+  if (key) {
+    try { var hit = cache.get(key); if (hit) { _cdrPartialMemo = JSON.parse(hit); return _cdrPartialMemo; } } catch (e) {}
+  }
+  var out;
+  try {
+    var ss = getCdrSS_();
+    var sh = ss.getSheetByName(CONFIG.CDR_PARTIAL_DAYS_TAB);
+    if (!sh) out = { source: 'no-tab', marks: {}, rows: 0, kept: 0 };
+    else {
+      var last = sh.getLastRow();
+      if (last < 1) out = { source: 'empty', marks: {}, rows: 0, kept: 0 };
+      else if (!cdrPartialHeaderOk_(sh.getRange(1, 1, 1, CDR_PARTIAL_COLS).getDisplayValues()[0])) out = { source: 'bad-header', marks: {}, rows: Math.max(0, last - 1), kept: 0 };
+      else if (last < 2) out = { source: 'empty', marks: {}, rows: 0, kept: 0 };
+      else {
+        var tz = ss.getSpreadsheetTimeZone();
+        var parsed = cdrPartialParse_(sh.getRange(2, 1, last - 1, CDR_PARTIAL_COLS).getValues(),
+          { aliasMap: getCdrNameMap_(), dateOf: function (v) { return cdrRowDateIso_(v, tz); } });
+        out = { source: parsed.kept ? 'sheet' : 'empty', marks: parsed.marks, rows: last - 1, kept: parsed.kept };
+      }
+    }
+  } catch (err) {
+    _cdrPartialFailed = true;
+    console.warn('getCdrPartialDays_: the Partial Days tab could not be read (' + ((err && err.message) || err) + ') — no day is counted as partial in this response, and nothing from it is cached');
+    _cdrPartialMemo = { source: 'unavailable', marks: {}, rows: 0, kept: 0, error: String((err && err.message) || err) };
+    return _cdrPartialMemo;
+  }
+  if (key && !cdrNameMapDegraded_()) cdrCachePutSized_(key, JSON.stringify(out), CDR_WINDOW_CACHE_TTL, 'the partial days');
+  _cdrPartialMemo = out;
+  return out;
+}
+/** Batch PD — did this execution's read of the Partial Days tab THROW? A
+ *  figure computed without the marks is right for nearly everyone and wrong
+ *  for a marked rep, so no reader and no endpoint keeps one. */
+function cdrPartialDaysDegraded_() { return _cdrPartialFailed; }
+/** PURE (Node-pinned) — one rep's marks as a short cache-key part: '0' with
+ *  none, else a digest of their days and credits. The Dashboard card is kept
+ *  six hours per rep; a mark added or changed for that rep must be a miss. */
+function cdrPartialKeyPart_(marksForRep, digest) {
+  var days = Object.keys(marksForRep || {}).sort();
+  if (!days.length) return '0';
+  return String(digest(JSON.stringify(days.map(function (d) { return [d, marksForRep[d]]; })))).slice(0, 10);
+}
+/** PURE (Node-pinned) — FQ8: one rep's partial days out of a daily
+ *  breakdown's `credits` ({dateIso: {rep: credit}}): [{date, credit}], newest
+ *  first. Only that rep's — the map holds every marked rep of the read. */
+/** PURE (Node-pinned) — cycle 26 DQ1: one rep's partial days out of
+ *  getCdrAgentMetrics_'s `partial` ({agent: [[iso, credit]]}) for a MANAGER's
+ *  Team Metrics row: [{date, credit}], newest first, [] for none. Dates and
+ *  shares only — the reader never opens the Reason column. */
+function metricsTeamPartialDays_(partial, name) {
+  var days = (partial && partial[name]) || [];
+  return days.filter(function (d) { return d && d[0] && d[1] != null && isFinite(Number(d[1])); })
+    .map(function (d) { return { date: String(d[0]), credit: Number(d[1]) }; })
+    .sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; });
+}
+/** PURE (Node-pinned) — cycle 26 DS2: a rep's CREDITED days in a window — the
+ *  days they took a call on, a marked day counted as its share (the Department
+ *  Dashboard's own rule). `partialDays` is metricsTeamPartialDays_'s list, which
+ *  holds only marked days that had a call. Two decimals, never below zero. */
+function metricsCreditedDays_(daysActive, partialDays) {
+  var n = Number(daysActive) || 0;
+  var un = 0;
+  (partialDays || []).forEach(function (d) {
+    var c = Number(d && d.credit);
+    if (d && d.credit != null && isFinite(c) && c >= 0 && c < 1) un += 1 - c;
+  });
+  return Math.max(0, Math.round((n - un) * 100) / 100);
+}
+/** PURE (Node-pinned) — DS2: a count per credited day, one decimal. Null with
+ *  no count, or under ONE credited day — an average over less than a day is
+ *  not one (a single half day would read as double its calls). */
+function metricsPerCreditedDay_(count, creditedDays) {
+  if (count == null || !isFinite(Number(count)) || !(Number(creditedDays) >= 1)) return null;
+  return Math.round((Number(count) / Number(creditedDays)) * 10) / 10;
+}
+function metricsOwnPartialDays_(credits, name) {
+  return Object.keys(credits || {}).filter(function (d) { return credits[d] && credits[d][name] != null; })
+    .sort().reverse().map(function (d) { return { date: d, credit: Number(credits[d][name]) }; });
+}
+/** PURE (Node-pinned) — a marked day counts toward an agent's days only when
+ *  they took a call on it (the dashboard's rule): a mark on a day with no row,
+ *  or a row with nothing rung, answered or missed, changes nothing. */
+function cdrPartialDayCounts_(credit, rung, answered, missed) {
+  return credit != null && (Number(rung) > 0 || Number(answered) > 0 || Number(missed) > 0);
+}
+/** PURE (Node-pinned) — what the marks do to a window's divisor for one rep.
+ *  `days` is [[iso, credit]] (the marked days they had a call on, from
+ *  getCdrAgentMetrics_'s `partial`), kept when inside [from, through] and when
+ *  `isWorkday(iso)` — the divisor is WORKDAYS, so a marked Saturday was never
+ *  in it. Returns null with no such day, else {uncredited, days} — the share
+ *  of days to take out of the divisor, and the days newest first. */
+function dashPartialView_(days, from, through, isWorkday) {
+  var kept = (days || []).filter(function (d) {
+    return d && d[0] >= from && d[0] <= through && isWorkday(d[0]) && d[1] != null && d[1] >= 0 && d[1] < 1;
+  });
+  if (!kept.length) return null;
+  var un = 0;
+  kept.forEach(function (d) { un += 1 - Number(d[1]); });
+  return { uncredited: Math.round(un * 10000) / 10000,
+    days: kept.slice().sort(function (a, b) { return a[0] < b[0] ? 1 : -1; }).map(function (d) { return { date: d[0], credit: Number(d[1]) }; }) };
+}
+/** PURE (Node-pinned) — the factor the PRIOR window's call counts are
+ *  multiplied by before the month-to-date delta, so the two are compared over
+ *  the same share of credited days: (this window's credited share) ÷ (the
+ *  prior window's). Exactly 1 with no mark in either window — clamped prior
+ *  month or not — so an unmarked rep's delta is what it was. 1 as well when
+ *  either window has under one credited day: totals are compared as before. */
+function dashPartialScale_(curWorkdays, curUncredited, prevWorkdays, prevUncredited) {
+  var uc = Number(curUncredited) || 0, up = Number(prevUncredited) || 0;
+  if (!(uc > 0) && !(up > 0)) return 1;
+  var wc = Number(curWorkdays) || 0, wp = Number(prevWorkdays) || 0;
+  if (!(wc - uc >= 1) || !(wp - up >= 1)) return 1;
+  return Math.round(((wc - uc) / wc) / ((wp - up) / wp) * 10000) / 10000;
+}
 // ── M1 (operator 2026-11-11): outbound calls and the adjusted figures ──────
 /** PURE (Node-pinned) — the Outbound Calls tab's columns BY HEADER (the
  *  Inbound / Transfer tab discipline: a column the owner adds cannot shift
@@ -667,14 +864,17 @@ function cdrOutboundAggregate_(rows, col, opts) {
   var aliasMap = o.aliasMap || {};
   var nameSet = {};
   (o.rosterNames || []).forEach(function (n) { nameSet[n] = true; });
-  var agents = {}, latestDate = null;
+  var agents = {}, latestDate = null, off = {};
   (rows || []).forEach(function (r) {
     var raw = String(r[col.agent] == null ? '' : r[col.agent]).trim();
     if (!raw) return;
     var iso = o.dateOf(r[col.date]);
     if (!iso || iso < o.from || iso > o.to) return;
     var agent = (aliasMap[raw] && nameSet[aliasMap[raw]]) ? aliasMap[raw] : raw;
-    if (!nameSet[agent]) return;
+    // FQ7 (cycle 26): an in-window agent NOT on the roster is remembered by
+    // name (alias-resolved, as the DQE reader records its own) — the only way
+    // a colleague spelled differently here can be found.
+    if (!nameSet[agent]) { off[aliasMap[raw] || raw] = true; return; }
     var a = agents[agent] || (agents[agent] = { placed: 0, connected: 0, talkSec: 0 });
     a.placed++;
     var c = r[col.connected];
@@ -684,7 +884,7 @@ function cdrOutboundAggregate_(rows, col, opts) {
     if (isFinite(sec) && sec > 0) a.talkSec += Math.round(sec);
     if (!latestDate || iso > latestDate) latestDate = iso;
   });
-  return { agents: agents, latestDate: latestDate };
+  return { agents: agents, latestDate: latestDate, offRoster: Object.keys(off).sort() };
 }
 /** M1 — each roster rep's OUTBOUND calls over [from, to] from the CDR
  *  Report's `Outbound Calls` tab. The date column bounds the read
@@ -694,13 +894,30 @@ function cdrOutboundAggregate_(rows, col, opts) {
  *  there yet). {agents, through} or {error, steady} — a missing tab or column
  *  is NAMED, never an empty map that reads as "no outbound calls" (g128);
  *  `steady` marks a configuration state (cacheable) apart from a failed read.
- *  Cached CDR_CACHE_TTL on a clean round read with the aliases (F16, g129);
- *  bypassed under the CDR test override like every sibling reader. */
+ *
+ *  F24 (cycle 26): keyed by the CDR data stamp like every other window reader
+ *  (cdrWindowCacheSpec_ — kept until the data changes, five minutes without a
+ *  stamp), and every endpoint asks with the ONE cohort list, so a window is
+ *  read once for the team and not once per rep. Until then the key carried the
+ *  asking rep's own name and lived five minutes, so each open Dashboard re-read
+ *  the tab's whole date column about every five minutes — for a `today` the
+ *  export never holds. The tab's newest day is kept against the stamp too, so
+ *  a window that starts after it opens no sheet at all. Kept only from a clean
+ *  round read with the aliases (F16, g129); bypassed under the CDR test
+ *  override like every sibling reader. */
 function getCdrOutboundPerRep_(from, to, rosterNames) {
   var useCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
-  var key = 'cdr_outbound_v1:' + cdrRosterHash_(rosterNames) + ':' + from + ':' + to;
+  var stamp = useCache ? cdrDataStamp_() : '';
+  var spec = cdrWindowCacheSpec_('ob', stamp, cdrRosterHash_(rosterNames), from, to);
+  var throughKey = stamp ? CONFIG.CDR_CACHE_KEY + ':obthrough:' + stamp : '';
   var cache = CacheService.getScriptCache();
-  if (useCache) { try { var hit = cache.get(key); if (hit) return JSON.parse(hit); } catch (e) {} }
+  if (useCache) { try { var hit = cache.get(spec.key); if (hit) return JSON.parse(hit); } catch (e) {} }
+  if (throughKey) {
+    try {
+      var kept = cache.get(throughKey);
+      if (cdrOutboundWindowIsPastData_(from, kept)) return { agents: {}, through: kept };
+    } catch (e) {}
+  }
   var tab = CONFIG.CDR_OUTBOUND_TAB;
   try {
     var ss = getCdrSS_();
@@ -721,13 +938,23 @@ function getCdrOutboundPerRep_(from, to, rosterNames) {
         var agg = cdrOutboundAggregate_(rows, shifted, { from: from, to: to, aliasMap: getCdrNameMap_(), rosterNames: rosterNames || [],
           dateOf: function (v) { return cdrRowDateIso_(v, tz); } });
         out.agents = agg.agents;
+        if (agg.offRoster && agg.offRoster.length) out.offRoster = agg.offRoster.slice(0, CDR_OUTBOUND_OFFROSTER_MAX);   // FQ7
       }
     }
-    if (useCache && !cdrNameMapDegraded_()) { try { cache.put(key, JSON.stringify(out), CONFIG.CDR_CACHE_TTL); } catch (e) {} }
+    if (useCache) {
+      if (throughKey && out.through) { try { cache.put(throughKey, out.through, spec.ttl); } catch (e) {} }
+      if (!cdrNameMapDegraded_()) cdrCachePutSized_(spec.key, JSON.stringify(out), spec.ttl, 'the outbound calls ' + from + '..' + to);
+    }
     return out;
   } catch (err) {
     return { error: 'The "' + tab + '" tab could not be read: ' + (err && err.message ? err.message : String(err)), steady: false };
   }
+}
+/** PURE (Node-pinned) — F24: a window that STARTS after the newest day the
+ *  Outbound Calls tab holds has no row to find. `through` is that day as kept
+ *  against the data stamp; anything that is not a day is no answer (read). */
+function cdrOutboundWindowIsPastData_(from, through) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(through || '')) && /^\d{4}-\d{2}-\d{2}$/.test(String(from || '')) && String(from) > String(through);
 }
 /** PURE (Node-pinned) — the ADJUSTED figures beside the actual ones, never in
  *  place of them. `cdr` = {totalAnswered, tttSeconds} or null; `outbound` =
@@ -737,7 +964,15 @@ function getCdrOutboundPerRep_(from, to, rosterNames) {
  *  form time stands in for their length — an estimate, said so on screen),
  *  only while a call is left to average. Null when there is nothing to adjust
  *  — no outbound call and no timed intake — so no Adjusted line repeats the
- *  actual one. Answer % is never adjusted: it is the inbound standard. */
+ *  actual one. Answer % is never adjusted: it is the inbound standard.
+ *
+ *  F34 (cycle 26): a form's time is the LEAST its call can have lasted, so the
+ *  figure is given only when the timed forms averaged LONGER than the rep's
+ *  own average — taking shorter "calls" out raised the average, and the panel
+ *  that exists to explain a long talk time showed a longer one (40 calls at
+ *  4:00 with two forms of 60 s and 90 s read 4:09). And it is given beside
+ *  the average it was taken from, `attSec` = talk ÷ answered — the SAME sum,
+ *  not the sheet's own ATT column, so the two can be compared. */
 function metricsAdjusted_(cdr, outbound, intake) {
   var ans = (cdr && Number(cdr.totalAnswered)) || 0;
   var ttt = (cdr && Number(cdr.tttSeconds)) || 0;
@@ -749,7 +984,9 @@ function metricsAdjusted_(cdr, outbound, intake) {
     intakeTimed: timed, intakeAvgSec: timed > 0 ? Math.round(isec / timed) : null, attExIntakeSec: null };
   out.talkFormatted = cdrFmtHms_(out.talkSec);
   if (ob) ob.talkFormatted = cdrFmtHms_(ob.talkSec);
-  if (timed > 0 && ans > timed && ttt > isec) out.attExIntakeSec = Math.round((ttt - isec) / (ans - timed));
+  out.attSec = ans > 0 ? Math.round(ttt / ans) : null;
+  out.attFormatted = out.attSec == null ? null : cdrFmtHms_(out.attSec);
+  if (timed > 0 && ans > timed && ttt > isec && isec * ans > ttt * timed) out.attExIntakeSec = Math.round((ttt - isec) / (ans - timed));
   out.attExIntakeFormatted = out.attExIntakeSec == null ? null : cdrFmtHms_(out.attExIntakeSec);
   return out;
 }
@@ -815,6 +1052,11 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
   var offRoster = {};   // F(M-11): canonical in-range agent names NOT on the roster
   var rowsMatched = 0;
   var latestDate = null;   // MET-5
+  // Batch PD: the marked days each agent took a call on. Kept in a map of its
+  // own BESIDE `agents`, never on an agent's object — several endpoints pass
+  // those objects on, and a rep's partial days are shown to that rep only.
+  var pdMarks = getCdrPartialDays_().marks || {};
+  var partial = {};
 
   for (var i = 0; i < values.length; i++) {
     var rawAgent = String(values[i][CDR.AGENT - 1] || '').trim();
@@ -855,6 +1097,10 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
     if (att > 0 && ansRow > 0) { a.attSum += att * ansRow; a.attCount += ansRow; }
     if (!a._dates[dateIso]) { a._dates[dateIso] = true; a.daysActive++; }
     if (!latestDate || dateIso > latestDate) latestDate = dateIso;   // MET-5: the newest day the window holds
+    var pdc = pdMarks[agent] ? pdMarks[agent][dateIso] : null;
+    if (cdrPartialDayCounts_(pdc, values[i][CDR.TOTAL_RUNG - 1], ansRow, values[i][CDR.TOTAL_MISSED - 1])) {
+      (partial[agent] || (partial[agent] = {}))[dateIso] = pdc;
+    }
   }
 
   Object.keys(agents).forEach(function (k) {
@@ -868,18 +1114,24 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
 
   var result = { agents: agents, meta: { rowsScanned: values.length, rowsMatched: rowsMatched, columnWarning: colWarning,
     offRosterAgents: Object.keys(offRoster).sort(), latestDate: latestDate } };   // F(M-11); MET-5
+  // Batch PD: {agent: [[iso, credit]]}, only for agents with a marked day they took a call on.
+  var pdOut = {};
+  Object.keys(partial).forEach(function (ag) { pdOut[ag] = Object.keys(partial[ag]).sort().map(function (d) { return [d, partial[ag][d]]; }); });
+  if (Object.keys(pdOut).length) result.partial = pdOut;
   try {
     if (!useCache) return result;   // F-31: a fixture read never writes prod's key
     if (cdrNameMapDegraded_()) return result;   // F16 / PF1: a round read without the aliases is never kept for the window TTL
+    if (cdrPartialDaysDegraded_()) return result;   // Batch PD: nor one read without the partial-day marks
     var payload = JSON.stringify(result);
     // C10 (cycle 10): CacheService hard-caps values at 100KB — an oversized
     // put THROWS (caught below, but every subsequent read then re-reads the
     // DQE window twice per open). Skip the doomed put explicitly with a
     // headroom margin so the behavior is deliberate + logged, not an
     // exception path; a large-team YTD aggregate is the realistic trigger.
-    if (payload.length > 95000) {
-      console.warn('CDR cache SKIPPED (payload ' + payload.length + ' bytes > 95KB headroom) for ' +
-        cacheKey + ' — every read of this range re-scans the DQE tab until the range narrows.');
+    if (payload.length > CDR_CACHE_VALUE_MAX) {
+      // F25 (cycle 26): said to the read-ahead too — every read of this range
+      // re-scans the DQE tab until the range narrows.
+      cdrCacheOversizeNote_('the call totals ' + from + '..' + to, payload.length);
     } else {
       if (payload.length > 90000) {
         console.warn('CDR cache payload near 100KB limit: ' + payload.length + ' bytes for ' + cacheKey);
@@ -907,11 +1159,11 @@ function getCdrDailyBreakdown_(from, to, rosterNames) {
     try { var hit = CacheService.getScriptCache().get(spec.key); if (hit) return JSON.parse(hit); } catch (_) {}
   }
   var out = cdrDailyBreakdownUncached_(from, to, rosterNames);
-  if (spec && out && !out.error && !cdrNameMapDegraded_()) {
+  if (spec && out && !out.error && !cdrNameMapDegraded_() && !cdrPartialDaysDegraded_()) {   // Batch PD: a round read without the marks is not kept
     try {
       var payload = JSON.stringify(out);
-      if (payload.length <= 95000) CacheService.getScriptCache().put(spec.key, payload, spec.ttl);
-      else console.warn('CDR daily cache SKIPPED (payload ' + payload.length + ' bytes > 95KB headroom) for ' + from + '..' + to);
+      if (payload.length <= CDR_CACHE_VALUE_MAX) CacheService.getScriptCache().put(spec.key, payload, spec.ttl);
+      else cdrCacheOversizeNote_('the daily breakdown ' + from + '..' + to, payload.length);   // F25: said to the read-ahead too
     } catch (_) {}
   }
   return out;
@@ -1000,9 +1252,15 @@ function cdrDailyBreakdownUncached_(from, to, rosterNames) {
     a.attFormatted = cdrFmtHms_(a.attSeconds);
     delete a._dates; delete a.attSum; delete a.attCount;
   });
+  // Batch PD: {dateIso: {agent: credit}} for a marked day the agent took a
+  // call on — a map of its own, never a field on the per-rep-day object.
+  var pdMarks = getCdrPartialDays_().marks || {};
+  var credits = {};
   Object.keys(perRepDaily).forEach(function (d) {
     Object.keys(perRepDaily[d]).forEach(function (ag) {
       var p = perRepDaily[d][ag];
+      var pdc = pdMarks[ag] ? pdMarks[ag][d] : null;
+      if (cdrPartialDayCounts_(pdc, p.rung, p.answered, p.missed)) (credits[d] || (credits[d] = {}))[ag] = pdc;
       p.pctAnswered = cdrAnswerPct_(p.answered, p.missed);   // H2
       // C17-4 (cycle 17) — a rep-day with zero answered calls has NO average
       // talk time, not an average of 0 (the INV-180 zero-is-absence rule).
@@ -1016,7 +1274,9 @@ function cdrDailyBreakdownUncached_(from, to, rosterNames) {
     });
   });
 
-  return { daily: daily, agents: agents, perRepDaily: perRepDaily };
+  var dailyOut = { daily: daily, agents: agents, perRepDaily: perRepDaily };
+  if (Object.keys(credits).length) dailyOut.credits = credits;   // Batch PD
+  return dailyOut;
 }
 
 // ── T4 #5/#6: anonymized team-avg + Transfers data layer ──────────────────
@@ -1071,31 +1331,47 @@ function cdrExcludeSet_(excludes) {
   (excludes || []).forEach(function (n) { var k = String(n == null ? '' : n).trim(); if (k) ex[k] = true; });
   return ex;
 }
-function metricsTeamAvgSeries_(perRepDaily, dates, valueKey, minCohort, excludes) {
+/** Batch PD (cycle 26): `credits` ({dateIso: {rep: credit}}, from the daily
+ *  breakdown) applies to the COUNT keys only — answered and missed. A rep on a
+ *  partial day keeps their calls in the sum and counts as their credit in the
+ *  divisor, so the average is per credited rep-day; under one credited day in
+ *  all there is no average. The cohort is still the HEAD count (the privacy
+ *  guard is about people). Rates and talk time are untouched, and with no
+ *  credit for a day the divisor is the head count, as before. */
+function metricsKpiIsCount_(key) { return key === 'answered' || key === 'missed'; }
+function metricsTeamAvgSeries_(perRepDaily, dates, valueKey, minCohort, excludes, credits) {
   const min = minCohort || 3;
   const ex = cdrExcludeSet_(excludes);   // H2: INV-26 exclusions leave the benchmark
+  const counted = metricsKpiIsCount_(valueKey);
   return (dates || []).map(function (d) {
     const byRep = (perRepDaily && perRepDaily[d]) || {};
-    let sum = 0, count = 0;
+    const cr = (counted && credits && credits[d]) || {};
+    let sum = 0, count = 0, days = 0;
     Object.keys(byRep).forEach(function (rep) {
       if (ex[rep]) return;
       const v = byRep[rep] ? byRep[rep][valueKey] : null;
-      if (v != null && isFinite(v)) { sum += Number(v); count++; }
+      if (v != null && isFinite(v)) { sum += Number(v); count++; days += (cr[rep] != null) ? Number(cr[rep]) : 1; }
     });
-    return { date: d, cohort: count, avg: count >= min ? Math.round((sum / count) * 10) / 10 : null };
+    return { date: d, cohort: count, avg: (count >= min && days >= 1) ? Math.round((sum / days) * 10) / 10 : null };
   });
 }
 /** Pure — combine the rep's OWN per-day value with the anonymized team-avg
  *  (metricsTeamAvgSeries_) for one KPI, aligned to `dates`. Returns
  *  [{ date, own, team, cohort }] (own/team null when absent / cohort-suppressed).
  *  Pinned by a Node test. */
-function metricsBuildKpiSeries_(perRepDaily, dates, empName, key, minCohort, excludes) {
-  var team = metricsTeamAvgSeries_(perRepDaily, dates, key, minCohort, excludes);
+function metricsBuildKpiSeries_(perRepDaily, dates, empName, key, minCohort, excludes, credits) {
+  var team = metricsTeamAvgSeries_(perRepDaily, dates, key, minCohort, excludes, credits);
+  var counted = metricsKpiIsCount_(key);
   return (dates || []).map(function (d, i) {
     var byRep = (perRepDaily && perRepDaily[d]) || {};
     var raw = byRep[empName] ? byRep[empName][key] : null;
     var own = (raw != null && isFinite(raw)) ? Number(raw) : null;
-    return { date: d, own: own, team: team[i].avg, cohort: team[i].cohort };
+    var pt = { date: d, own: own, team: team[i].avg, cohort: team[i].cohort };
+    // Batch PD: the rep's OWN partial day is marked on their own point — the
+    // count is theirs and stays; nobody else's credit rides the series.
+    var c = (counted && own != null && credits && credits[d]) ? credits[d][empName] : null;
+    if (c != null) pt.partial = Number(c);
+    return pt;
   });
 }
 /** Isolated reader for the CSR Transfer Historical Data tab — the
@@ -1154,27 +1430,55 @@ function csrTransferQueueColumns_(headers) {
  *  INV-85 bump needed). */
 function getCsrTransferPerRepDaily_(from, to, rosterNames, opts) {
   const withQueues = !!(opts && opts.withQueues);
+  // F25 (cycle 26): `aggregatesOnly` returns (and caches) the per-agent totals
+  // WITHOUT the per-day map. The Dashboard reads only `.agents`, and its
+  // year-to-date window's per-day map — every rep, every workday — was far
+  // over CacheService's 100 KB value cap: the put threw into a bare catch, so
+  // that window was never cached and the hourly read-ahead reported ok having
+  // kept nothing. A caller that asks for the totals gets no `perRepDaily` key
+  // at all — never an empty one that could read as "no transfers".
+  const aggregatesOnly = !!(opts && opts.aggregatesOnly);
   // M10 (cycle 22): RESULT-CACHED like the DQE reader it sits beside (the same
   // key family, TTL and fixture bypass — F-31), because a cold Dashboard load
   // called it up to four times and each call read the whole tab.
   const useCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
   // PF1: keyed by the data's stamp and kept until the data changes.
-  const spec = cdrWindowCacheSpec_('csrt', useCache ? cdrDataStamp_() : '', cdrRosterHash_(rosterNames), from, to, withQueues ? 'q' : '-');
+  const spec = cdrWindowCacheSpec_('csrt', useCache ? cdrDataStamp_() : '', cdrRosterHash_(rosterNames), from, to, (withQueues ? 'q' : '-') + (aggregatesOnly ? 'a' : ''));
   if (useCache) {
     try { const hit = CacheService.getScriptCache().get(spec.key); if (hit) return JSON.parse(hit); } catch (_) {}
   }
-  const out = csrTransferReadUncached_(from, to, rosterNames, withQueues);
+  let out = csrTransferReadUncached_(from, to, rosterNames, withQueues);
+  if (aggregatesOnly && out) out = { agents: out.agents, meta: out.meta };
   // Only a CLEAN read is cached — an error must not be served for five minutes (g129),
   // nor a round read without the aliases (F16).
   if (useCache && out && out.meta && !out.meta.error && !cdrNameMapDegraded_()) {
-    try { CacheService.getScriptCache().put(spec.key, JSON.stringify(out), spec.ttl); } catch (_) { /* over the 100KB value cap — uncached */ }
+    cdrCachePutSized_(spec.key, JSON.stringify(out), spec.ttl, 'transfers ' + from + '..' + to);
   }
   return out;
+}
+/** F25 (cycle 26) — a CDR window that was READ but could NOT be kept, this
+ *  execution: [{what, bytes}]. CacheService caps a value at 100 KB and an
+ *  oversize put throws; each window reader skips it on purpose and says so
+ *  here, so the read-ahead job can report what it did not manage to keep
+ *  instead of "ok". */
+var _cdrCacheOversize = [];
+function cdrCacheOversizeNote_(what, bytes) {
+  _cdrCacheOversize.push({ what: String(what), bytes: Number(bytes) || 0 });
+  console.warn('CDR cache SKIPPED: ' + what + ' is ' + bytes + ' bytes, over the ' + CDR_CACHE_VALUE_MAX + '-byte headroom under the 100 KB cap');
+}
+/** F25 — put a CDR window payload, or skip it and say so (never a throw into
+ *  a bare catch). Returns whether it was kept. */
+function cdrCachePutSized_(key, payload, ttl, what) {
+  if (String(payload).length > CDR_CACHE_VALUE_MAX) { cdrCacheOversizeNote_(what, String(payload).length); return false; }
+  try { CacheService.getScriptCache().put(key, payload, ttl); return true; }
+  catch (e) { console.warn('CDR cache put failed for ' + what + ': ' + ((e && e.message) || e)); return false; }
 }
 function csrTransferReadUncached_(from, to, rosterNames, withQueues) {
   const ss = getCdrSS_();
   const sheet = ss.getSheetByName(CSR_TRANSFER_TAB);
-  if (!sheet) return { perRepDaily: {}, agents: {}, meta: { error: 'CSR Transfer Historical Data sheet not found' } };
+  // F25: the tab is OPTIONAL (no tab = no Transfer KPI) — `missingTab` tells
+  // that apart from a read that failed, for a caller that must not call it one.
+  if (!sheet) return { perRepDaily: {}, agents: {}, meta: { error: 'CSR Transfer Historical Data sheet not found', missingTab: true } };
   const colWarning = validateCsrTransferColumns_(sheet);   // L-2: advisory, never blocks
   const tz = ss.getSpreadsheetTimeZone();
   const lastRow = sheet.getLastRow();
@@ -1769,7 +2073,11 @@ function getDashboardMetrics(periodKey) {
     // before MET-5 could still be a misaligned pre-import round.
     // v8 (cycle 25 F12): the MTD prior window counts WORKDAYS and the payload
     // carries the projection's workday basis — a v7 entry is a calendar-day one.
-    var cacheKey = 'dash_metrics_v8:' + emp.id + ':' + periodKey + ':' + todayIso;
+    // v9 (Batch PD, cycle 26): the payload carries the rep's partial days and
+    // the comparison's scale, and the key carries a digest of the rep's own
+    // marks — a mark added or changed today must not wait out the six hours.
+    var pdAll = getCdrPartialDays_();
+    var cacheKey = 'dash_metrics_v9:' + emp.id + ':' + periodKey + ':' + todayIso + ':' + cdrPartialKeyPart_(pdAll.marks[emp.name], cdrDigestHex_);
     if (useCache) {
       try { var hit = cache.get(cacheKey); if (hit) { var co = JSON.parse(hit); co.cached = true; console.log('getDashboardMetrics ' + periodKey + ': cached, ' + (Date.now() - t0) + ' ms'); return co; } } catch (_) {}
     }
@@ -1802,7 +2110,7 @@ function getDashboardMetrics(periodKey) {
       // their roster row has an email and survives the F3/F4 skip above.
       var dqRes = getCdrAgentMetrics_(wFrom, wTo, allNames);
       var dqMap = cdrAgentsOrThrow_(dqRes);   // M7: never cached as no calls
-      var trMap = getCsrTransferPerRepDaily_(wFrom, wTo, allNames).agents || {};
+      var trMap = getCsrTransferPerRepDaily_(wFrom, wTo, allNames, { aggregatesOnly: true }).agents || {};   // F25: the totals only — a year of days does not fit the cache
       var dq = dqMap[emp.name] || null;
       var tr = trMap[emp.name] || null;
       var agg = dashboardTeamAggregate_(dqMap, MIN_COHORT, std.teamAvgExcludes);   // H2
@@ -1821,6 +2129,7 @@ function getDashboardMetrics(periodKey) {
         } : null,
         cohort: agg.cohort,
         latestDate: (dqRes && dqRes.meta && dqRes.meta.latestDate) || null,   // MET-5
+        ownPartial: (dqRes && dqRes.partial && dqRes.partial[emp.name]) || null,   // Batch PD: the caller's own marked days, nobody else's
       };
     };
     var cur = shapeWindow(from, to);
@@ -1842,6 +2151,13 @@ function getDashboardMetrics(periodKey) {
     var dashHol = {};
     try { dashHol = companyHolidayMap_(String(+todayIso.slice(0, 4) - 1) + '-12-01', periodEnd) || {}; } catch (e) { dashHol = {}; }
     var prevRange = align.prevAnchor ? dashboardPrevRange_(periodKey, align.prevAnchor, dashHol) : null, prev = null, prevUnavailable = false;
+    // Batch PD: the workday basis and what the rep's partial days take out of
+    // it. `workdays` stays the calendar's (the Team card reads it too); the
+    // rep's own divisor rides `partial`, for their own card only.
+    var isWorkday = function (iso) { return dashWorkdayCount_(iso, iso, dashHol) === 1; };
+    var workdays = (align.dataThrough && (periodKey === 'mtd' || periodKey === 'ytd'))
+      ? { elapsed: dashWorkdayCount_(from, align.dataThrough, dashHol), total: dashWorkdayCount_(from, periodEnd, dashHol) } : null;
+    var pdView = workdays ? dashPartialView_(cur.ownPartial, from, align.dataThrough, isWorkday) : null;
     if (prevRange) {
       try {
         var pShaped = shapeWindow(prevRange.from, prevRange.to);
@@ -1849,6 +2165,14 @@ function getDashboardMetrics(periodKey) {
           from: prevRange.from, to: prevRange.to, label: prevRange.label,
           clamped: !!prevRange.clamped, own: pShaped.own, team: pShaped.team,
         };
+        // The rep's counts are compared over the same share of credited days
+        // (dashPartialScale_) — shipped only when it is not 1.
+        if (workdays && pShaped.own) {
+          var pdPrev = dashPartialView_(pShaped.ownPartial, prevRange.from, prevRange.to, isWorkday);
+          var scale = dashPartialScale_(workdays.elapsed, pdView ? pdView.uncredited : 0,
+            dashWorkdayCount_(prevRange.from, prevRange.to, dashHol), pdPrev ? pdPrev.uncredited : 0);
+          if (scale !== 1) prev.ownScale = scale;
+        }
       } catch (e) { prevUnavailable = true; }
     }
 
@@ -1862,8 +2186,11 @@ function getDashboardMetrics(periodKey) {
       importPending: align.importPending,   // MET-5 follow-up: the card says the latest day is not in yet
       // F12 (cycle 25): the run-rate projects over WORKDAYS — the days with data
       // so far and the workdays in the whole period — never calendar days.
-      workdays: (align.dataThrough && (periodKey === 'mtd' || periodKey === 'ytd'))
-        ? { elapsed: dashWorkdayCount_(from, align.dataThrough, dashHol), total: dashWorkdayCount_(from, periodEnd, dashHol) } : null,
+      workdays: workdays,
+      // Batch PD: the rep's partial days in this period — the days and their
+      // shares (never a reason; the tab's column D is not read), and the
+      // credited days the "on pace" line divides by. Null with none.
+      partial: pdView ? { uncredited: pdView.uncredited, credited: Math.round((workdays.elapsed - pdView.uncredited) * 100) / 100, days: pdView.days } : null,
       own: cur.own,
       team: cur.team,
       cohort: cur.cohort,
@@ -1898,7 +2225,7 @@ function getDashboardMetrics(periodKey) {
     // 6-hour TTL pinned those WRONG numbers past the import. Not cached until
     // the newest data day reaches the previous workday.
     var importPending = align.importPending;
-    if (useCache && !noteRes.unavailable && !prevUnavailable && cur.team && !importPending && !cdrNameMapDegraded_()) {   // F16: never pin a round read without the aliases
+    if (useCache && !noteRes.unavailable && !prevUnavailable && cur.team && !importPending && !cdrNameMapDegraded_() && !cdrPartialDaysDegraded_()) {   // F16: never pin a round read without the aliases; Batch PD: or without the marks
       try { cache.put(cacheKey, JSON.stringify(result), DASHBOARD_CACHE_TTL); } catch (_) {}
     }
     console.log('getDashboardMetrics ' + periodKey + ': read, ' + (Date.now() - t0) + ' ms');   // PF1
@@ -1926,7 +2253,7 @@ function getMyMetrics(date) {
     // coverage strip — a just-filed note surfaces within the TTL. Keyed by
     // emp.id so no rep ever reads another rep's cached self-view.
     var metricsCache = CacheService.getScriptCache();
-    var myCacheKey = 'metrics_my_v4:' + emp.id + ':' + date;   // v4 (M1): outbound + adjusted   // v3 (H2): the dashboard's rate formula + published standard + excluded benchmark (INV-85)
+    var myCacheKey = 'metrics_my_v6:' + emp.id + ':' + date;   // v6 (Batch PD): the count series are per credited day and mark the rep's partial days   // v5 (cycle 26 F34): the same-basis adjusted average   // v4 (M1): outbound + adjusted   // v3 (H2): the dashboard's rate formula + published standard + excluded benchmark (INV-85)
     // Bypass the endpoint cache whenever a test points the CDR reader at a
     // fixture/bogus id (the getCdrSS_ override pattern) — otherwise a stale
     // entry from a prior fixture read would mask a later test's CDR state
@@ -1954,8 +2281,13 @@ function getMyMetrics(date) {
     var transfer = getCsrTransferPerRepDaily_(trendFrom, trendTo, allNames);
     var dqPRD = breakdown.perRepDaily || {};
     var trPRD = transfer.perRepDaily || {};
+    var dqCredits = breakdown.credits || null;   // Batch PD: partial-day credits, for the two count series
 
-    var todayResult = getCdrAgentMetrics_(date, date, [emp.name]);
+    // FQ6 (cycle 26): the COHORT's read, the rep's own row out of it — the
+    // window Team Metrics and the hourly read-ahead already keep. Asked with
+    // [emp.name] the key carried the rep's own roster hash, so the day every
+    // rep opens Stats on was read once per rep.
+    var todayResult = getCdrAgentMetrics_(date, date, allNames);
     var todayCdr = todayResult.agents[emp.name] || null;
     // F-47 (2026-09-17): a reader-returned meta.error (the DQE tab missing or
     // renamed) came back as agents:{} and shipped cdr:null — indistinguishable
@@ -1990,8 +2322,8 @@ function getMyMetrics(date) {
     var ship = cdrStandardShip_(std);
     var series = {
       pctAnswered: metricsBuildKpiSeries_(dqPRD, dates, emp.name, 'pctAnswered', MIN_COHORT, std.teamAvgExcludes),
-      answered:    metricsBuildKpiSeries_(dqPRD, dates, emp.name, 'answered', MIN_COHORT, std.teamAvgExcludes),
-      missed:      metricsBuildKpiSeries_(dqPRD, dates, emp.name, 'missed', MIN_COHORT, std.teamAvgExcludes),
+      answered:    metricsBuildKpiSeries_(dqPRD, dates, emp.name, 'answered', MIN_COHORT, std.teamAvgExcludes, dqCredits),
+      missed:      metricsBuildKpiSeries_(dqPRD, dates, emp.name, 'missed', MIN_COHORT, std.teamAvgExcludes, dqCredits),
       attSeconds:  metricsBuildKpiSeries_(dqPRD, dates, emp.name, 'attSeconds', MIN_COHORT, std.teamAvgExcludes),
       transferPct: metricsBuildKpiSeries_(trPRD, dates, emp.name, 'transferPct', MIN_COHORT, std.teamAvgExcludes),
     };
@@ -2003,7 +2335,7 @@ function getMyMetrics(date) {
     // Operator 2026-08-25 (batch 6): intake-flagged note count — additive,
     // null on a failed read (absence ≠ 0, INV-180/187).
     var intakeRes = cnCountIntakeNotesResult_(emp, date, date);
-    var obRes = getCdrOutboundPerRep_(date, date, [emp.name]);   // M1
+    var obRes = getCdrOutboundPerRep_(date, date, allNames);   // M1; F24: the cohort's one read, the rep's own row out of it
     var ob = metricsOutboundOf_(obRes, emp.name);
 
     var result = {
@@ -2055,7 +2387,7 @@ function getMyMetrics(date) {
     // outlive the transient failure that caused it (the L-3 rule).
     // MET-2 (cycle 23): and neither is a CDR read flagged unavailable (F-47) —
     // the flag was honest, but pinning it for CDR_CACHE_TTL outlived the blip (g129).
-    if (useMetricsCache && !noteRes.unavailable && !cdrUnavailable && !(obRes.error && !obRes.steady)) {   // M1: a failed outbound read is never kept
+    if (useMetricsCache && !noteRes.unavailable && !cdrUnavailable && !(obRes.error && !obRes.steady) && !cdrPartialDaysDegraded_()) {   // M1: a failed outbound read is never kept; Batch PD: nor a round without the marks
       try { metricsCache.put(myCacheKey, JSON.stringify(result), CONFIG.CDR_CACHE_TTL); } catch (_) {}
     }
     console.log('getMyMetrics: read, ' + (Date.now() - t0) + ' ms');   // PF1
@@ -2088,7 +2420,7 @@ function getMyMetricsRange(from, to) {
     // error results never cached; bypassed under the CDR test override for
     // the same fixture-masking reason as getMyMetrics.
     var rangeCache = CacheService.getScriptCache();
-    var rangeKey = 'metrics_range_v4:' + emp.id + ':' + from + ':' + to;   // v4 (M1): outbound + adjusted   // v3 (H2): rate formula + published standard (INV-85)
+    var rangeKey = 'metrics_range_v6:' + emp.id + ':' + from + ':' + to;   // v6 (cycle 26 FQ8): the rep's partial days   // v5 (cycle 26 F34): the same-basis adjusted average   // v4 (M1): outbound + adjusted   // v3 (H2): rate formula + published standard (INV-85)
     var useRangeCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
     if (useRangeCache) {
       try {
@@ -2103,7 +2435,8 @@ function getMyMetricsRange(from, to) {
     // beside an empty `agents` map read as "a rep who took no calls", and was
     // CACHED that way. It now throws into the catch below: an honest {error},
     // never cached.
-    var c = cdrAgentsOrThrow_(getCdrAgentMetrics_(from, to, [emp.name]))[emp.name] || null;
+    var cohort = cdrCohortNames_(getEmployeeRosterRows_());   // FQ6: one list, one key (the outbound read below asks with it too)
+    var c = cdrAgentsOrThrow_(getCdrAgentMetrics_(from, to, cohort))[emp.name] || null;
 
     // Per-day trend across the range for the sparklines (own row only).
     // L-3 (cycle 11): a thrown breakdown read degrades to trend=[] for THIS
@@ -2113,10 +2446,12 @@ function getMyMetricsRange(from, to) {
     // healthy aggregate for the full CDR_CACHE_TTL).
     var trend = [];
     var trendFailed = false;
+    var rangePartial = [];   // FQ8 (cycle 26): the rep's own partial days inside the range
     try {
       var bd = getCdrDailyBreakdown_(from, to, [emp.name]);
       if (bd && bd.error) throw new Error(bd.error);   // MET-1: a missing tab is a failed trend, not an empty one
       var prd = (bd && bd.perRepDaily) || {};
+      rangePartial = metricsOwnPartialDays_(bd && bd.credits, emp.name);
       metricsWorkdayIsos_(from, to).forEach(function (iso) {   // workdays only
         var own = prd[iso] && prd[iso][emp.name];
         trend.push({
@@ -2146,7 +2481,7 @@ function getMyMetricsRange(from, to) {
     var noteRes = cnCountNotesResult_(emp, from, to);   // F5
     var noteCount = noteRes.count;
     var intakeRes = cnCountIntakeNotesResult_(emp, from, to);   // batch 6 — additive
-    var obRes = getCdrOutboundPerRep_(from, to, [emp.name]);   // M1
+    var obRes = getCdrOutboundPerRep_(from, to, cohort);   // M1; F24: the cohort's one read
     var ob = metricsOutboundOf_(obRes, emp.name);
     var rangeResult = {
       from: from, to: to, repName: emp.name,
@@ -2171,6 +2506,9 @@ function getMyMetricsRange(from, to) {
         ? null : cnNoteCoverage_(noteCount, c ? c.totalAnswered : 0),
       noteCountUnavailable: !!noteRes.unavailable,   // F5
       trend: trend,
+      // FQ8: [{date, credit}] newest first, the caller's own — the range's
+      // sparklines are raw daily counts, and a low day now says why.
+      partialDays: rangePartial,
       transfer: trTotals,                                   // #5 — null = absent, never 0
       alertThreshold: ship.alertThreshold,     // #4 / H2 — see getMyMetrics
       alertBand: ship.alertBand,
@@ -2179,7 +2517,7 @@ function getMyMetricsRange(from, to) {
     if (trendFailed) rangeResult.trendUnavailable = true;   // L-3: honest partial, client-ignorable
     // F5: a failed note read is the same class of partial as a failed trend
     // read (L-3) — never stamp it into the cache as a fresh, confident 0.
-    if (useRangeCache && !trendFailed && !transferThrew && !noteRes.unavailable && !(obRes.error && !obRes.steady)) {
+    if (useRangeCache && !trendFailed && !transferThrew && !noteRes.unavailable && !(obRes.error && !obRes.steady) && !cdrPartialDaysDegraded_()) {   // FQ8: nor a round read without the marks
       try { rangeCache.put(rangeKey, JSON.stringify(rangeResult), CONFIG.CDR_CACHE_TTL); } catch (_) {}
     }
     return rangeResult;
@@ -2208,13 +2546,25 @@ function teamMetricsRepView_(full) {
     teamTotals: full.teamTotals,
     trend: full.trend,
     transferMeta: full.transferMeta,
-    outboundMeta: full.outboundMeta,       // M1 — the tab's state, no names
+    // M1 — the tab's STATE, no names. FQ7: built field by field — the manager
+    // payload's outboundMeta also carries name pairs, and a whole-object copy
+    // would ship them to every rep.
+    outboundMeta: full.outboundMeta ? { available: !!full.outboundMeta.available, error: full.outboundMeta.error || null, through: full.outboundMeta.through || null } : full.outboundMeta,
     queueRows: full.queueRows,
     groupRows: full.groupRows,
     alertThreshold: full.alertThreshold,
     alertBand: full.alertBand,             // H2: the amber band rides with the target
     standardSource: full.standardSource,
   };
+}
+/** PURE (Node-pinned) — F35: whether a Team Metrics window holds ANY call
+ *  data, and, when it holds none, whether that is a day still to come: the
+ *  call report is imported the next morning, so a window that ends on the
+ *  previous workday or later may simply not be in yet. An older window with
+ *  no row is a window with no calls (a weekend, a holiday). */
+function teamCallDataState_(anyRepHasCdr, toDate, prevWorkday) {
+  var has = !!anyRepHasCdr;
+  return { hasCallData: has, callDataPending: !has && !!prevWorkday && String(toDate || '') >= String(prevWorkday) };
 }
 function getTeamMetrics(dateOrFrom, to) {
   try {
@@ -2258,7 +2608,7 @@ function getTeamMetrics(dateOrFrom, to) {
     // test-override bypass as the getMyMetrics/getMyMetricsRange siblings
     // (L-1/INV-129); the WRITE below skips any degraded round, so a partial
     // aggregate is never pinned for the TTL.
-    var teamCacheKey = 'team_metrics_v4:' + from + ':' + toDate;   // v4 (M1): outbound + adjusted   // v3 (H2): rate formula + published standard (INV-85)
+    var teamCacheKey = 'team_metrics_v9:' + from + ':' + toDate;   // v9 (cycle 26 DT1): Handled (adj.) per credited day on each manager row; v8 was DS2's answered per credited day
     var teamMetricsCache = CacheService.getScriptCache();
     var useTeamCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
     if (useTeamCache) {
@@ -2373,6 +2723,14 @@ function getTeamMetrics(dateOrFrom, to) {
     // cells are null, never zero; the rest of the table stands.
     var obRes = getCdrOutboundPerRep_(from, toDate, rosterNames);
     var outboundMeta = { available: !obRes.error, error: obRes.error || null, through: obRes.error ? null : obRes.through };
+    // FQ7 (cycle 26): roster reps with no outbound call in the window, paired
+    // with the window's off-roster outbound agents by name. On a shared phone
+    // system both lists are long and mean nothing alone; a PAIR is a colleague
+    // whose outbound calls are missing here. Managers only (see the rep view).
+    if (!obRes.error) {
+      outboundMeta.likelyMismatches = cdrLikelyNameMismatches_(
+        rosterNames.filter(function (nm) { return !(obRes.agents || {})[nm]; }), obRes.offRoster || []).slice(0, CDR_PARTIAL_LIKELY_MAX);
+    }
     var reps = [];
     var teamTotals = { rung: 0, answered: 0, missed: 0, tttSeconds: 0, noteCount: 0,
       transferred: 0, queueTotal: 0, transferCalls: 0 };
@@ -2419,8 +2777,21 @@ function getTeamMetrics(dateOrFrom, to) {
         hasCdrData: !!cdr,
       };
       rep.outbound = metricsOutboundOf_(obRes, name);   // M1 — null when the tab was not read
+      // DQ1 (operator 2026-11-19): the rep's partial days, for the MANAGER's
+      // row. `reps` never reaches a rep (teamMetricsRepView_ does not list it).
+      rep.partialDays = metricsTeamPartialDays_(cdrResult.partial, name);
+      // DS2 (operator 2026-11-19): the ONE figure on this table a partial day
+      // belongs in — answered per day, over the days the rep took calls with a
+      // marked day as its share. No count, rate or talk time above is changed.
+      rep.daysActive = cdr ? (cdr.daysActive || 0) : 0;
+      rep.creditedDays = metricsCreditedDays_(rep.daysActive, rep.partialDays);
+      rep.answeredPerDay = metricsPerCreditedDay_(cdr ? cdr.totalAnswered : null, rep.creditedDays);
       rep.intakeTimed = intakeRes.unavailable ? null : { timed: intakeRes.timed || 0, seconds: intakeRes.seconds || 0 };
       rep.adjusted = metricsAdjusted_(cdr, rep.outbound, intakeRes.unavailable ? null : intakeRes);
+      // DT1 (operator 2026-11-19): Handled (adj.) per credited day, beside Ans /
+      // day and over the SAME days — the days the rep took inbound calls. With
+      // nothing adjusted it is the answered figure, as the Handled column reads.
+      rep.handledPerDay = metricsPerCreditedDay_(rep.adjusted ? rep.adjusted.handled : rep.totalAnswered, rep.creditedDays);
       // Phase 2 — transfers + their per-queue split. INV-180: `queues` is a
       // COMPONENT of `transferred`, so `queueUnattributed` rides along and the
       // total is never derived by summing queues.
@@ -2481,6 +2852,18 @@ function getTeamMetrics(dateOrFrom, to) {
     });
 
     teamTotals.pctAnswered = cdrAnswerPct_(teamTotals.answered, teamTotals.missed);   // H2
+    // F35 (cycle 26): the call side of these totals starts at zero, and stays
+    // there when no rep has a call-data row — the page drew "Answered 0,
+    // Missed 0" in green for a today the import never holds. The state rides
+    // the totals (no names, no count — the rep view ships them whole).
+    var callState = teamCallDataState_(reps.some(function (rp) { return rp.hasCdrData; }), toDate,
+      prevWorkdayIso_(Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd')));
+    teamTotals.hasCallData = callState.hasCallData;
+    teamTotals.callDataPending = callState.callDataPending;
+    // FQ3 (cycle 26): the same question of the Transfer tab — a window in
+    // which no listed rep has a transfer row has no transfer figure, and the
+    // rail drew "Transfers 0" beside "Calls —".
+    teamTotals.hasTransferData = reps.some(function (rp) { return rp.hasTransferData; });
     // M1 — the team's adjusted figures, by the same rule as each rep's.
     teamTotals.adjusted = metricsAdjusted_({ totalAnswered: teamTotals.answered, tttSeconds: teamTotals.tttSeconds },
       outboundMeta.available ? { placed: teamTotals.outboundPlaced, connected: teamTotals.outboundConnected, talkSec: teamTotals.outboundTalkSec } : null,
@@ -2527,6 +2910,9 @@ function getTeamMetrics(dateOrFrom, to) {
       // failed" (INV-175).
       transferMeta: transferMeta,
       outboundMeta: outboundMeta,   // M1
+      // DQ1: the marks could not be read this round, so "no partial days" on a
+      // row is not known (g53). Managers only — the rep view does not carry it.
+      partialDaysUnavailable: cdrPartialDaysDegraded_(),
       queueRows: qRows,
       alertThreshold: ship.alertThreshold,   // #4 / H2 — see getMyMetrics
       alertBand: ship.alertBand,
@@ -2542,7 +2928,7 @@ function getTeamMetrics(dateOrFrom, to) {
     // (noteCountPartial) or ANY transfer-read error would pin a degraded
     // aggregate as authoritative for the TTL. On a deployment with no Transfer
     // tab this endpoint simply stays uncached — the pre-cache behaviour.
-    if (useTeamCache && !teamTotals.noteCountPartial && !transferMeta.error && !trendFailed && !(obRes.error && !obRes.steady)) {
+    if (useTeamCache && !teamTotals.noteCountPartial && !transferMeta.error && !trendFailed && !(obRes.error && !obRes.steady) && !cdrPartialDaysDegraded_()) {   // DQ1: nor a round read without the marks
       try { teamMetricsCache.put(teamCacheKey, JSON.stringify(teamResult), CONFIG.CDR_CACHE_TTL || 300); }
       catch (_) { /* >100KB or transient — the cache is a convenience */ }
     }
@@ -2656,6 +3042,12 @@ function warmCdrMetricsCache() {
   return runAutomationJob_('CdrCacheWarm', function () {
     stampDigestLastRun_('cdrWarm');
     if (typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID) return { outcome: automationOutcome_('idle') };
+    // F25 (cycle 26): a deployment with NO CDR store has nothing to read
+    // ahead — that is not a failure. It failed every hour (the stamp read
+    // throws on the placeholder id), a red dot nobody could clear. `ok`, not
+    // `idle`: it also clears a failure stamped before the store was removed.
+    if (!storeConfigured_('CDR_SS_ID', CONFIG.CDR_SS_ID, false)) return { outcome: automationOutcome_('ok') };
+    _cdrCacheOversize = [];
     var stamp = cdrDataStamp_();
     if (!stamp) return { outcome: automationOutcome_('failed', 'The CDR Report could not be read to check for new data.') };
     var cache = CacheService.getScriptCache();
@@ -2670,8 +3062,11 @@ function warmCdrMetricsCache() {
       if (!range) return;
       try {
         cdrAgentsOrThrow_(getCdrAgentMetrics_(range.from, range.to, names));
-        var tr = getCsrTransferPerRepDaily_(range.from, range.to, names);
-        if (tr && tr.meta && tr.meta.error) throw new Error(tr.meta.error);
+        // F25: the read getDashboardMetrics makes (the totals only), and a
+        // MISSING Transfer tab is not a failed read — the tab is optional, and
+        // treating it as one left the job "partial" every hour for ever.
+        var tr = getCsrTransferPerRepDaily_(range.from, range.to, names, { aggregatesOnly: true });
+        if (cdrWarmReadFailed_(tr && tr.meta)) throw new Error(tr.meta.error);
       } catch (e) { failed.push(pk + ': ' + e.message); }
     });
     // The Stats page's default view: the previous workday and its 30-day
@@ -2683,12 +3078,29 @@ function warmCdrMetricsCache() {
         var bd = getCdrDailyBreakdown_(sFrom, statsDay, names);
         if (bd && bd.error) throw new Error(bd.error);
         var str = getCsrTransferPerRepDaily_(sFrom, statsDay, names);
-        if (str && str.meta && str.meta.error) throw new Error(str.meta.error);
+        if (cdrWarmReadFailed_(str && str.meta)) throw new Error(str.meta.error);
       } catch (e) { failed.push('stats: ' + e.message); }
     }
     console.log('warmCdrMetricsCache: ' + DASHBOARD_PERIOD_KEYS.length + ' dashboard windows + the Stats trend, ' + (Date.now() - t0) + ' ms' + (failed.length ? ', failed ' + failed.join('; ') : ''));
     if (failed.length) return { outcome: automationOutcome_('partial', 'Some call-data windows could not be read ahead: ' + failed.join('; '), failed) };
+    // Batch PD: a round read without the Partial Days marks is kept by no
+    // reader (cdrPartialDaysDegraded_), so nothing was read ahead — said.
+    if (cdrPartialDaysDegraded_()) {
+      return { outcome: automationOutcome_('partial', 'The Partial Days tab could not be read, so the call-data windows read ahead were not kept.', ['Partial Days']) };
+    }
+    // F25: a window that was read but is too large to KEEP was not read ahead —
+    // the next person still waits for it. Said, never "ok".
+    if (_cdrCacheOversize.length) {
+      var big = _cdrCacheOversize.map(function (o) { return o.what + ' (' + o.bytes + ' bytes)'; });
+      return { outcome: automationOutcome_('partial', 'Some call-data windows were read but are too large to keep in the cache (100 KB each): ' + big.join('; '), big) };
+    }
     try { cache.put(CDR_WARM_CACHE_KEY, stamp, CDR_WINDOW_CACHE_TTL); } catch (e) {}
     return { outcome: automationOutcome_('ok') };
   });
+}
+/** PURE (Node-pinned; cycle 26 F25) — did a Transfer read FAIL, for the
+ *  read-ahead's purposes? An error, unless it is only the optional tab that
+ *  is not there. */
+function cdrWarmReadFailed_(meta) {
+  return !!(meta && meta.error && !meta.missingTab);
 }

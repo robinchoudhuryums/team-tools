@@ -108,6 +108,7 @@ function submitCallNote(payload) {
     row[CN.SUBFORM_DATA]    = subformDataJson;
     // CN-7 (cycle 23): the free text lands in '@' cells (CN_TEXT_IDX) — a
     // callback "0123…" kept its zero, a "12/5" stayed text.
+    cnAssertLeaseLive_(lease);   // FU1: the append is positional
     const newRowIndex = appendRowsTextSafe_(sheet, [row], CN_TEXT_IDX);
 
     writeAuditLog_(emp, 'CallNoteCreate', dateLocal, '', false, 0,
@@ -155,6 +156,7 @@ function updateCallNote(noteId, payload) {
     // CN-7 (cycle 23): the seven content columns are CN_TEXT_IDX, contiguous
     // CALLBACK..RESOLUTION — one '@' range, re-asserted by the statement that
     // writes it (a note created before the fix gains the format on its edit).
+    cnAssertLeaseLive_(lease);   // FU1: the row index is only good while the Sheet is ours
     sheet.getRange(located.rowIndex, CN.CALLBACK + 1, 1, CN_TEXT_IDX.length).setNumberFormat('@')
       .setValues(sheetTextRows_([[cleaned.callback, cleaned.caller, cleaned.relationship, cleaned.patientAndTrx,
         cleaned.issue, cleaned.transferredTo, cleaned.resolution]], null));
@@ -197,6 +199,7 @@ function setCallNoteFlag(noteId, flagType, trainingQuestion, reviewComment) {
     const sheet = getCallNotesSheet_(emp);
     const located = findCallNoteRow_(sheet, noteId);
     if (!located) return { success: false, error: 'Note not found.' };
+    cnAssertLeaseLive_(lease);   // FU1: the row index is only good while the Sheet is ours
 
     let subformData = null;
     if (located.row[CN.SUBFORM_DATA]) {
@@ -281,6 +284,7 @@ function setCallNoteResolved(noteId, resolved) {
     const sheet = getCallNotesSheet_(emp);
     const located = findCallNoteRow_(sheet, noteId);
     if (!located) return { success: false, error: 'Note not found.' };
+    cnAssertLeaseLive_(lease);   // FU1: the row index is only good while the Sheet is ours
     const flagType = String(located.row[CN.FLAG_TYPE] || '').trim().toLowerCase();
     if (flagType !== 'action') {
       return { success: false, error: 'Only action-flagged notes can be resolved.' };
@@ -324,6 +328,7 @@ function deleteCallNote(noteId) {
     const sheet = getCallNotesSheet_(emp);
     const located = findCallNoteRow_(sheet, noteId);
     if (!located) return { success: false, error: 'Note not found.' };
+    cnAssertLeaseLive_(lease);   // FU1: the row index is only good while the Sheet is ours
 
     const empTz = empTz_(emp);
     // F(M-14): coercion-safe read — a locale-coerced Date cell stringified
@@ -434,6 +439,7 @@ function setCallNotePinned(noteId, pinned) {
       delete subformData.pinned;
       delete subformData.pinnedAt;
     }
+    cnAssertLeaseLive_(lease);   // FU1
     sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(sheetSafe_(JSON.stringify(subformData)));
 
     const dateLocal = cnDateLocalString_(located.row[CN.DATE_LOCAL]);
@@ -2204,6 +2210,10 @@ function sanitizeCallNotePayload_(p) {
     // un-chipped. Bounded enum only; anything else drops.
     const it = s(rawSub.intakeType).toLowerCase();
     if (it === 'ppd' || it === 'pmd' || it === 'pap') subformData.intakeType = it;
+    // Cycle 26 DQ2 (operator 2026-11-19): the note of an AMENDED send. Only
+    // `true`, and only beside an intakeType — it marks an intake note as a
+    // correction, which the intake count leaves out.
+    if (subformData.intakeType && rawSub.intakeAmend === true) subformData.intakeAmend = true;
     // Round-1 pilot #1 (2026-08-21): optional comment on a review-flagged note —
     // the trainingQuestion mechanism mirrored (same trim + 2000-char cell guard).
     const rc = s(rawSub.reviewComment);
@@ -4728,22 +4738,27 @@ function scratchpadSanitizeHtml_(html) {
   return out.join('');
 }
 /** Save (whole-document replace; last write wins across windows — stated in
- *  the modal copy). USER lock, not the script lock (the kbRecordView /
- *  INV-01-documented-exception posture): a debounced autosave to the rep's
- *  OWN sheet must never queue punch/note writes behind it, and the user lock
- *  still serializes one rep's double-fires. Over-cap REFUSES with an
- *  actionable error (the INV-96 posture — never a silent truncate: this is
- *  the rep's document). NO audit row per save (high-frequency, own-store,
- *  non-privileged — the kbRecordView precedent; INV-32 governs call-NOTE
- *  actions, which this is not). Batch S: the PAGE is named; no page id (an
- *  older client) is row 1, and a page deleted in another window REFUSES with
- *  `pageGone` — never written into some other page. */
+ *  the modal copy). Over-cap REFUSES with an actionable error (the INV-96
+ *  posture — never a silent truncate: this is the rep's document). NO audit
+ *  row per save (high-frequency, own-store, non-privileged — the kbRecordView
+ *  precedent; INV-32 governs call-NOTE actions, which this is not). Batch S:
+ *  the PAGE is named; no page id (an older client) is row 1, and a page
+ *  deleted in another window REFUSES with `pageGone` — never written into some
+ *  other page.
+ *
+ *  F42 (cycle 26): serialised per REP, on a lease of its own
+ *  (cnAcquireRepLease_ under CN_SCRATCH_LEASE_PREFIX). It took the USER lock "so one rep's double-fires
+ *  queue" — but the web app runs as the deployer, so the user lock is ONE lock
+ *  for every rep: each autosave (800 ms after typing stops, across an openById
+ *  and three writes) queued behind every other rep's, and the tail timed out.
+ *  The caller is checked before anything is waited for, and a wait that times
+ *  out is an answer the pad shows, not a thrown transport failure. */
 function saveMyScratchpad(content, format, pageId) {
-  const lock = LockService.getUserLock();
-  lock.waitLock(15000);
+  let lease = null;
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Not authorized.' };
+    lease = cnAcquireRepLease_(emp, CN_SCRATCH_LEASE_PREFIX, SCRATCHPAD_LEASE_TIMEOUT_MSG);
     // 22post B-2c: a formatted pad is stored as ALLOWLISTED html — the server
     // is the authority, whatever the client sent. Plain text (an older client,
     // or the editor suite) is stored as it came, marked 'text'.
@@ -4763,26 +4778,28 @@ function saveMyScratchpad(content, format, pageId) {
         return { error: 'That page was deleted in another window — your text is still here; copy it to another page.', pageGone: true };
       }
     }
+    cnAssertLeaseLive_(lease);   // FU1: `row` was read by index
     const now = Date.now();
     sh.getRange(row, 1).setNumberFormat('@').setValue(sheetText_(text));   // S2: the '@' cell, re-asserted — raw, never an apostrophe
     sh.getRange(row, 2).setValue(sheetSafe_(now));   // epoch-ms NUMBER cell — coercion-immune
     sh.getRange(row, 3).setValue(sheetSafe_(isHtml ? 'html' : 'text'));
     return { success: true, updatedAtMs: now, pageId: want || SCRATCHPAD_MAIN_PAGE };
   } catch (err) { return { error: err.message }; }
-  finally { lock.releaseLock(); }
+  finally { cnReleaseRepLease_(lease); }
 }
 /** Batch S (operator 2026-11-02) — add, rename or delete a Scratchpad page.
- *  The caller's own tab, under the user lock like the save. A name is plain
+ *  The caller's own tab, on the rep's Scratchpad lease like the save (F42). A name is plain
  *  text in an '@' cell; at most SCRATCHPAD_MAX_PAGES pages; the last page is
  *  never deleted. Returns the page list (and `pageId` — the new page's, or the
  *  first page's after a delete). */
 function scratchpadPageOp(op, pageId, name) {
-  const lock = LockService.getUserLock();
-  lock.waitLock(15000);
+  let lease = null;
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Not authorized.' };
+    lease = cnAcquireRepLease_(emp, CN_SCRATCH_LEASE_PREFIX, SCRATCHPAD_LEASE_TIMEOUT_MSG);
     const sh = scratchpadSheet_(emp, true);
+    cnAssertLeaseLive_(lease);   // FU1: the slow part (opening the Sheet) is behind it; everything below writes by row
     if (sh.getLastRow() < 1) sh.getRange(1, 3).setValue(sheetSafe_('html'));   // the legacy page exists before any other
     let pages = scratchpadReadPages_(sh);
     const id = pageId == null ? '' : String(pageId);
@@ -4814,7 +4831,7 @@ function scratchpadPageOp(op, pageId, name) {
     pages = scratchpadReadPages_(sh);
     return { success: true, pages: scratchpadPageList_(pages), pageId: result || (pages[0] && pages[0].id) || SCRATCHPAD_MAIN_PAGE };
   } catch (err) { return { error: err.message }; }
-  finally { lock.releaseLock(); }
+  finally { cnReleaseRepLease_(lease); }
 }
 /**
  * F11 (cycle 12) — bounded append into one of SubformData's append-only arrays.
@@ -4890,29 +4907,62 @@ function cnRepLeaseFree_(raw, nowMs) {
  *  exactly where `waitLock` used to — so a caller acquires it OUTSIDE its try,
  *  as it did the lock. A rep with no Sheet gets an empty lease: the body's
  *  `getCallNotesSheet_` refuses by name, as before. */
-function cnAcquireRepLease_(emp) {
+function cnAcquireRepLease_(emp, prefix, timeoutMsg) {
+  // F42 (cycle 26): the key prefix and the timeout's words are the caller's —
+  // the Scratchpad holds the same kind of lease under its OWN key
+  // (CN_SCRATCH_LEASE_PREFIX), so a rep's autosave and their note save do not
+  // wait on each other (different tabs of one Sheet), and no ScriptLock holder
+  // waits on it (none writes the Scratchpad tab). Default: the note lease.
+  prefix = prefix || CN_REP_LEASE_PREFIX;
+  timeoutMsg = timeoutMsg || 'Lock timeout: another change to these call notes is still saving — try again in a moment.';
   const sheetId = String((emp && emp.callNotesSheetId) || '');
   if (!sheetId) return { key: '', token: '' };
-  const key = CN_REP_LEASE_PREFIX + sheetId;
+  const key = prefix + sheetId;
   const token = Utilities.getUuid();
   const props = PropertiesService.getScriptProperties();
   const deadline = Date.now() + CN_REP_LEASE_WAIT_MS;
+  // FU2 (cycle 26): the NOTE lease's check-and-set is under the project lock
+  // on purpose — a writer holding that lock must know no new note lease can
+  // start (getCallNotesSheetForWrite_). Nothing of the kind is true of the
+  // Scratchpad's lease, and taking the project lock for it made every pad
+  // autosave fail for as long as a long job held that lock (a tag rename
+  // across every rep's Sheet). Its check-and-set needs only A mutex — and the
+  // "user" lock is one: a single lock for every rep, apart from the project
+  // lock (the app runs as the deployer).
+  const guardIsProjectLock = prefix === CN_REP_LEASE_PREFIX;
   for (;;) {
-    const lock = LockService.getScriptLock();
+    const lock = guardIsProjectLock ? LockService.getScriptLock() : LockService.getUserLock();
     lock.waitLock(CN_REP_LEASE_WAIT_MS);
-    let got = false;
+    let got = false, until = 0;
     try {
       if (cnRepLeaseFree_(props.getProperty(key), Date.now())) {
-        propSetBounded_(key, JSON.stringify({ token: token, until: Date.now() + CN_REP_LEASE_MS }));   // refusing: a full store fails the save by name
+        until = Date.now() + CN_REP_LEASE_MS;
+        propSetBounded_(key, JSON.stringify({ token: token, until: until }));   // refusing: a full store fails the save by name
         got = true;
       }
     } finally { lock.releaseLock(); }
-    if (got) return { key: key, token: token };
-    if (Date.now() >= deadline) {
-      throw new Error('Lock timeout: another change to these call notes is still saving — try again in a moment.');
-    }
+    if (got) return { key: key, token: token, until: until };   // `until` — FU1: the holder knows when its own lease ends
+    if (Date.now() >= deadline) throw new Error(timeoutMsg);
     Utilities.sleep(CN_REP_LEASE_POLL_MS);
   }
+}
+/** PURE (Node-pinned) — FU1 (cycle 26): is a lease that ends at `untilMs`
+ *  still safely ours at `nowMs`? Only while more than `guardMs` of it is left:
+ *  a lease cannot have been taken by anyone else before it ends, and the guard
+ *  covers the time the write itself takes and any difference between clocks. */
+function cnLeaseHasMargin_(untilMs, nowMs, guardMs) {
+  return Number(untilMs) - Number(nowMs) > Number(guardMs);
+}
+/** FU1 — called by a leased save right before it WRITES. A save that has run
+ *  to within CN_REP_LEASE_GUARD_MS of its lease's end no longer has the Sheet
+ *  to itself — the lease is free the moment it ends, and a second save could
+ *  then start: two positional appends, or a row-index write after the other's
+ *  delete. It refuses, having written nothing. No read: the holder was told
+ *  when its lease ends. A rep with no Sheet has no lease (the body refused). */
+function cnAssertLeaseLive_(lease) {
+  if (!lease || !lease.key) return;
+  if (cnLeaseHasMargin_(lease.until, Date.now(), CN_REP_LEASE_GUARD_MS)) return;
+  throw new Error('Lock timeout: this save took too long to finish safely — nothing was written. Try again.');
 }
 /** 25post — give the lease back, only if it is still ours (a lease that ran
  *  past CN_REP_LEASE_MS may already be someone else's). No ScriptLock: a holder
@@ -4928,20 +4978,33 @@ function cnReleaseRepLease_(lease) {
 }
 /** 25post — for a writer that HOLDS the ScriptLock: wait until no rep-lease
  *  save is in flight on this Sheet, then open it. Holding the ScriptLock means
- *  no new lease can start meanwhile, and an expired lease is free, so the wait
- *  is bounded by the current holder (or CN_REP_LEASE_MS for a killed one). */
+ *  no new lease can start meanwhile, and an expired lease is free.
+ *
+ *  F42 (cycle 26): the wait is CAPPED and the writer then REFUSES by name. It
+ *  waited for the lease's whole life plus a second — so one killed save (or a
+ *  release that failed) had the next ScriptLock holder to touch that rep's
+ *  Sheet sleeping for up to 61 s WITH the project lock held, and every punch,
+ *  time-off and note save timed out behind it. The cap is under the 15 s the
+ *  other waiters give the lock, and past any healthy save. A cross-rep job
+ *  already names a rep whose Sheet it could not write (cycle 25 F5). */
 function getCallNotesSheetForWrite_(emp) {
   const sheetId = String((emp && emp.callNotesSheetId) || '');
   if (sheetId) {
     const props = PropertiesService.getScriptProperties();
     const key = CN_REP_LEASE_PREFIX + sheetId;
-    const giveUp = Date.now() + CN_REP_LEASE_MS + 1000;
-    while (!cnRepLeaseFree_(props.getProperty(key), Date.now()) && Date.now() < giveUp) {
+    const startedAt = Date.now();
+    while (!cnRepLeaseFree_(props.getProperty(key), Date.now())) {
+      if (cnLeaseWaitOver_(Date.now() - startedAt, CN_REP_LEASE_HOLDER_WAIT_MS)) {
+        throw new Error('Lock timeout: a save to these call notes has not finished — try again in a moment.');
+      }
       Utilities.sleep(CN_REP_LEASE_POLL_MS);
     }
   }
   return getCallNotesSheet_(emp);
 }
+/** PURE (Node-pinned) — F42: has a ScriptLock holder waited long enough on a
+ *  rep's lease? */
+function cnLeaseWaitOver_(waitedMs, capMs) { return Number(waitedMs) >= Number(capMs); }
 function getCallNotesSheet_(emp) {
   if (!emp || !emp.callNotesSheetId) {
     throw new Error('Your call-notes Sheet is not configured. Ask your manager to enroll you.');

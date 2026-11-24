@@ -1274,8 +1274,12 @@ function saveQuiz(def) {
     const ts = fmtDate_(now) + ' ' + fmtTime_(now);
     const rowVals = [quizId, v.quiz.title, v.quiz.kbItemId, v.quiz.passPct, qJson, callerEmp.email, ts];
     const existing = trainReadQuizzes_()[quizId];
-    if (existing) sheet.getRange(existing.rowIdx, 1, 1, TRAIN_QUIZ_HEADERS.length).setValues(sheetSafeRows_([rowVals]));
-    else sheet.appendRow(sheetSafeRow_(rowVals));
+    // F44 (cycle 26): the title is an '@' cell (TRAIN_QUIZ_TEXT_IDX) — a quiz
+    // named "3/4" read back as a date.
+    if (existing) {
+      TRAIN_QUIZ_TEXT_IDX.forEach(function (i) { sheet.getRange(existing.rowIdx, i + 1).setNumberFormat('@'); });
+      sheet.getRange(existing.rowIdx, 1, 1, TRAIN_QUIZ_HEADERS.length).setValues(sheetTextRows_([rowVals], TRAIN_QUIZ_TEXT_IDX));
+    } else appendRowsTextSafe_(sheet, [rowVals], TRAIN_QUIZ_TEXT_IDX);
     writeAuditLog_(callerEmp, 'QuizSave', fmtDate_(now), '', false, 0,
       'quizId=' + quizId + '; questions=' + v.quiz.questions.length + '; passPct=' + v.quiz.passPct, callerEmp.email);
     return { success: true, quizId: quizId };

@@ -3609,3 +3609,959 @@ per-change detail. By delta:
 - **DOM** — the Day Edit no-activity line says when a day predates what was
   kept, and a plain "none" inside it.
 
+**Cycle 26 Batch 1 (2026-11-13) — F4, a cycle open leaves CI green and
+checking; F74, one Chromium resolver.**
+- **Pure** — the standing pin (F25 + F26 + F27 + F64) reads PROJECT_HEALTH's
+  GENERATED region for the last reflected cycle; it used to look for the cycle
+  STATE.md is on anywhere in Current Standing, which only hand prose could
+  satisfy. The E5 `--write` drive asserts the region's new shape. New: a drive
+  that closes a fixture cycle, opens the next one in STATE.md alone and requires
+  `--check` green and `--write` idle — and still red once a reflect row lands;
+  a pin that parses the `client-tests` job's steps (every run step after the
+  syntax check under `!cancelled()`, the five dependent ones on `steps.deps`,
+  no `continue-on-error`, no `always()`); `chromiumPath` driven over fake trees
+  (override, either layout, numeric build order, an absent root, nothing
+  found); and a derived net over `test/visual/*.mjs` (every launching script
+  imports the resolver, keeps no copy, names no `chrome-linux` directory).
+  Eleven bite-checks, all biting.
+- **Visual** — `a11y-names.mjs` and `print-check.mjs` ran in the web container
+  with no override for the first time; the CI subset (`shoot.mjs --ci`) ran
+  through the shared resolver.
+- **What bit:** `bite.sh` refuses a mutation containing a double quote, so a
+  mutation that inserts a JS string is written with single quotes or `chr()`.
+
+**Cycle 26 Batch 2 (2026-11-13) — Intake, the right patient: F1, F19, F20,
+F72, F75.**
+- **Pure** — a derived net over the intake partial (the ONE reset helper, its
+  six callers, the order in the amend flow, one place that empties images, no
+  counter on the host element, one lookup of the card host); `intakeSameAnswers_`
+  / `intakeHoldsText_` driven; `intakeDraftSplit_` / `intakeDraftScrub_` driven
+  (the SSN index DERIVED from `INTAKE_FMT_FIELDS`, not typed twice); the
+  autosave driven in a sandbox (no SSN in the stored string, `omitted`, the
+  memory-held copy, the carried saved-draft id); the reader's failure text and
+  beacon line driven by kind. Three existing pins (Seams F12, the I2 source
+  pin, the I3 source pin) now read through the shared reset.
+- **DOM** — five drives: the amend flow (asked, Keep the form, Amend, the
+  autosave read when the form is off screen); the saved-draft id across a
+  reload and the re-open question; a read in flight dropped by Clear and by
+  PMD → PAP, with an undisturbed read as the control; the SSN across a tool
+  switch, a reload, a parked draft, the legacy scrub and the sweep's one timer;
+  the reader's three failures, the beacon, and `intakeOcrFetch_` driven over a
+  stood-in `fetch` and `crypto.subtle`.
+- **What bit:** the first F19 drive failed against correct-looking code — an
+  account form's snapshot carries a patient line derived from answer 1, a saved
+  draft stores that line for the PPD only, so "untouched" never held and every
+  re-open asked. Found by driving, not by reading; `intakeSameAnswers_` takes
+  the form. A DOM bite re-runs the whole DOM harness (about two minutes), so
+  the batch's bites were scripted and run in the background, with the doc
+  edits held until they finished (a bite mutates the file the harness reads).
+- **Bites: 24 mutations, 22 bit.** The two NO BITEs were each one of TWO guards
+  (g116's twelfth): a read's sequence is checked inside the read loop and
+  again at the final paint, and a parked draft is split on write and scrubbed
+  on every read. Each was then bitten with both guards off, and the write
+  path separately through its pure pin. Recorded, not "fixed" — the second
+  guard is the point.
+- **Visual** — the fourteen intake scenarios re-shot and measured clean; the
+  longer Drafts note wraps at 390px.
+
+**Cycle 26 Batch 3 (2026-11-13) — Thread replies: F3, F9, F10, F11, F12,
+F33.**
+- **Pure** — six pins: F3 (a follow-up quoting the app's reply, in four
+  quoting styles, through the roles and the open rule; the app's own reply
+  with a note built to look like a quote); F10 (the automatic-message grid,
+  the two tests it must NOT make, the walk, an unreadable header, an
+  all-automatic sender); F11 (both resolve endpoints driven over real roles
+  and episodes — answered by a member, thanked, followed up, open — plus a
+  voicemail thread judged under both walks, and the read-before /
+  judge-inside order); F12 (the header
+  reader, the rule, the send over four kinds of outside address, the note,
+  the bulk count, the client text, the dialog and toggle wording); F33 (the
+  seam driven, and a derived sweep of every thread-reply call in the server);
+  F9 (the target grid). MAIL-SWEEP counts thread replies too.
+- **Test doubles brought forward, not worked around:** the DR1 reply pin's
+  thread was `{ replyAll }` objects and asserted "the FIRST message" — the
+  defect. It is now a shared thread of real-shaped messages (sender, body,
+  recipients) and asserts the request's own email. Four older Spanish drives
+  stub the open-request rule ("its own pin's business"); `sp1Msg_` gained
+  recipients and headers; `b13CourtesySrc_` carries the automatic rule.
+- **DOM** — one drive: the dialog wording, the withheld-reply warning, the
+  "already" toast, and Resolve selected counting withheld replies apart.
+- **The manifest** (`server-split-manifest.json`) was regenerated twice — the
+  eleven new declarations, then the toggle's description.
+- **Visual** — the two Spanish resolve-dialog scenarios re-shot and read: the
+  longer hint wraps inside the dialog at 1440 and at 390.
+- **What bit:** the first F11 rule judged a voicemail thread under the
+  voicemail walk alone, and its fixture could not tell the two walks apart
+  (the repeat voicemail came from the same address, which the email walk
+  also reads as a request) — the mutation "walks as email" would not have
+  bitten. The fixture now uses the phone system's other address, and the
+  rule itself changed to take either walk, because the pending list's
+  group-address pass walks every thread as email. An interrupted bite
+  leaves its mutation on disk: read the diff, then restore the file.
+- **Bites: 46 mutations, 46 bit** (42 pure, 4 DOM).
+
+**Cycle 26 Batch 4 (2026-11-13) — Automation health honesty: F2, F17, F18,
+F25, F28, F32.**
+- **Fixtures are built, not typed (F2).** `gasUtilities_()` is a
+  timezone-aware stand-in for `Utilities.formatDate` / `parseDate` (the
+  formats the automation-health code uses; anything else throws), and
+  `autoRunRec_(stamp)` / `autoRunRecAt_(ms)` build a job's last-run record
+  through the real `automationRunRecord_`. Every older pin that typed a
+  record with an ISO-shaped `timestampMgr` now builds it — the Gap4 block,
+  A1, the ledger merge, the two 25post pins — and the messages they assert
+  are in the format production emits ("Aug 18, 12:00 PM"). The visual mock
+  gained `runRecAgo()` for the same reason.
+- **Pure** — eight pins: F2 (the Nov 1 credit, the manager-timezone month, an
+  unreadable stamp, no hand-built record left); F17; the merge grid;
+  `saveFeatureFlags` and `saveRetentionConfig` driven over a stored map and a
+  stale page; the Admin client's baseline; the transfer reader's
+  `aggregatesOnly` shape, key and oversize note over a payload really over
+  100 KB; the ADMIN_EMAILS drift check. The PF1 read-ahead pin and the P1
+  email-job pin were extended in place for F25 and F28 (their sandboxes
+  already drove those jobs).
+- **DOM** — one drive: the retention save's two arguments, the sticky
+  refusal, the panel reload, an ordinary failure, "nothing changed".
+- **What bit:** an existing pin (Q-1) allowlists every scalar `setProperty`
+  BY NAME, so the retention save's writes stayed five literal calls rather
+  than one loop over a table. And `saveFeatureFlags` had a conflict branch
+  that a boolean can never reach (if both admins flipped a toggle, they made
+  the same change) — removed rather than left untested.
+- **Bites: 49 mutations, 49 bit — one only after its pin was strengthened.**
+  "A later run forgets who was sent to earlier" (the pay-week record written
+  from the new sends alone) did not bite: the pin checked the make-up run but
+  never the run after it, where the earlier recipients would have been sent
+  to again. The pin now reads the record after the make-up run and drives one
+  more hour. A NO BITE that names a real path is a missing assertion, not an
+  equivalent mutant.
+
+**Cycle 26 Batch 5 (2026-11-16) — Payor lookups: F5, F6, F7, F8, F37, F38,
+F40.**
+- **Test doubles that encoded the old behaviour, updated with the fixes.**
+  PT1's search context carried a stand-in matcher taking the JOINED cells —
+  it now takes the name and the other cells, as the endpoint calls it. The
+  two import contexts (`adm05Ctx_`, `pt1aImportCtx_`) gained the fingerprint
+  and its hash, and every test write goes through `dtWrite_` (dry run, then
+  the write with that run's fingerprint — the way the page does it). The fake
+  KB book (`m1Book_`) reports its last row as the last row WITH CONTENT, as
+  Sheets does, and can be asked its grid size; M3-I2's failed-write injection
+  moved from `appendRowsSafe_` to the sheet's own `setValues`. S2's named
+  list of raw-text writers lost the quiz and form writers and gained
+  `sheetReplaceBody_`.
+- **Pure** — nine pins: F6 (the grammar grid, the matcher per cell, the
+  endpoint with the REAL matcher over a by-state table — `c26SearchCtx_`);
+  F5 + F38 on the server (coverage for searched / empty / missing, the row
+  cap, the comparison bound set to 1); the F5 client helpers; F7 (refusals,
+  conditions, plain accepts, "nothing required", and a sweep — no value is
+  green unless all of it is an accept); F8; two for F37 (the server: bound,
+  refused, and each post-write step failing; the Admin client driven in a
+  sandbox); two for F40 (`sheetReplaceBody_` over `c26Tab_`, a fixed-grid tab
+  that logs every call and can fail a write; and `kbImportManual` with the
+  image write failing over an existing tab).
+- **DOM** — three drives: a no-match under a gap, with full coverage and
+  from an older server; matches under a gap with the uncompared-card note and
+  the three tones; the price row's cross-reference.
+- **Visual** — the payor fixture is a function of its query now ("molina" is
+  the no-match under a gap); two scenarios added
+  (`reference-notfound-gap-light-wide`, `…-dark-mobile`); the base answer
+  carries `coverage`, `tableLabel`, one `alsoUnchecked` card and one
+  conditioned accept.
+- **What bit:** planning the mutations exposed two pieces of code that could
+  not fail — a `state || 'missing'` default that hid a path which forgot to
+  set the state, and an outer-catch branch nothing could reach once every
+  post-write step had its own catch — both removed before the run. The run
+  itself returned four NO BITEs out of 69: two equivalent mutants over
+  redundant code (an upper-case test on a word looked up in an all-capitals
+  list; a "cannot" alternative beside one that already matched it),
+  simplified away; and two missing assertions (that a word only the Company
+  cell carries counts toward the score; that "No power chairs" is still a
+  refusal), added. And one of the new pin's own cases ("except TX plans in
+  Ohio") caught the widened lead-in words joining two states — they now apply
+  before the first state only.
+
+**Cycle 26 Batch 6 (2026-11-16) — Employee Docs integrity: F13, F14, F15,
+F44, F56, F64.**
+- **Test doubles that encoded the old behaviour, updated with the fixes.**
+  The pins that read `verifyDocSignature`'s source (C13, F-24, Batch H, ED1)
+  read `empDocVerdict_` — the recompute moved there. `hCtx_` (the Batch H
+  context) loads the verdict helpers and the new constants. ED1's initials
+  fixtures use a value shaped like a real PNG (`data:image/png;base64,` +
+  the PNG signature), since a prefix alone is refused now. The recap
+  sandboxes load `coachRecapCutoff_`; F41's and ED3's email sandboxes carry
+  `rosterManagerEmails_`; S2's named list of raw-text writers gained
+  `saveEmpDocTemplate` and `saveQuiz`; H-1's guarded list gained
+  `sendCoachingRecapDigest`; ED4 lost its `empDocHasSigBlock_` assertions
+  with the function. HB4.1-e (the handbook's pinned pdf.js) was rewritten
+  for a fetch-based loader, and the HB4.1 failed-load DOM drive with it.
+  **The editor suite too:** `Tests.js`'s two Employee Docs sign tests signed
+  with a real but 1x1 PNG, which the new shape rule refuses — found by
+  reading the suite for the fixture, not by any Node pin (the editor suite
+  does not run here). They sign with `_TEST_SIG_PNG` (a real 48x16 PNG,
+  checked against pdf-lib) and now assert that the bare prefix and the 1x1
+  are refused.
+- **Pure** — eight pins: F13 (the server verdict over really-hashed rows —
+  `c26Signed_` — and the client's wording), F14 (the record state, the
+  verdict line, the certificate's HTML and endpoint, the copy label), F15
+  (who "the managers" are, the cap, the device statement, the preview), two
+  for F44 (the sign path: linked images, the answers' total, the drawn PNG,
+  the acknowledgement by version, review-only, the signature image; and the
+  lock order, the '@' cells and the recap window), F44 + F64 (the converted
+  Doc and Add box's geometry), F56 (`testNeedsDeps`: both apps' pinned
+  hashes recomputed from the installed `pdfjs-dist`, both sources, no
+  `<script src>`), F64 (the Scratchpad's wiring and its state text).
+- **DOM** — five drives: the reader's record note, no Submit on a
+  review-only document and no copy from an altered record; the certificate
+  viewer's verdict and the copy's refusal / label; pdf.js run only from
+  checked bytes, a second source, a failed load retried; Add box from the
+  keyboard; Ctrl/⌘+Enter in the Scratchpad. Helpers `c26Net_` (a fetch that
+  serves, withholds or corrupts each URL and records the order asked),
+  `c26Sha_`, and stand-in library and worker scripts.
+- **Two harness facts found the hard way.** jsdom has no `fetch`: a bare
+  call threw synchronously out of the loader and took the whole DOM run
+  down, so the call sits inside a promise in both apps — which is also the
+  right behaviour in a browser without it. And the web-app DOM harness does
+  NOT run a script appended to the page (the handbook harness does): the F56
+  drive patches `appendChild` to evaluate an injected text script, and says
+  so; the handbook's drive runs the injected code for real.
+- **Visual** — the pdf.js route answers for both CDNs with the installed
+  files and a CORS header (the loader fetches now); `getMyDoc` fixtures
+  carry `record`; one scenario added (`empdocs-record-altered-light-wide`).
+  In Chromium the PDF pages draw through the checksum-checked loader with
+  the real files and the real hashes.
+- **What bit:** 98 mutations planned across four parallel worktrees (the
+  runs share nothing but `node_modules`, so server, client and two DOM
+  halves ran at once). One did not apply (a version literal the source
+  builds from a variable — re-aimed, and it bit). Of the 97 that ran, 92 bit.
+  The five that did not: three missing assertions on the server verdict and
+  the signature shape (a signature row with no stored hash is named as
+  unchecked; an UNSIGNED document's PDF mismatch is tampering; 300 base64
+  characters that are not a PNG are not a drawing) — added, and the same
+  mutations then bit; one DOM pin whose TITLE said the copy "labels an
+  unverified one" and whose body never drove it (g138) — it drives the
+  verdict to the label and the note above the preview now, and both
+  mutations bite; and one equivalent mutant — a `Math.min(1, …)` in
+  `edBoxAtCentre_` that `edBoxFromDrag_` already performs — removed, with a
+  page-smaller-than-the-box case added that a broken centre fails.
+
+**Cycle 26 Batch 7 (2026-11-16) — the handbook server: F49, F50, F48, F52,
+F53, F54, F57.**
+- **The handbook sandbox (`hbServer_`) grew what the fixes needed.** A tab has
+  a GRID a block written past it does not grow (`getMaxRows`,
+  `insertRowsAfter`, a `setValues` that throws outside it — g145);
+  `Session.getScriptTimeZone`; `deleteProperty`, and a property store that
+  can refuse a write by size or by key; a `MailApp` whose failure a pin
+  decides per message; a cache that can be unreadable by key and cleared
+  ("five minutes later"); `opts.Date`, a clock a pin sets; and `opts.realTz`,
+  which makes `Utilities.formatDate` honour its timezone — opt-in, because
+  most fixtures build their days from `toISOString`.
+- **Test doubles that encoded the old behaviour, updated with the fixes.**
+  Every sign-off in the pure harness goes through `hbSign_` (the version the
+  chapters answer carried, as the page sends it); `hbSignState_`'s
+  three-state pin takes the new shape; the mark fixture carries `retrain`;
+  the chapters' stamp is `v2.`-prefixed; the reminder pin's "not recorded as
+  sent" reads a property that is absent rather than `{}`. The DOM chapters
+  fixture carries `versions`, and the three drives that assert the sign-off
+  call expect the fourth argument.
+- **Pure** — ten pins: F48 (driven through the handbook's copy, twenty-five
+  better-scoring articles); F49's helpers (the retraining stamp, "newer",
+  the state grid) and F49 driven through `hbMarkRead` (a publish while a
+  page is open, the cached chapters, the refusal, the reload, the recorded
+  state, an unreadable changelog); F50 (an archived quiz, a section taken
+  out, the author's and the manager's views); two for F52 (feedback and
+  topic limits; notes and the confirm endpoint); F53 (real timezones, a
+  clock at 1 pm Central); two for F54 (the helpers with 600 readers and a
+  9 KB property; every outcome of a run); and F57, which RUNS
+  `scripts/handbook-push.mjs` — dry runs, and a real run against a temp app
+  folder with a stand-in clasp that records the `.clasp.json` it was handed.
+- **DOM** — four drives: the sign-off's version and a refusal that stays on
+  screen; an item that can no longer be done, and the archive toast; a note
+  the account did not take; the reminder run's sentence.
+- **Visual** — the handbook's Training fixtures carry a missing item, a plan
+  card with one, and a reminder run's outcome; the three training scenarios
+  were shot and read.
+- **What bit:** 119 mutations across four parallel worktrees (the worker
+  restarted mid-run, which killed the streams — the script was made
+  resumable: a mutation whose verdict is already in its stream's output is
+  skipped, and each worktree is restored first). 116 bit. The three that did
+  not were each a pin missing set-up or an assertion, not missing code: the
+  stamp a page checks its kept copy against was never cached before the
+  publish, so a fresh read that failed to move it could not be seen;
+  "another reader has their own count" built that reader a new sandbox, with
+  a new cache — the same cache now, at the moment the first reader is at the
+  limit; and nothing said that the SAME feedback from another reader is
+  theirs rather than a repeat. All three bite since. Three more mutations
+  never applied: `bite.sh --fn` finds a function's body by its first brace,
+  and `resolveScriptId({ env, local, committed })` opens one in its
+  parameters — re-run unscoped, they bit. Two pins were tightened BEFORE the
+  run for the same reason as the misses (the
+  changelog cached before a publish; a missing item's own done flag) — found
+  by asking, for each planned mutation, what the pin would have to have set
+  up to see it.
+- **One fix of the fix.** F52's server counted the notes it refused and the
+  page ignored the count — a narrower rule that would have failed silently.
+  The page says it, once per count; a DOM drive holds that.
+
+## Cycle 26 Batch 8 — the handbook page (2026-11-17)
+
+- **Pure (+7), "Cycle 26 Batch 8 — the handbook client".** F45: a net over the
+  page's source — the bar's painter is reached with `HB_BAR.id` and nothing
+  else, the id has one writer, Listen reads `hbBarId_()`. F47: the changelog
+  read driven through `hbServer_` (readable and flagged → asked again;
+  unreadable → an error from the bar's read, My training, Team progress and a
+  `failed` reminder run; no meta at all → an empty list), and the Due
+  helpers' grid. F55: the sync marker driven (written into a row the notes
+  left, refusing every sync but an explicit turn-on, one per reader, another
+  reader untouched, written even with no `Notes` tab) and the guard net — the
+  view switches are DERIVED as "every function that calls `hbLeaveQuiz_()`",
+  and each must open with the guard re-running ITSELF with its own
+  parameters. F65: the fold blocks and their order before the 760 block, the
+  two viewports, the scenarios, and CI's gate naming two of them. F66:
+  `kbMotionReduced_` driven over its two sources (and a `matchMedia` that is
+  missing or throws), the handbook copy equal to Team Tools', and every
+  button the bar draws carrying `data-hb-bar`.
+- **DOM (+11), "Cycle 26 Batch 8 — the handbook client".** F45 (the spy moved
+  by calling its own paint — jsdom lays nothing out), F46, F47 ×3 (sign-offs,
+  training, bookmarks — each with its control: loaded and empty IS "nothing"),
+  F55 ×4 (late chapters over Profile / a quiz / Saved / the quiz list / My
+  training / Forms / Home; the sitting guard through every way out; the
+  banner and its retry; the sync flag), F66 ×2 (the bar's focus; the live
+  theme and reduced motion). `hbBoot_` takes `before(w)` — the window before
+  any script runs — for a `matchMedia` the test moves (`b8Media_`: `fire(q)`
+  for the change event, and a legacy form with only `addListener`).
+- **Three existing tests encoded the old behaviour** and changed with it: the
+  kept copy's toast is a banner (HB1.3), a boot sync carries `false` as its
+  second argument (HB2.2), and a failed training read leaves "?" on the rail,
+  not a blank (HBR1). Three pure pins too: `hbNotesRows_` returns `off`, a
+  sync after "forget" is refused until turned on, and the versions are taken
+  in `hbTakeChapters_`.
+- **Visual (+6).** `handbook-home-light-tablet`, `handbook-home-dark-half`,
+  `handbook-search-light-tablet` (800 and 960px — the first widths between
+  390 and 1440 the handbook has been shot at), `handbook-failed-light-wide`,
+  `handbook-saved-failed-light-mobile`, `handbook-stale-dark-mobile`. The two
+  light tablet scenarios joined CI's gate — and passed it on the OLD
+  stylesheet: `narrowText`'s floor is 48px and the unfolded hero column was
+  exactly 48px. The matrix gained a third layout measure, `tooNarrow`: a
+  scenario's `minWidth: { selector: px }` names the boxes that must be usable;
+  a narrower one, or one no longer found, is reported and gated (`findingsOf`
+  in `ci-gate.cjs`). On the old stylesheet the gate now fails with 48, 255,
+  231 and 222px; on the fix it passes. Reading the first shots found two
+  slips no measurement reports: a Try again button stretched across the shelf
+  and across the Saved card (a button in a column box) — fixed. Axe flagged
+  the banner scenario on section 0.11 for a reason that is not the banner:
+  the shared reader's CRITICAL callout kicker fails contrast in dark mode,
+  with or without this batch. The scenario shoots 0.10 and says why; the
+  kicker is reported as a follow-on.
+- **Bite-checks: 125 mutations, 123 bit at the first run; the other two bite since.** Plus CI's
+  visual gate run against the pre-fix stylesheet (above). The DOM mutations ran the batch's
+  own drives only: a worktree-local, never-committed filter on the runner
+  (`DOM_ONLY`, refusing a pattern that matches nothing) — each drive boots its
+  own page, so the verdict is the full harness's, in seconds instead of
+  minutes. The full harnesses ran unfiltered before and after. Misses, each
+  a real gap in a drive rather than in the fix: the quiz list's late answer
+  was asserted together with the form library's, whose own repaint covered
+  for it (asserted one at a time now); "Keep going" after Back was held to
+  "the last history entry is the quiz" — which the entry that OPENED the quiz
+  already satisfied (the count is asserted now).
+- **Before the run**, asking of each planned mutation what the drive would
+  have to set up to see it added six assertions: the marker reuses a row; Due
+  when BOTH sources failed; the rail's count after a load on the Training
+  page; a bookmark toggle clearing the failure; four more views learning
+  late chapters; a quiz list still loading when a dropped submit answers (the
+  first version's list had already painted, so "superseded" was untested).
+- **One fix of the fix.** Opening a quiz moved the focus to it on EVERY open —
+  including one reached by Back, where the handbook's own rule is that the
+  focus stays where it was. Found by re-reading the HB2.4 section of
+  `docs/handbook-app.md` during the regression check; `hbTakeQuiz_` takes
+  `quiet` from the history handler, and the F66 drive holds it (bitten).
+- **A flake, caught by CI (run 1785 on 527bd09).** One of the new drives
+  failed in the DOM run inside `counts.mjs --check` after passing in the DOM
+  step of the same job: it asserted "still loading" before a 90 ms `__delay`
+  answer, which the boot's own awaits outran on a busier runner. Every
+  before-the-answer assertion in the batch's drives had that shape (the late
+  chapters, the list still loading under a dropped submit, the banner's
+  retry). `hbBoot_` gained `{ __hold: gate, value }` — the test releases the
+  answer — and the batch's drives use no clock to order two events. Six
+  concurrent runs of the DOM harness on four cores pass; g116's
+  twenty-fourth direction.
+- **A harness lesson (g116):** jsdom's `blur()` does nothing on a disabled
+  button, so "the focus fell to `<body>`" cannot be produced by blurring the
+  pressed control — another element takes the focus and gives it up.
+
+## Cycle 26 — the Batch 8 follow-ons (2026-11-17)
+
+- **The DOM harness runs a named subset — `DOM_ONLY=<regex>`**, and
+  `scripts/bite.sh --dom --only <regex>` uses it (FO10). It exists for
+  bite-checks only. Guards: no match, or not a regex → exit 2 and "nothing was
+  run"; the summary reads `… — SUBSET: n of m tests (DOM_ONLY), not a harness
+  result`; section headings are not printed (they would name sections nothing
+  ran in); `counts.mjs` deletes the variable from the harness's environment;
+  bite.sh needs `--dom` with it, refuses a subset in which no test matching
+  the needle RAN (restoring the mutated file first), and clears an inherited
+  `DOM_ONLY` when `--only` is not given. The harness's half is DRIVEN by a
+  pure pin as a subprocess (three short runs); bite.sh's half is structural,
+  as its other pins are, and both refusals were run by hand.
+- **Pure (+6):** FO1 (the dark rule, after the base rule, in both copies; the
+  scenario on 0.11 and a CRITICAL callout in that fixture), FO7 (driven
+  through `kbMd_`: an image in a link, alone, with emphasis, inside a
+  cross-reference, with hostile quotes), FO2 (the four states), FO8 (the fold
+  rule after the base rule, one of them, and the scenario's `minWidth`), FO10
+  (above), FO11 (every key of the `TOOLS` registry has a mid-width scenario —
+  derived from the registry).
+- **DOM (+4):** FO2 (the profile held on a gate while Training and Profile
+  open; a later answer rebuilds nothing; a reader; a failed profile and its
+  Try again; Team training's Try again), FO3 (a dead link from a section and
+  from Saved; before the chapters arrive), FO4 (cancel before the first
+  words; `pagehide`), FO5 (the count is the live region; nothing found; a
+  failure).
+- **FO9:** every `__delay` left in the handbook drives was re-read. One (the
+  form viewer: an assertion after a 30 ms answer and before a 120 ms one) had
+  the shape that failed CI for Batch 8 and is released by the test now. The
+  others wait LONGER than a delay scheduled before the wait began, which
+  holds whatever the load.
+- **Visual (+20):** `handbook-people-light-half` (with `minWidth`), and
+  nineteen Team Tools scenarios at 800 and 960px. The banner scenario is back
+  on section 0.11, so axe measures the CRITICAL kicker in dark mode. The
+  mid-width shots are clean except `reference-manual-light-tablet`
+  (`span.kb-man-cn-k` and `-n` at 5px — the chapter-end card; open).
+- **FO6** (added after the operator's answer): one pure pin — `doGet` driven
+  for the key (stable, per person, case-blind, not the address, empty for
+  nobody), the page's `HB_U` filter, and a derived net that no use of the
+  three key names bypasses `hbKey_` — and one DOM drive: adoption by the
+  first account, a second account in the same storage, a late write to the
+  shared key merged, and no key at all. `hbBoot_`'s `params` carries `u`;
+  every older drive has none and runs on the shared keys unchanged.
+- **Bite-checks: 46 mutations, 46 bit** — the DOM ones through `--only`,
+  about ten seconds each. Plus two measured checks on the pre-fix styles: axe
+  fails `handbook-stale-dark-mobile` without the dark kicker rule, and
+  `handbook-people-light-half` reports `.hb-pp-right 304px (needs 400px)`
+  with the 900px fold.
+- **Two things CI caught that this machine did not (runs 1788 / 1789).**
+  (1) The FO10 pin spawns the DOM harness, and CI's FIRST pure step runs with
+  no dev dependencies installed — the pin failed there and passed in the
+  "no skips allowed" step. It is `testNeedsDeps(['jsdom'], …)` now; the pure
+  harness was re-run here with `node_modules` moved aside to see it skip.
+  (2) CI's axe failed `handbook-stale-dark-mobile` on an HCPCS code chip that
+  the same command passed here. Measured: 4.34:1 in dark mode — a real
+  failure; this machine's Chromium left it "incomplete". Its own dark rule
+  fixed it — and run 1790 failed the "Updated" badge, the same colour pair.
+  Third time: the fix moved to the pair (the reader redefines its three
+  `-deep` tones for dark mode), and every text element of nine dark handbook
+  screens at two widths was measured directly by a one-off probe (colour
+  against composited background) before pushing again. A local `--axe` PASS
+  is not CI's; three red runs is what trusting it cost.
+- **A slip the measurement caught:** FO8's first edit put the Profile
+  override in the 1040px block that precedes the base rule; it changed
+  nothing. Measuring before and after is why it was seen.
+
+## Cycle 26 — the second pass over the Batch 8 follow-ons (2026-11-17)
+
+- **`test/visual/contrast.cjs` — the matrix measures contrast itself.** The
+  maths (`lum`, `ratio`, `need`, `over`, `mix`, `paint`) is plain functions the
+  pure harness drives; the page walk (`inPage`) is serialised with those same
+  functions, by name, into the one expression `page.evaluate` runs, so the
+  browser runs what the pins drive. `contrast-check.mjs` drives the WALK in
+  Chromium against eighteen elements whose answers are known (a low pair, the edge pair, large
+  and bold text, a see-through layer, a see-through group, a gradient, a
+  gradient covered by an opaque colour, disabled, hidden, a `color-mix()`
+  colour, a repeated pair) — CI's visual job runs it.
+- **The first version was wrong, and the known-pairs page is what said so:** it
+  stopped at the first opaque ancestor, so black text in a half-transparent
+  group read 21:1. The walk goes to the root now.
+- **A baseline needs the same tool on both sides.** The first baseline run had
+  the old walk loaded; it was thrown away and re-shot in a worktree at HEAD
+  with the new `shoot.mjs` and `contrast.cjs` copied in. Before: 346 low text
+  elements in dark mode, 1,595 in light. After: 111 and 1,595 — no pair new or
+  lower in either mode (compared per scenario by element, colour and ground).
+- **`minWidth` on Team Tools scenarios.** F65's measure was only used through
+  `HB_MIN`; a Team Tools scenario passes `{ minWidth: {...} }` as its options.
+  `reference-manual-light-tablet` holds `.kb-main` ≥ 480px and `.kb-man-cn` ≥
+  200px, and is in the CI subset with `reference-manual-chapend-light-mobile`.
+- **Pins:** FP1 ×2 (the fold derived from the shell's rule; every class a
+  reader container query restyles mapped to a declared container), FP2 ×2 (the
+  dark deep tones' contrast COMPUTED from the token file in oklab for every
+  palette — the same model reproduces the old measurements, 3.3 / 4.0 / 4.3;
+  no literal white on a deep fill, swept), FP3 ×2, FP4 + its DOM drive. V-1,
+  MRD-7 and FO1 were updated: each encoded the state this batch changed.
+- **Bite-checks: 64 mutations, 64 bit.** Three kinds: `bite.sh` over the pure
+  pins, `bite.sh --dom --only` over the DOM drive, and — by hand in a worktree,
+  since `bite.sh` drives the two Node harnesses only — Chromium: eight
+  mutations of the sweep against `contrast-check.mjs`, the old token against
+  `shoot.mjs --axe` (axe: 1 violation; the sweep: all 3 pairs), and the three
+  old stylesheets against `shoot.mjs --ci`.
+- **One NO BITE, fixed:** listing the same pair twice passed the self-check;
+  it asserts the pair is listed once now, and that mutation bites.
+
+## Cycle 26 Batch 9 — Time Clock (2026-11-18)
+
+- **Ten pure pins, two DOM drives.** F16 (the renderer over every state, and
+  the page's one state variable by source), F26 (the F58 net one hop down:
+  derived over every private helper that takes the project lock and every
+  public function that reaches one; driven with `LockService` throwing), F27
+  ×2 (the day view, the condense, both readers), F29 ×2, F30 ×3 (the
+  endpoints, counter and views; the page's restore; the condense window and
+  the purge), F31 (the endpoint over rosters in one zone and three).
+- **Thirteen older pins encoded what changed** and were updated with the
+  fix: the shared activity sandboxes (`e2aCtx_`, `gCtx_`) gained the new
+  helpers and a `PropertiesService` stub; three fixtures had counts with no
+  ping anywhere near them — exactly the shape F27 stops drawing — and gained
+  the ping a real window would have sent; the flush pin's "no cache at all"
+  became "never the presence key"; the pay-close fixture reads
+  `fmtDateTz_`; the health fixtures gained `activityLogFails`.
+- **A fixture that only works because of the defect.** The AC1 condense pin
+  asserted that a count for 23:50, sent after midnight with no ping since
+  17:00, was kept. Under the old code that was a feature; it is also what a
+  fabricated send looks like. Fixtures for a rule about plausibility have to
+  be plausible (g116's twenty-third direction, from the other side).
+- **Three cases were added to the new pins before bite-checking** because
+  writing the mutations showed lines no test would fail on: the morning-after
+  edge in the raw reader, `roster[].todayIso` (every rep in the first fixture
+  shared the manager's day), and the team table's lost-rows note.
+- **Bite-checks: 81 mutations, 81 bit** — pure in two streams, DOM through
+  `bite.sh --dom --only`.
+
+## Cycle 26 Batch 10 — Stats (2026-11-18)
+
+- **Pure harness: nine pins.** `F24:` ×3 — the stamp over fake tabs (the
+  outbound probe reads the data rows at the tab's own width; a corrected cell
+  and a new row change the stamp; no tab and a header-only tab still give
+  one); the reader driven across executions over one shared cache (one read,
+  the kept window served, a `today` answered with no sheet opened, a range
+  that reaches back read, a new stamp read again, no stamp five minutes, a
+  round without aliases and a failed read keeping no window) plus the three
+  call sites; the past-data rule's grid. `F34:` ×2 — the scan's own example
+  and a sweep of about 8,000 inputs asserting the figure is never above the
+  average it was taken from; the client line, the explanation, the team
+  cell's hover, and `intakeNoteTimedSec_`. `F35:` ×4 — the Intake sort plus
+  a derived net (every `sortable: true` key has a case), `teamCallDataState_`
+  and where `getTeamMetrics` takes its inputs, the rail's no-data row, and
+  `mOutboundLag_` with the row, the Team column and the callers.
+- **DOM harness: four drives** — Team → Today (the rail, the cells, the
+  export), the Intake header, My Stats with the export behind (a day and a
+  range) and the same-basis line, and an amended intake send's note.
+- **Older pins updated, not loosened:** the M1 reader pin's sandbox gained
+  the stamp helpers; the M1 adjusted pin's "intake part still stands" case
+  used forms exactly at the average (now no figure) and uses longer ones;
+  the M1 client pin's no-row case used a day past the export (now a row);
+  three key pins read `_v5`.
+- **Fixtures:** `adjOf` mirrors the new rule and ships `attSec`; the Team
+  fixtures carry `hasCallData` / `callDataPending`; My Stats' day fixture no
+  longer places outbound calls on a day after its own `outboundThrough`; the
+  day's talk time now equals answered × average (it was a second out, which
+  the new line would have drawn). Two scenarios: Team → Today on a dark
+  phone, and My Stats on today.
+- **A pin lesson:** the F35 sort pin's first fixture put the unread count
+  before the real zero, so "unread sorts as zero" and "unread sorts lowest"
+  gave the same order under a stable sort — reordered before the bite-check
+  rather than after a NO BITE.
+- **Bite-checks: 58 mutations, 58 bit** — pure in two streams, DOM through
+  `bite.sh --dom --only`.
+
+## Cycle 26 Batch PD — Partial Days (2026-11-18)
+
+- **Pure harness: thirteen `PD:` pins.** The Credit rule's grid; the header
+  check; the row parser; the reader DRIVEN over a six-column fake tab whose
+  `getRange` throws on anything past column C (so a pass proves the Reason
+  was never asked for), through every state — sheet, no tab, empty, moved
+  header, a read that throws — with the cache and the per-execution memo; a
+  source net (every range on the tab is `CDR_PARTIAL_COLS` wide, the tab is
+  opened in two places); the data stamp over the same fake (a changed credit
+  is a new stamp, a changed REASON is not); the DQE reader and the daily
+  breakdown with and without marks (the agents maps byte-identical, the
+  marks in maps of their own, nothing kept when the marks could not be
+  read); the divisor maths with the handoff's own example (21 → 19.75,
+  419 ÷ 19.75 = 21.2); the series builders; `getDashboardMetrics` DRIVEN for
+  an unmarked rep, a marked one, both months marked, a failed read and the
+  one-day period (another rep's marks nowhere in the payload); the card's
+  pure helpers with the handoff's two strings to the letter; the trend
+  card's note and rings; the Storage Health probe and findings.
+- **DOM harness: three drives** — the Dashboard own card (the pace, the
+  credited-days line with its title and accessible name, the scaled deltas,
+  the Department card untouched, under one credited day), My Stats' trend
+  cards, and the Admin finding.
+- **Editor suite: one registration**, `partialDays_readsFixtureTab` — a real
+  six-column tab in the TEST CDR fixture with a marker in the Reason column
+  that must appear nowhere in what was read.
+- **Older pins updated, not loosened:** the shared CDR sandbox supplies "no
+  marks, read cleanly" unless a test names them; the read-ahead pin gained
+  the kept-nothing case; six source checks follow the new cache keys and put
+  conditions; the M2 pin now also requires that ONLY the own card's
+  projection carries the rep's partial days.
+- **Fixtures:** the Dashboard fixture gained the workday basis it had lacked
+  since cycle 25 and `partial: null`; `?partial=1` gives a rep two partial
+  days on both screens; the Storage Health CDR row carries `partialDays`.
+  Four scenarios (the Dashboard and My Stats, light wide and dark mobile).
+- **Found by the shot, not the tests:** inside the inline-flex pace line the
+  credited-days text wrapped in two fragments; it has a line of its own.
+- **A pin lesson:** "the tab's name is written once" counted the literal
+  `'Partial Days'` and failed on the read-ahead's own message — the claim
+  that mattered was "never opened by a literal name", and that is what the
+  pin now asserts.
+- **Bite-checks: 99 mutations, 99 bit** — pure in three streams, DOM through
+  `bite.sh --dom --only`. One survived its first run: the credited-days
+  line's guard against a partial object with no day in it — the server never
+  ships one, so no case fed it one. The case was added and the mutation
+  re-run. One planned mutation was dropped as equivalent:
+  `dashPartialScale_`'s no-mark early return is also 1 by arithmetic.
+
+## Cycle 26 follow-ons after Batches 9, 10 and PD — FQ1–FQ10 (2026-11-18)
+
+- **Pure harness: nine `FQ` pins** — the idle line with a threshold, without
+  one and with a non-number; the purge cap note's grid; the Transfers row's
+  four states; the day label; the call sites of the DQE totals plus a driven
+  range that asks with the cohort and ships only the caller's row; the
+  outbound off-roster names, the pairing and a manager payload DRIVEN through
+  the rep view; the range's partial days (theirs only, not kept when the
+  marks could not be read) and its row; the Storage Health pairing and
+  findings; the stamp over tabs narrower and wider than their probes.
+- **DOM harness: four drives** — Refresh keeps the painted My Stats through
+  a failed read, and the day's label; Team's Transfers row and the outbound
+  hint (absent on the rep view); the range's Partial days row; the idle line.
+- **Older pins updated:** thirteen source checks and two sandboxes followed
+  the new keys, call shapes and fields; one older DOM drive of the idle line
+  passes the threshold it now needs.
+- **Two test slips of my own, caught by running:** an assertion that no
+  "Tran" appears matched the word "Transfers"; a "no literal 30+ min" check
+  read my own comment — it reads the code with comments stripped.
+- **Fixtures:** `idleAlertMin`, `hasTransferData`, `likelyMismatches` (one
+  pair on the populated Team fixture), the range's `partialDays`, the probe's
+  `likely`. One scenario: the 7D range for a rep with partial days.
+- **Bite-checks: 44 mutations, 44 bit** — pure in three streams, DOM through
+  `bite.sh --dom --only`.
+
+## Cycle 26 decisions after the follow-ons — DQ1–DQ3 (2026-11-19)
+
+- **Pure harness: eight pins.** `DQ3` ×4 — the confirm plan's grid; a Day
+  Edit save DRIVEN over a fake Timesheet (the cells written are asserted
+  whole, so a confirm that touched the time would show); column J's writer,
+  the two row readers and the export driven over inferred, confirmed and
+  plain rows; the client's slot-mark grid. `DQ2` ×2 — the counter over a fake
+  Notes tab, the whitelist's five cases, the send and the chip. `DQ1` ×2 — the
+  server helper, a manager payload driven through the rep view, and the
+  client's chip, line and copied column.
+- **DOM harness: three drives** — Day Edit's button through press, Undo, a
+  typed time, range mode, an applied time and a new day (the RPC's arguments
+  are read each time); the Team table for a manager, with no marks, with
+  unread marks and as a rep; the amended chip.
+- **Editor suite: one test** — `managerSaveDay_confirmsInferredAsIs` (NOT RUN
+  here; it needs the DEV instance).
+- **Older pins updated:** two cache-key pins, the put-gate pin, four sandboxes
+  that needed the new helpers or the new mark, and the F34 DOM drive, whose
+  amended note now also carries the mark.
+- **A slip of my own, caught by running:** the new pins opened with the DOM
+  harness's `section()`; the pure harness prints its headings.
+- **Fixtures:** `reps[].partialDays` (one marked rep on the populated Team
+  fixture) and `partialDaysUnavailable`; `?inferred=1` loads Day Edit with a
+  saved inferred Clock In. Two scenarios: the Confirm button, and the pressed
+  state on a phone.
+- **Bite-checks: 67 mutations, 66 bit** — pure in three streams, DOM through
+  `bite.sh --dom --only`. The one that did not bite was an equivalent
+  mutant: `deSlotMark_` opened with an empty-slot guard its next two lines
+  already imply. The guard was removed rather than pinned.
+
+## Cycle 26 follow-ons after the decisions — FR1–FR4 (2026-11-19)
+
+- **Pure harness: six `FR` pins** — the inferred index's grid and the range
+  reader DRIVEN over a fake Timesheet (last row of a type decides; one read);
+  the close plan's list (cycle, dates, each rep's own today, the cap, `ready`
+  untouched, an older caller with no map); the card's list and the summary;
+  the bulk notice's lines and message; the stale-bars text and note; the
+  Spanish once-per-round notice.
+- **DOM harness: five drives** — both bulk bars through a partial failure
+  (the adjustment bar by its function, the time-off bar by its checkboxes,
+  the confirm dialog and two answers); the close card's button into Day Edit;
+  Team Punches through a failed re-read, a server error and a clean one; the
+  Spanish inbox through a failed second round.
+- **Older pins updated:** six — two source shapes and four sandboxes that
+  needed the new helpers or constant.
+- **Two slips of my own, caught by running:** the edit script stopped at a
+  pattern that also matched `uiPrompt` (the rest was applied by hand, and the
+  click binding to a now-optional Cancel button guarded); the Spanish drive
+  answered the DASHBOARD card's request — the oldest pending call of that
+  name — until it drained those first.
+- **Fixtures:** `counts.inferred` and `inferred` on every close-card period
+  (three times across two of them, one past the edit window). One scenario:
+  the bulk notice on a phone.
+- **Bite-checks: 56 mutations, 55 bit — one only after its drive was strengthened; the other was an equivalent mutant, a redundant guard, removed** — pure in three streams, DOM through
+  `bite.sh --dom --only`.
+
+## Cycle 26 decisions, second round — DS1–DS2 (2026-11-19)
+
+- **Pure harness: six pins.** `DS1` ×4 — the action reader and the confirm
+  rule's grid; the submit endpoint DRIVEN over a fake queue (filed as Pending
+  with the action, eight refusals with nothing queued); the approval DRIVEN
+  over a fake Timesheet and queue (one cell written; refused, done and denied
+  cases; the punch writer stubbed to throw if a confirm ever reaches it); the
+  rep's buttons, lines and the four surfaces that name a request. `DS2` ×2 —
+  the two helpers (the handoff's 19.75 example), the endpoint's three fields
+  and nothing else reading them; the cell, the sort, the line and the copy.
+- **DOM harness: three drives** — the rep's statement through the press, the
+  dialog, the filed request, the reload and a refusal; the manager's queue
+  row and another rep's statement; the Team table on a range and on one day.
+- **Editor suite: one test** — `punchAdjust_confirmRequestMovesOnlyTheMark`
+  (NOT RUN here).
+- **Older pins updated:** nine — the two Team key pins, the B3 action pin
+  (now drives `parAction_`), four sandboxes that load the submit endpoint or
+  the statement's adjustments, and the two DQ1 pins and one DQ1 drive whose
+  "nothing is computed from the marks" and hint wording changed with DS2.
+- **Found by the tools, not by reading:** a new pin's `' Pending '` fixture
+  showed the button helper did not trim a status; the phone-width shot's
+  `narrowText` measured the day's times at 44px beside the new button.
+- **Fixtures:** `daysActive`, `creditedDays`, `answeredPerDay` on the Team
+  rows; a pending confirm on the pay statement's 28th. Two scenarios: the
+  rep's statement for the previous period, wide and on a phone.
+- **Bite-checks: 57 mutations, each biting — two only after their pins were strengthened** — pure in three streams, DOM through
+  `bite.sh --dom --only`.
+
+## Cycle 26 follow-ons after the second round of decisions — FS1–FS3 (2026-11-19)
+
+- **Pure harness: five pins.** `FS1` ×2 — the close plan DRIVEN over six
+  requests (the one that counts; a decided one, an ordinary adjustment, one
+  naming another time, another punch type, another person) and over a capped
+  list; the card's entry text, its line in four wordings, its order and the
+  strict-true rule. `FS3` ×3 — the decision's grid; both writers DRIVEN over
+  a fake cache to the cap and past it (stamps still land, no row, one audit
+  row, another person, the next block, a dead cache), with the cap's floor
+  derived from the client's constants; the helper's structure.
+- **DOM harness: three drives** — the close card with one request waiting;
+  the reconcile button through a cancelled dialog, a refusal, a failed call
+  and a third press; Recent Activity drawing the limit's audit row.
+- **Editor suite: one test** — `activity_rowLimitRefusesPastTheCap`, against
+  the real cache with the count pre-set one under the cap (NOT RUN here).
+- **Older pins updated:** four — the close-plan sandbox loads the action
+  reader and the key helper; the AC1 and F30 sandboxes stub the limit (it has
+  its own pins); the FR1 fixture check reads the two new fields.
+- **Removed rather than pinned:** a `!!x.time` guard in the plan — the range
+  reader never emits an entry without its time.
+- **Bite-checks: 47 mutations, each biting — one only after its drive gained a cancelled dialog** — pure in three streams, DOM through
+  `bite.sh --dom --only`.
+
+## Cycle 26 decisions, third round — DT1 (2026-11-19)
+
+- **Pure harness: two pins.** The endpoint's own `rep.handledPerDay`
+  expression lifted out of the source and DRIVEN (handled over credited days;
+  answered when nothing was adjusted; none with no call data, with outbound
+  and no inbound day, and under one credited day), with its position, its
+  one reader and the rep view; the cell's three hovers, the empty cell's two
+  reasons, the column rule (beside Handled (adj.), a range only), the sort,
+  and the line under the table.
+- **DOM harness: one drive** — the Team table on a range through the header
+  position, the hovers, two sort presses, the line, the copied table (its
+  column order, a blank for no figure, no Handled columns without outbound),
+  and a single day.
+- **Older pins updated:** eight — three Team key pins; DS2's "nothing else
+  reads the credited days" and its copied-header check; five sandboxes that
+  load the hint or the adjusted-columns helper now load the two new helpers.
+- **Measured, not read:** the table's width against its frame at three window
+  widths (1,327px in a 1,192px frame at 1440 with every optional column).
+- **Bite-checks: 28 mutations — 27 bit; the other was an equivalent mutant** (the
+  expression's `null` for a rep with no call data could not be reached: such a
+  rep has no credited day), so the branch was removed and its three
+  mutations re-run on the new form.
+- **A slip of the batch before, found here:** the FS docs script left the
+  `Visual Audit Stage` heading twice in `.cycle/config.md` (its inserted block
+  carried the heading it was inserted before). No check reads for a doubled
+  heading; this batch's script tripped on it and it was removed.
+
+## Cycle 26 Batch 11 — Shell and Call Notes client, F58–F63 (2026-11-19)
+
+- **Pure harness: seven pins.** The Scratchpad's next-page rule; its mirror
+  (blob, read, verdict) over other accounts, the TTL and both stamp orders;
+  the parked-draft list; the tour's wait verdict with its three structural
+  hooks; the reminder's signature and validity; the dialog layer read from
+  four partials, with a sweep for the unread `danger: true`; the three
+  modals' guards, their `saved` closes counted, and the Adjust rule driven.
+- **DOM harness: ten drives.** Four for the Scratchpad (a switch mid-save
+  with typing on both pages; a refresh that answers after a save; a page
+  that will not open, retried; a reload — restored, saved, moved aside on a
+  changed page, another account's left alone). One each for the parked
+  draft, the tour (a loader held for forty polls, the cap by a moved clock,
+  the trap, the usage log), the stale reminder (in this window and in
+  another), the unsaved-note dialog with view-as, the delete confirm, and
+  the three modals.
+- **Older pins updated:** four pure (the accessible-name scan — the three
+  static dialogs now name themselves at the call; the Scratchpad's
+  failure-shape and failed-save checks; the counts row; the discard guard's
+  first line) and two DOM (the reminder drive answers the state read; the
+  Day Edit save's close).
+- **Harness facts that shaped the drives:** `clearTimeout` is a no-op and
+  `flushTimers` runs one generation of timers, so a held loader is forty
+  flushes; jsdom reports every rect as 0×0, so "visible" is a stubbed
+  `getBoundingClientRect`; a first-run tour takes Escape for itself, so a
+  drive that presses Escape marks the tour seen first.
+- **Visual:** two scenarios — the Scratchpad's New page prompt (light) and
+  Delete page confirm (dark) in the 480×800 pop-out; both read.
+- **Bite-checks: 82 mutations (35 pure, 47 DOM), each biting — four only after
+  a pin or a drive was strengthened:** a recovered page that is not on screen;
+  a clean tour run after one that gave up; the waiting card's 1.5 s threshold;
+  and a pure pin whose lazy regex ran past its function to the next match in
+  the file (the DOM drive had caught the same mutation).
+
+## Cycle 26 follow-ons after Batch 11 — FT1–FT4 (2026-11-20)
+
+- **Pure harness: three pins.** Held text driven (the key, the next-page
+  rule, `dirty`, "full" only once the page list is read) with the prefix
+  checked against the ids the server mints; the held row's rules and the
+  layer its copy dialog asks for; the tour's two loaders, scoped, with the
+  frames that draw the inline one read from their partials.
+- **DOM harness: five drives.** Two for held text (a conflict on a full pad,
+  through the race, Copy, a refused Move, a page delete; then a reload, a
+  quiet retry, Discard, and a deleted page whose add fails with the pad
+  closed); Day Edit's picker over a button edit; the tour on an inline
+  loader, and a loader outside the view; the Spanish assignee count across
+  view-as with the Scratchpad's save reading the editor.
+- **Older pins updated:** the next-page pin's sandbox and the dialog-layer
+  regex (pure); the F60 drive's loader moved into the view area, the F63 and
+  DQ3 drives answer the picker's question, the stale-prefill drive closes
+  the modal before it reopens it, and the INV-148 pin reads the close as it
+  now stands (and holds that the flush comes before the panel is removed).
+- **A NO BITE that removed code.** The drive written to pin the Scratchpad's
+  two editor captures (switch, close) could not fail without them: the save
+  they precede reads the editor first. Both were deleted — and Batch 11's
+  note that they mattered "after a URL was auto-linked on keyup" was wrong,
+  since that path fires the input handler itself.
+- **Visual:** two scenarios — the held row in the 480×800 pop-out with a
+  full pad (light) and wide with room (dark); both read. The row costs the
+  pop-out's editor most of its height at the default panel size; the panel
+  resizes.
+- **Bite-checks: 53 mutations (16 pure, 37 DOM), 53 bit. Three bit only after a pin or a drive was strengthened: a pin whose ordering check passed when the line was missing (index −1), a pin where a missing page limit read as zero, and the drive that holds the held row is not rebuilt (nothing in it redrew the row).**
+
+## Cycle 26 Batch 12 — Server small items, F41–F43 (2026-11-20)
+
+- **Pure harness: six pins.** The TRX key and the fold header; list reads
+  against local changes with the kept resolve answer; the lease caps, the two
+  key spaces and the real lease taker under the Scratchpad's key; What's new
+  across a deleted row; the self-BCC by address; `push-env.sh` driven in a
+  throwaway git repository with a stand-in for clasp.
+- **DOM harness: four drives.** A failed Spanish resolve (same request, another
+  request, a retry, a transport failure, a partly failed bulk, a failed
+  Assign); a Spanish read that lands after a resolve and a claim; a fold
+  through three in-place resolves; a Dept Requests read that lands after a
+  resolve.
+- **Older pins updated:** every pin that read `markDeptRequestResolved_`'s
+  body reads the wrapper and `drResolveRowLocked_` together (`drWriterSrc_`);
+  the F55 click pin's row is built through the real writer (it held full
+  addresses where production stores domains); the E4 pin drives a resolve
+  that fails; the Scratchpad server pin holds the lease instead of the user
+  lock; the 25post lease pin holds the cap instead of 61 s; the one-hop lock
+  net and the serialised-writers pin count the two Scratchpad endpoints.
+- **A fix that was written and reverted.** The leading-apostrophe rule in
+  `sheetSafe_` broke the S2 pin (`'=already literal` must pass unchanged) and
+  two handbook pins (a hand-prefixed apostrophe doubled). The pins were
+  right; the finding's sketch was not.
+- **Harness fact:** the view's own enter runs on a timer, and a badge poller
+  may already have a call of the same method pending — a drive that answers
+  by hand flushes timers first, then every pending call of that method.
+- **Bite-checks: 51 mutations (32 pure, 19 DOM), 51 bit, each on its first run.**
+
+## Cycle 26 follow-ons after Batch 12 — FU1–FU3 (2026-11-20)
+
+- **Pure harness: one pin.** The lease margin and the refusal, driven through
+  the real lease taker on a moved clock, with a derived half: every function
+  that takes a lease (eight) checks it before its first write to the Sheet.
+- **DOM harness: one drive.** An expired copy at start-up and on opening the
+  pad, another account's, and one still inside its 24 hours.
+- **Older pins updated:** the lease test context gained a user lock (logged
+  apart from the project lock), the guard constant and the two new helpers;
+  the F42 pin holds the two lock logs — the Scratchpad lease under the user
+  lock, the note lease under the project lock — and counts the file's one
+  `getUserLock`; the mirror pin's read shape gained `mine`; two sandboxes
+  that run a leased function gained a stand-in for the check.
+- **Bite-checks: 17 mutations (12 pure, 5 DOM), 17 bit, each on its first run.**
+
+## Cycle 26 Batch 13 — Intake remainder: F21, F22, F23, F67 (2026-11-20)
+
+- **Pure harness: six pins.** Two for the lookbehind (every script block of
+  every client partial in both apps is tokenized with acorn — the scan is
+  first shown a literal it must flag, and a string and a division it must
+  not; the compiled patterns, and a stand-in `RegExp` that throws on a
+  lookbehind). Two for the grouping (all pairs of the fixture's sixteen real
+  reads; the rules one at a time). One driving the feedback endpoint with
+  each kind of caller. One for the Storage Health row, with a derived half:
+  no function that opens the Intake store removes a row.
+- **The tokenizing pin needs acorn**, a dev dependency, so it is registered
+  with `testNeedsDeps`: skipped by name on CI's dependency-free first run and
+  required by the run after `npm ci`. It was first written as a plain `test`,
+  which was green here and red in CI on the commit that added it — read from
+  the pushed commit's run, before anything was reported.
+- **DOM harness: two drives.** Two cards as two suggestions through to both
+  fields, a suggestion replaced and a form redrawn while "Replace?" is open;
+  a browser whose patterns did not compile.
+- **Visual matrix: two scenarios** — two cards, light wide and dark mobile.
+- **Older pins updated:** the card pins' sandbox loads the pattern sources
+  and the new helpers; the F58 driven half gives the feedback endpoint an
+  unidentified caller; the feedback-loop pin reads the new gate and audit
+  line.
+- **Bite-checks: 31 mutations (21 pure, 10 DOM), 31 bit, each on its first run. One planned mutation was left out as equivalent: a failed compile that is not kept returns false on the next call as well.**
+
+## Cycle 26 follow-ons after Batch 13 — FV1–FV3 (2026-11-20)
+
+- **Pure harness: three pins.** The join's fields and when it is offered,
+  including a real read from the fixture with one character of its ID
+  changed (the grouping splits it; the join puts it back, marked). The
+  feedback limit, driven through the endpoint on a moved clock with a
+  stand-in cache: the limit, the one audit row, another sender, the next
+  hour, guessed ids, a cache that throws. The syntax level: every script
+  block of both apps parsed at ES2015 — registered with `testNeedsDeps`
+  (acorn), after seven newer constructs are shown to fail at that level and
+  ES2015 itself to pass, and with a check that some blocks do not parse as
+  ES5.
+- **DOM harness: one drive.** Three images of two cards, the second photo
+  of one misread: joined, focus, marks, nothing on the form; a Medicare
+  card beside a plan card.
+- **Visual matrix:** the mobile two-card scenario now shows two plan cards,
+  so the join button is on camera; the wide one keeps the Medicare card and
+  a plan card, where it is absent.
+- **Older pins updated:** the F22 pin stands the limit in (it has its own
+  pin).
+- **Bite-checks: 20 mutations (12 pure, 8 DOM), 20 bit, each on its first run.**
+
+## Cycle 26 Batch 14 — Docs and tooling: F68–F71, F73 + FW1–FW6 (2026-11-20)
+
+- **Pure harness: ten pins.** Two drive the gate module (`axeFailures`,
+  `keepErrors`, a waiver's `match`). Three hold `.cycle/config.md` to the
+  tree: the Test Command against the workflow's own commands, the Deploy
+  Command against the Subsystems list and `package.json`, the regression
+  steps against `RETIRED_TOOLS`. One holds four hand-carried lists (the
+  handbook's hand-written files, its scopes, the test twins, the README).
+  One drives `counts.mjs` (the key family; `--write`). One is the
+  PUBLIC-GATE net over `handbook-app/`. One drives the property stash over a
+  stand-in PropertiesService, with a derived net over every literal property
+  write in `Tests.js`. One drives the three real Team Training endpoints and
+  compares their keys with the mock's.
+- **Editor suite: two tests** (the stash against the real PropertiesService
+  on a key no code reads; the feedback limit against the real cache).
+- **DOM harness:** no new test. The HB4.1 viewer test's "closed before its
+  answer" step releases its answer by hand instead of waiting 80 ms for a
+  40 ms mocked delay.
+- **Visual matrix: one scenario** (`training-team-light-wide`) and three
+  fixtures; two more names in CI's subset.
+- **Tooling:** `counts.mjs --write` (two steps — see the design decision);
+  the key counter sees a prefix family; `ci-gate.cjs` gained `pageErrorsOf`,
+  `keepErrors` and `axeFailures`.
+- **Older pins updated:** the E5 waiver pin gives its entry a `match`; the
+  FP3 pin reads the axe verdict through the gate; the X1 list lost the three
+  reads that now have fixtures; the visual-gap marker lost `trainingManage`
+  (and PR3-5's floor follows); a vacuous line in the search-signal pin was
+  replaced.
+- **Found by running the new tool, not by reading:** the first `--write`
+  refused itself — a stale row made the harness red, and it would not write
+  while the harness was red.
+- **Bite-checks: 24 mutations (all pure — this batch added no DOM test), 24 bit, each on its first run. One pin was strengthened before the run: the deploy pin read a subsystem's name anywhere in the section, so a mention in passing on another line would have satisfied it; it reads each line's head now.**
+
+## Cycle 26 follow-ons after Batch 14 — FX1–FX8 (2026-11-20)
+
+- **Pure harness: two pins.** The stash's date and the restore's line,
+  driven on a moved clock through a killed run, three hours and an admin's
+  own change. The copy dialog's layer (the four z-indexes read from the
+  rules; no caller passes the old option) with the pay-period tile's note.
+- **DOM harness: three drives.** The copy dialog's class with no option; the
+  search count line cut, whole, and from a payload without the field; the
+  reminders list with an id holding an apostrophe, a quote and an angle
+  bracket.
+- **A drive that could not have failed, fixed before the bite-checks:** "a
+  waiting button does not send twice" pressed the disabled button with
+  `click()`, which jsdom ignores — the guard was never reached. The press is
+  dispatched on the button's icon now, where a pointer lands, and removing
+  the guard fails it.
+- **Older pins updated:** the FT1 layer pin (the class is unconditional),
+  PR4-4's retraction line, the F18 side-rail sandbox, the F73 stash sandbox.
+- **Bite-checks: 17 mutations (10 pure, 7 DOM), 17 bit, each on its first run. One drive was corrected before the run: it pressed a disabled button with click(), which jsdom ignores, so the guard it named was never reached.**

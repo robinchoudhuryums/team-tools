@@ -40,6 +40,10 @@ under the "handbook app" entries.
   at width a side column follows the section in view — its quiz with where you
   stand, its forms, its numbered headings and the sections it refers to. The
   reader's own ‹ › and the card at a chapter's end are previous and next.
+  **The toolbar is for the section in view** (cycle 26 F45): scroll from 3.1
+  to 3.4 and *I've read this*, *Listen* and the note button are 3.4's — and
+  stay 3.4's after they are pressed. It keeps the keyboard's focus through
+  Listen → Pause → Stop and a sign-off (F66).
 - **Search** in the bar (home's own box hands over to it as you type) — a section number (`6.9.3`, `card 4`) jumps
   straight to it; anything else is a results page (HBR2): the best match first,
   each hit under its chapter, chapter filters with counts when the hits span
@@ -56,20 +60,41 @@ under the "handbook app" entries.
 - **Training**, **Saved**, **Forms** and **Display** — the pages below; since
   HBR4 each is flat cards (no gradient — the handoff's decision 13), and Display
   carries a **theme** (System, Light, Dark).
+- **A quiz in progress is not lost by leaving the page** (cycle 26 F55): the
+  search, Back, the rail, a tab, Profile and *Leave quiz* all ask "Leave this
+  quiz?" once answers are chosen. *Keep going* keeps them.
 - The chapters are **kept in the browser** and re-read only when the handbook
-  changed; if the server cannot be reached, the kept copy is shown with a note
-  that it may be out of date.
+  changed; if the server cannot be reached, the kept copy is shown under a
+  **banner** that says it may be out of date and stays until a read succeeds
+  (cycle 26 F55 — it was a toast that left after 3.5 seconds). **Try again**
+  on the banner fetches the handbook and replaces the text on screen.
+- **While the chapters load** (a first visit ships the whole handbook) the
+  bar's search, Profile and the phone's tabs already work. Whatever the reader
+  opened meanwhile stays when the chapters arrive (cycle 26 F55); only a
+  reader still on the loading screen is taken to Home or the link's section.
+- **A manager's surfaces arrive with their profile** (cycle 26 FO2): Team
+  training, the Mine / My team switch and the quiz lock-outs appear as soon as
+  the page knows the reader manages a team — also when Training or Profile was
+  opened first.
+- **Between a phone and a desk** (cycle 26 F65; Profile since FO8): up to 1100px wide the home
+  hero is one column — the greeting, heading and search above the shelf — and
+  up to 1040px the results list is full width with its filters below, and
+  *Continue reading* sits above *Due for you*.
 
 ## How it is built
 
-Only seven files are written by hand:
+These files are written by hand (a pin holds this table to the tree: every
+`.js` in `handbook-app/` except the generated `kb_shared.js`, and the three
+page files — a file missing from it would be read as generated, "never edit"):
 
 | File | Holds |
 |---|---|
 | `Handbook.js` | The server's environment (who is asking, the spreadsheet, today) and its public endpoints |
 | `People.js` | The Handbook spreadsheet's People tab: profiles, managers, confirmations (HB2.1) |
 | `Quiz.js` | Taking a quiz: reads ManualQuizzes, records attempts and resets (HB3.2) |
-| `Training.js` | Training plans, team quizzes and read marks (HB3.3) |
+| `Training.js` | Training plans, team quizzes and read marks (HB3.3); sign-offs and team progress (HB3.4) |
+| `Reminders.js` | Training reminder emails, off until switched on, and each run's recorded outcome (HB3.4, cycle 26 F54) |
+| `Saved.js` | Bookmarks and synced notes: the Bookmarks and Notes tabs (HB2.2) |
 | `index.html` | The page template |
 | `script_handbook.html` | The page: the reader's host (all 18 `MANUAL_HOST` hooks), contents, home, search, the people view, the browser copy, links |
 | `styles_handbook.html` | The frame's styles |
@@ -243,6 +268,15 @@ plans and quizzes are cards ("Reaches N people", or nobody while archived).
   name (Default … Largest); line spacing stays a choice of three; high
   contrast, the reading font and reduce motion are switches. The Profile page's
   Display row says what is set.
+- **Cycle 26 FO4.** Listen clears whatever the browser's speech engine still
+  holds before it speaks (a page reloaded while paused left Listen silent),
+  and leaving the page stops the voice.
+- **Cycle 26 F66.** *System* follows the device while the page is open — a
+  device that turns dark in the evening turns the page dark without a reload;
+  a chosen Light or Dark stays. *Reduce motion* (and the device's own
+  setting) now also stops the glide when a section is opened inside the
+  chapter already showing: a scripted scroll is not covered by the
+  stylesheet's rule, so the reader asks before it scrolls.
 
 ## Forms (HB4.1)
 
@@ -286,12 +320,15 @@ plans and quizzes are cards ("Reaches N people", or nobody while archived).
 - **Focus follows the reader.** A section opened from the contents, a link or
   the search lands focus on its heading (once, after it paints — scrolling past
   later never pulls focus back); a view opened by a click (home, people,
-  quizzes, training, saved) lands on its heading. Back and forward leave focus
-  where it was. The narrow-screen contents take focus when opened — the section
+  quizzes, training, saved) lands on its heading, and a quiz opened to take
+  lands on its own (cycle 26 F66 — it was the one view that moved nothing).
+  Back and forward leave focus where it was. The toolbar above a section keeps
+  the focus on the control that was used when it redraws (F66). The narrow-screen contents take focus when opened — the section
   being read, else the first entry — and give it back to the Contents button on
   Escape, a tap outside or a second press.
 - **What is announced.** The reading area is not a live region (a repaint would
-  be read out whole). A slideshow says "Slide 2 of 4: caption" when it steps,
+  be read out whole). A search announces its count ("3 results"), not its
+  list (cycle 26 FO5 — the whole list was a live region). A slideshow says "Slide 2 of 4: caption" when it steps,
   never on load; its visible counter is hidden from screen readers so it is not
   read twice. The bar's previous/next buttons are named for their visible
   label and the section they open.
@@ -322,7 +359,19 @@ plans and quizzes are cards ("Reaches N people", or nobody while archived).
   the admin can open, and that a note must never hold patient information; the
   browser's notes are then merged with the account's (the later note per
   section wins, and a deletion travels too). Turning it off removes the
-  account's copies; the browser keeps its own.
+  account's copies; the browser keeps its own. **Off is the account's**
+  (cycle 26 F55): another computer whose own switch is still on is refused at
+  its next sync, turns its switch off and says so — it used to send every note
+  back. The reader turns it on again on the Saved page of any computer.
+
+**Kept per person** (cycle 26 FO6): in the browser, notes, the bookmark copy
+and the sync switch belong to the signed-in account — another person using
+the same browser profile sees none of them. What a browser held before this
+was adopted by the first account to open the handbook there.
+
+Bookmarks that could not be loaded are said to be that (cycle 26 F47): Saved
+shows the browser's last copy, labelled, or nothing — never "Nothing
+bookmarked yet" — with a **Try again**.
 
 Bookmarks and synced notes live in the Handbook spreadsheet's `Bookmarks` and
 `Notes` tabs (created on first use; never edit their headers).
@@ -339,12 +388,25 @@ sync switch and Export / Copy / Import below.
   item in My training. It is recorded with the section's VERSION (a stamp of
   its text); a chapter's version is the stamp of its sections'. The bar then
   says when it was read, with Undo. One sign-off serves every plan that names
-  the section.
+  the section. The bar is for the section IN VIEW, so the sign-off group opens
+  with that section's number ("0.10 ✓ You read this on …") and each button's
+  accessible name ends with the section's title — at a section boundary "this"
+  was otherwise only where the bar happened to sit (cycle 26).
 - **Retraining.** When a section changes and the handbook's changelog flags the
-  change for retraining, a reader who signed before that day is asked again —
-  "Changed since you read it — please read it again" — and the plan item goes
-  back to not done until they do. A change not flagged for retraining never
-  asks; the bar only adds "it has been updated since".
+  change for retraining, a reader whose sign-off has not seen that change is
+  asked again — "Changed since you read it — please read it again" — and the
+  plan item goes back to not done until they do. A change not flagged for
+  retraining never asks; the bar only adds "it has been updated since".
+  Since cycle 26 the sign-off is of the text ON THE PAGE: the page sends that
+  text's version, and a sign-off of text that is no longer the handbook's is
+  refused ("updated after you opened it — reload"). Each mark records the
+  flagged changes that existed when it was made, so "asked again" no longer
+  depends on dates. A sign-off made before this change is asked once more if
+  its section's text has changed and the changelog flags that section at all.
+- **A plan item that can no longer be done** — a quiz its author archived, a
+  section or chapter no longer published — is shown as "No longer available"
+  and is not counted: the plan finishes on its other items and is never
+  overdue because of it. Archiving a quiz says which live plans list it.
 - **Progress** (Team training, for a manager or the admin): one row per person
   on the team — plans done and overdue, quizzes passed and locked, sections
   signed and waiting to be re-signed — with Details per plan and quiz.
@@ -352,11 +414,20 @@ sync switch and Export / Copy / Import below.
   saves a file where the browser allows it (Copy table is the reliable one).
 - **Reminder emails** are built but OFF. Once on, a daily run at 8am emails each
   reader with an overdue plan — once a day at most — the plans' titles and due
-  dates and a link. Turning them on is in
+  dates and a link (the app's /exec address, or `HANDBOOK_URL`). Each run
+  records what it did, and Team training → My team shows it beside "Reminder
+  emails are on": how many were sent and failed, a run that failed and why,
+  one that started and never finished, or that no run is on record. Turning
+  them on is in
   [`operator-state.md`](operator-state.md#operator-the-handbook-app-hb1-2).
+- **Days** — a plan's due day and the day a sign-off was made — are the
+  project's timezone (Chicago, `appsscript.json`), not Team Tools' storage
+  timezone.
 
-Sign-offs ride the `ReadMarks` tab (a fifth column, `Version`); a mark written
-before HB3.4 has none and counts as signed.
+Sign-offs ride the `ReadMarks` tab: a fifth column, `Version`, and since cycle
+26 a sixth, `Retrain` (the flagged changes the reader had seen: a date and a
+count, or `none`). A mark written before HB3.4 has no version; one written
+before cycle 26 has no `Retrain` cell.
 
 ## Setup and deploying
 
@@ -365,7 +436,12 @@ domain, and since HB2.1 the Handbook spreadsheet) is in
 [`operator-state.md`](operator-state.md#operator-the-handbook-app-hb1-2).
 
 To ship a change: `npm run handbook:push` (it checks that the copies match
-`web-app/` — run `npm run handbook:sync` first if they do not — then pushes), then
+`web-app/` — run `npm run handbook:sync` first if they do not — then pushes
+with the same pinned clasp Team Tools uses; `-- --dry-run` says which project
+it would push to). The script id comes from the `HANDBOOK_SCRIPT_ID`
+environment variable, else `handbook-app/.clasp.local.json`
+(`{"scriptId": "…"}`, gitignored), else the committed `.clasp.json`; while none
+holds a real id the push stops and says so. Then
 Deploy → Manage deployments → Edit → New version. A change to the handbook
 reader or its server readers ships in **both** projects — Team Tools with
 `clasp push -f` and a New version as usual.
@@ -376,8 +452,16 @@ reader or its server readers ships in **both** projects — Team Tools with
 |---|---|
 | "The handbook is not set up yet: the HANDBOOK_KB_SS_ID Script Property is not set." | Set it (Project Settings → Script Properties) |
 | 'The "KB" tab is missing from the handbook's spreadsheet.' | The property names the wrong spreadsheet |
-| "Could not reach the handbook — showing the copy kept on this device…" | The server did not answer; the browser's copy is shown |
+| "The handbook could not be reached — this is the copy kept on this device, and it may be out of date." (a banner) | The server did not answer; the browser's copy is shown. **Try again** on the banner |
+| "Your sign-offs could not be loaded." (the toolbar) · "Your reading could not be loaded." (Home) · "Your training plans / sign-offs could not be loaded, so this list may be missing something." (Due for you) | That read failed — it is not "nothing". **Try again** beside it; the Training count reads "?" meanwhile |
+| "Your training could not be refreshed: … This is what loaded earlier." | The Training page shows the plans from before the failed refresh |
+| "Your bookmarks could not be loaded from your account: …" | Saved shows this browser's last copy, if it has one |
+| "The handbook's list of changes could not be read, so it cannot be told what needs reading again." | The KB spreadsheet's `ManualMeta` tab cannot be read — nobody is shown as "signed" on a guess; re-import the handbook if it persists |
+| "Keeping your notes in your account was turned off on another computer, so it is off here too." | The account's note sync is off; the notes stay in this browser. Saved turns it on again |
+| "“<quiz>” was submitted: N% — passed." (a toast that stays) | The reader left the quiz while the answers were being checked; the attempt is recorded |
 | "Section 9.9 is not in the handbook — here is the home page." | A link to a section that does not exist (or is still a draft) |
+| "That section is not in the handbook." (a toast) | A cross-reference, bookmark or search hit names a section this app does not serve; the page being read stays as it was (cycle 26 FO3) |
+| "Could not tell whether you manage a team, so team training is not shown: …" | The profile could not be read — not the same as "not a manager"; **Try again** beside it (cycle 26 FO2) |
 | "The search failed: …" | The search did not run — never read as "no matches" |
 | "Profiles are not set up yet …" (Profile) | `HANDBOOK_SS_ID` is not set — an admin is told so by name |
 | "Could not load your profile: Could not open the Handbook spreadsheet …" | The property names a spreadsheet the deploying account cannot open |
@@ -394,11 +478,13 @@ handbook.
 
 ## Tests
 
-- Pure (`test/client/run.js`): HB1.2-a…e, HB1.3-a…e, HB1.4-a…f, HB2.1-a…e, HB3.2-a…d, HB3.3-a…d, HB2.4-a…c, HB4.1-a…f, HBR1-a…d, HBR2-a…b, HBR3-a…c, HBR4-a…c — the copies,
+- Pure (`test/client/run.js`): HB1.2-a…e, HB1.3-a…e, HB1.4-a…f, HB2.1-a…e, HB3.2-a…d, HB3.3-a…d, HB2.4-a…c, HB4.1-a…f, HBR1-a…d, HBR2-a…b, HBR3-a…c, HBR4-a…c, and the cycle 26 pins (Batch 7: F48–F57; Batch 8: F45, F47, F55, F65, F66) — the copies,
   the refusals, the server driven in a sandbox over fake services, the page's
   pure helpers and contracts, no-undef over the assembled page.
 - DOM (`test/client/dom/runDom.js`, "HB1.3/HB1.4/HB2.1/HB3.2/HB3.3/HB2.4/HB4.1/HBR1/HBR2/HBR3/HBR4"): the whole page booted in
   jsdom over a fake server, IndexedDB and history.
 - Visual matrix: the `handbook-*` scenarios shoot `page-handbook.html`
-  (`test/visual/build.mjs` writes it); three ride the CI gate, and every one
-  is checked by axe (`--axe`, HB2.4).
+  (`test/visual/build.mjs` writes it) — at 390 and 1440px, and since cycle 26
+  F65 at 800 and 960px, where the rail is still on screen; the CI gate's list
+  (`ci-gate.cjs`) names the ones it shoots, and every one is checked by axe
+  (`--axe`, HB2.4).

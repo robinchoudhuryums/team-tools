@@ -281,6 +281,10 @@ function timesheetRowsInRange_(startIso, endIso, opts) {
  *  hours (INV-176) — the caller reports it rather than silently under-crediting. */
 function workedHoursByEmpForRange_(startIso, endIso) {
   const perDay = {};            // empId -> dateIso -> {ClockIn, ClockOut, LunchOut, LunchIn}
+  // FR1 (cycle 26): the mark of each day's SHOWN clock row (the last of its
+  // type, as Day Edit and the calendars read it) — empId -> dateIso -> type ->
+  // 'HH:mm' while that row is still Inferred, '' once it is not.
+  const infLast = {};
   // TC2-9 (cycle 23 Batch 14): THE range reader — the archive gate keys on how
   // far the archive reaches, not the live tab's oldest row; strict, so a
   // failed archive read throws rather than under-crediting.
@@ -291,7 +295,11 @@ function workedHoursByEmpForRange_(startIso, endIso) {
     if (!id || !date) return;
     if (!perDay[id]) perDay[id] = {};
     if (!perDay[id][date]) perDay[id][date] = {};
-    punchDayAdd_(perDay[id][date], normalizeType_(String(r[ADP.COMMENTS])), normalizeTime_(r[ADP.TIME]));
+    const type = normalizeType_(String(r[ADP.COMMENTS]));
+    const time = normalizeTime_(r[ADP.TIME]);
+    punchDayAdd_(perDay[id][date], type, time);
+    const infDay = (infLast[id] || (infLast[id] = {}))[date] || (infLast[id][date] = {});
+    infDay[type] = adpRowInferred_(r) ? String(time).substring(0, 5) : '';   // timesheetInferredByEmp_ reads the two clock types only
   });
   const archivedRows = read.archivedRows;
   const byEmp = {}, perDayByEmp = {};
@@ -321,7 +329,26 @@ function workedHoursByEmpForRange_(startIso, endIso) {
   // (a sentinel = a day that contributed no hours, and which of the two it is),
   // so a multi-month catch-up can slice one month out WITHOUT a second
   // Timesheet read — see workedHoursForEmpMonth_.
-  return { byEmp: byEmp, perDayByEmp: perDayByEmp, archivedRows: archivedRows };
+  return { byEmp: byEmp, perDayByEmp: perDayByEmp, archivedRows: archivedRows,
+    inferredByEmp: timesheetInferredByEmp_(infLast) };   // FR1
+}
+/** PURE (Node-pinned) — FR1: the clock times still marked Inferred, out of the
+ *  last-row marks ({empId: {dateIso: {type: 'HH:mm' | ''}}}): {empId: [{date,
+ *  type, time}]}, oldest first, Clock In before Clock Out. A confirmed or
+ *  edited time is '' and is not listed. */
+function timesheetInferredByEmp_(infLast) {
+  const out = {};
+  Object.keys(infLast || {}).forEach(function (id) {
+    const list = [];
+    Object.keys(infLast[id] || {}).sort().forEach(function (date) {
+      ['ClockIn', 'ClockOut'].forEach(function (type) {
+        const t = infLast[id][date][type];
+        if (t) list.push({ date: date, type: type, time: t });
+      });
+    });
+    if (list.length) out[id] = list;
+  });
+  return out;
 }
 /** THE accrual resolver: what a run WOULD do, with NOTHING written.
  *
@@ -1791,12 +1818,18 @@ function recordPunch(punchType, custom) {
   return result;
 }
 function recordPunchCore_(punchType, custom) {
+  // F26 (cycle 26): the caller is read BEFORE the lock (g17 / F58). This is a
+  // private helper under the public recordPunch, so the F58 net — which looked
+  // only at public functions that take the lock themselves — never saw it: a
+  // signed-in domain user who is not on the roster waited up to 15 s on the
+  // one project lock, then held it through a roster read, in front of every
+  // rep's punch, to be told "Employee not found".
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Employee not found.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   let alertPayload = null;
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Employee not found.' };
 
     const empTz    = empTz_(emp);
     const now      = new Date();
@@ -2084,12 +2117,13 @@ function payStmtAdjustments_(rows, empId, start, end) {
     if (String(r[PAR.EMP_ID]).trim() !== empId) continue;
     const date = normalizeDate_(r[PAR.DATE]);
     if (!date || date < start || date > end) continue;
-    const resume = String(r[PAR.ACTION] || '').trim().toLowerCase() === 'resume';
+    const action = parAction_(r[PAR.ACTION]);
+    const resume = action === 'resume';
     (out[date] = out[date] || []).push({
       punchType: String(r[PAR.PUNCH_TYPE] || '').trim(),
       time: normalizeTime_(r[PAR.REQ_TIME]).trim().substring(0, 5),
       endTime: resume ? normalizeTime_(r[PAR.END_TIME]).trim().substring(0, 5) : '',
-      action: resume ? 'resume' : 'set',
+      action: action,
       reason: String(r[PAR.REASON] || '').slice(0, 500),
       status: String(r[PAR.STATUS] || '').trim(),
       submittedAt: normalizeAuditTs_(r[PAR.SUBMITTED_AT]),
@@ -2331,7 +2365,8 @@ function getManagerDashboard() {
       }
       const present = Object.prototype.hasOwnProperty.call(seen, e.id);
       const disp = presenceDisplay_(status, present, e.isPh, false);
-      const idleMin = liveIdleMin_(e, status, last, now, seenLast[e.id]);   // 25post B8
+      // 25post B8; F29: no idle verdict at all when the stamps could not be read.
+      const idleMin = seenLast ? liveIdleMin_(e, status, last, now, seenLast[e.id]) : null;
       return {
         idleMin: idleMin,
         id: e.id, name: e.name, status: disp.status,
@@ -2687,6 +2722,12 @@ function getManagerDashboard() {
       adjustWindowDays:    CONFIG.ADJUST_WINDOW_DAYS,
       ptoEnabled:          !!getFlag_('enablePtoTracking'),
       mgrTzAbbr,
+      // F29 (cycle 26): no idle chip is "nobody is idle" only when the check
+      // RAN — a failed stamp read says so on the card (g53).
+      idleCheckFailed:     seenLast === null,
+      // FQ1 (cycle 26): the threshold the idle chip is decided at — the card's
+      // summary names it from here, never from a literal of its own (g131).
+      idleAlertMin:        IDLE_ALERT_MIN,
       punchTrend, toSummary,
       pendingTrend, missedTrend,
     };
@@ -4266,8 +4307,15 @@ function recordPresence(counts) {
     CacheService.getScriptCache().put(PRESENCE_LAST_PREFIX + emp.id, String(Date.now()), PRESENCE_LAST_TTL_SEC);
     // round 12 E2 — the durable record (best-effort); AC1 — with the clicks
     // and keystrokes the window counted since its last send (counts only).
-    activityLogAppend_(emp.id, Date.now(), activityCountsClean_(counts, Date.now()), '');
-    return { success: true };
+    // F30 (cycle 26): whether the row was WRITTEN rides back. The stamp above
+    // is the presence either way, but the counts in a row that was not written
+    // are gone unless the window puts them back — it only did so when the
+    // call itself failed, never when the append did.
+    // FS3 (cycle 26): past the per-person row limit the stamps above stand but
+    // no row is written — `logged` false, so the window keeps its counts.
+    if (!activityRowAllowed_(emp, Date.now())) return { success: true, logged: false, limited: true };
+    const logged = activityLogAppend_(emp.id, Date.now(), activityCountsClean_(counts, Date.now()), '');
+    return { success: true, logged: logged };
   } catch (e) {
     return { success: false };
   }
@@ -4297,8 +4345,48 @@ function activityLogAppend_(empId, ms, counts, kind) {
     return true;
   } catch (e) {
     console.warn('activityLogAppend_ failed: ' + e.message);
+    noteActivityLogWriteFailure_(e);   // F30: counted, so a day with no activity can say why
     return false;
   }
+}
+/** F30 (cycle 26) — counts an ActivityLog row that could not be written
+ *  (ACTIVITY_LOG_FAIL_PROP). Best-effort and lock-free like the append it
+ *  follows: a lost increment under a race undercounts a counter that only has
+ *  to be non-zero to be shown (the DigestDeliveries posture). Never throws. */
+function noteActivityLogWriteFailure_(err) {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    let rec = null;
+    try { rec = JSON.parse(props.getProperty(ACTIVITY_LOG_FAIL_PROP)); } catch (_) {}
+    if (!rec || typeof rec !== 'object') rec = { count: 0, firstMs: Date.now() };
+    rec.count = (Number(rec.count) || 0) + 1;
+    rec.lastMs = Date.now();
+    rec.lastError = String((err && err.message) || err || '').slice(0, 200);
+    propSetBounded_(ACTIVITY_LOG_FAIL_PROP, JSON.stringify(rec), { mode: 'degrade', shrink: propShrinkStripFields_(['lastError']) });
+  } catch (e) { /* best-effort — the console line above is the floor */ }
+}
+/** PURE (Node-pinned) — the write-failure record as a reader shows it, or
+ *  null: only when the failures' span [firstMs, lastMs] touches [fromMs, toMs]
+ *  (a day being viewed, or the last 48 hours for Automation Health). */
+function activityLogFailsView_(raw, fromMs, toMs) {
+  let rec = null;
+  try { rec = JSON.parse(raw); } catch (_) { return null; }
+  if (!rec || typeof rec !== 'object') return null;
+  const count = Number(rec.count) || 0, lastMs = Number(rec.lastMs) || 0;
+  const firstMs = Number(rec.firstMs) || lastMs;
+  if (!(count > 0) || !(lastMs > 0)) return null;
+  if (lastMs < fromMs || firstMs > toMs) return null;
+  return { count: count, firstMs: firstMs, lastMs: lastMs, lastError: String(rec.lastError || '') };
+}
+/** The record for a day's readers: `{count, firstDate, lastDate}` in `tz`, or
+ *  null. Best-effort — an unreadable property is no note, never an error. */
+function activityLogFailsFor_(fromMs, toMs, tz) {
+  try {
+    const v = activityLogFailsView_(PropertiesService.getScriptProperties().getProperty(ACTIVITY_LOG_FAIL_PROP), fromMs, toMs);
+    if (!v) return null;
+    return { count: v.count, firstDate: Utilities.formatDate(new Date(v.firstMs), tz, 'yyyy-MM-dd'),
+      lastDate: Utilities.formatDate(new Date(v.lastMs), tz, 'yyyy-MM-dd') };
+  } catch (e) { return null; }
 }
 /** Rep-callable, fire-and-forget (AC1, operator 2026-11-11): the clicks and
  *  keystrokes a window counted since its last send, sent once its rep has
@@ -4312,12 +4400,76 @@ function recordActivityCounts(counts) {
     const emp = getEmployeeInfo_();
     if (!emp) return { success: false };
     const now = Date.now();
+    // F29 (cycle 26): the flush also says WHEN the last gesture was, and that
+    // moves the six-hour idle stamp — only that one, never the 30-minute
+    // presence stamp (this arrives minutes after the rep stopped). The stamp
+    // was written by recordPresence alone, at most once per 10 minutes, so a
+    // rep active 10:00–10:09 read "idle 30 min" at 10:30 after 21.
+    presenceLastStampAtLeast_(emp.id, activityLastGestureMs_(counts, now));
     const clean = activityCountsClean_(counts, now);
     if (!clean.length) return { success: true, empty: true };
-    return { success: activityLogAppend_(emp.id, now, clean, ACTIVITY_COUNTS_KIND) };
+    // F30: `logged` false is "not written — send these again"; the page's
+    // success handler used to ignore a false `success`.
+    if (!activityRowAllowed_(emp, now)) return { success: false, logged: false, limited: true };   // FS3
+    const logged = activityLogAppend_(emp.id, now, clean, ACTIVITY_COUNTS_KIND);
+    return { success: logged, logged: logged };
   } catch (e) {
     return { success: false };
   }
+}
+/** PURE (Node-pinned, FS3) — what the row limit decides from the count the
+ *  cache held for this person's block: `allow` while fewer than `max` rows
+ *  have been taken; `next` is the count to store (it stops one past the
+ *  limit); `note` is true exactly ONCE a block, on the first refusal. */
+function activityRowDecision_(have, max) {
+  const h = Number(have);
+  const n = isFinite(h) && h > 0 ? Math.floor(h) : 0;
+  return { allow: n < max, next: Math.min(n + 1, max + 1), note: n === max };
+}
+/** FS3 (cycle 26) — may this person add another ActivityLog row in this
+ *  10-minute block? Both writers ask: neither had a limit, so a page (or a
+ *  script) that kept calling added a row per call to a tab every reader walks.
+ *  Cache only and lock-free — a guard, not an accounting: two calls at once can
+ *  read the same count. A cache that cannot be read ALLOWS the row: the limit
+ *  must never be the reason a working rep's day reads empty. The first refusal
+ *  of a block writes ONE AuditLog row naming the person (ActivityRowsLimited),
+ *  so their day's reader can see rows were not kept. Never throws. */
+function activityRowAllowed_(emp, nowMs) {
+  try {
+    const cache = CacheService.getScriptCache();
+    const key = ACTIVITY_ROWS_PREFIX + emp.id + ':' + Math.floor(nowMs / (ACTIVITY_BLOCK_MIN * 60000));
+    const d = activityRowDecision_(cache.get(key), ACTIVITY_ROWS_MAX_PER_BLOCK);
+    cache.put(key, String(d.next), ACTIVITY_ROWS_TTL_SEC);
+    if (d.note) {
+      const at = new Date(nowMs);
+      writeAuditLog_(emp, 'ActivityRowsLimited', fmtDate_(at), fmtTime_(at), false, 0,
+        'More than ' + ACTIVITY_ROWS_MAX_PER_BLOCK + ' app-activity rows in ten minutes — the rows past the limit were not kept');
+    }
+    return d.allow;
+  } catch (e) { return true; }
+}
+/** PURE (Node-pinned, F29) — the server time of a window's last gesture, from
+ *  the client's `{at, last}` (both on ITS clock, so only their difference is
+ *  used — a clock that is off cancels out); 0 when it is not said, is in the
+ *  client's future, or is older than ACTIVITY_COUNTS_MAX_AGE_MS. */
+function activityLastGestureMs_(raw, nowMs) {
+  if (!raw || typeof raw !== 'object' || !(nowMs > 0)) return 0;
+  const at = Number(raw.at), last = Number(raw.last);
+  if (!isFinite(at) || !isFinite(last) || !(at > 0) || !(last > 0)) return 0;
+  const ago = at - last;
+  if (!(ago >= 0) || ago > ACTIVITY_COUNTS_MAX_AGE_MS) return 0;
+  return Math.floor(nowMs - ago);
+}
+/** F29 — move the six-hour idle stamp FORWARD to `ms` (never back: another
+ *  window's ping may be later). Cache only; best-effort; never throws. */
+function presenceLastStampAtLeast_(empId, ms) {
+  try {
+    if (!empId || !(ms > 0)) return;
+    const cache = CacheService.getScriptCache();
+    const have = Number(cache.get(PRESENCE_LAST_PREFIX + empId));
+    if (isFinite(have) && have >= ms) return;
+    cache.put(PRESENCE_LAST_PREFIX + empId, String(ms), PRESENCE_LAST_TTL_SEC);
+  } catch (e) { /* best-effort */ }
 }
 /** PURE (Node-pinned) — a window's counts as the server keeps them, or [].
  *  `raw` is the client's `{at, b: [[block, clicks, keys]]}` — `block` the
@@ -4379,8 +4531,19 @@ function activityLowerBound_(list, x) {
 /** PURE (Node-pinned) — a day of pings as the Day Edit chart reads it.
  *  `mins` are minutes of the day in the REP's timezone (any order, 0..1439).
  *  Returns { pings, first, last, blocks } — `blocks` one count per
- *  ACTIVITY_BLOCK_MIN-minute block; first/last 'HH:mm' or '' with no pings. */
-function activityDayView_(mins, blockMin, counts) {
+ *  ACTIVITY_BLOCK_MIN-minute block; first/last 'HH:mm' or '' with no pings.
+ *  F27 (cycle 26): a block's counts are kept only BESIDE A PING — a ping in
+ *  that block or the one either side — and a block's total is capped here,
+ *  over every row. The server takes counts for any block of the last six
+ *  hours (a laptop asleep sends late) and capped only each SEND, so a rep back
+ *  from two hours away could send counts for the whole gap, as often as they
+ *  liked, and the manager saw steady activity across it. A ping cannot be
+ *  back-dated (its time is the server's), and a window that counts a gesture
+ *  has pinged within the ten minutes before it — so real counts always have
+ *  one beside them. `edgeMins` are pings just outside the day (a negative
+ *  minute, or 1440+), which vouch for its first and last block. `kept` is the
+ *  counts that passed, by block; `ignored` how many blocks' worth did not. */
+function activityDayView_(mins, blockMin, counts, edgeMins) {
   const size = blockMin > 0 ? blockMin : ACTIVITY_BLOCK_MIN;
   const n = Math.ceil(1440 / size);
   const blocks = new Array(n).fill(0);
@@ -4393,19 +4556,32 @@ function activityDayView_(mins, blockMin, counts) {
   // window whose counts never arrived) has hasCounts false and is drawn
   // on/off from the pings, as it always was — never as a level of zero.
   const level = new Array(n).fill(0);
-  let clicks = 0, keys = 0, hasCounts = false;
+  const near = {};
+  ok.forEach(function (m) { near[Math.floor(m / size)] = true; });
+  (edgeMins || []).forEach(function (m) { if (typeof m === 'number' && isFinite(m)) near[Math.floor(m / size)] = true; });
+  const cBy = new Array(n).fill(0), kBy = new Array(n).fill(0), unbacked = {};
   (counts || []).forEach(function (e) {
     const m = Array.isArray(e) ? Number(e[0]) : NaN;
     if (!(m >= 0 && m < 1440)) return;
     const c = Math.max(0, Math.floor(Number(e[1]) || 0)), k = Math.max(0, Math.floor(Number(e[2]) || 0));
     if (!c && !k) return;
-    hasCounts = true;
-    level[Math.floor(m / size)] += c + k;
-    clicks += c; keys += k;
+    const b = Math.floor(m / size);
+    if (!near[b - 1] && !near[b] && !near[b + 1]) { unbacked[b] = true; return; }
+    cBy[b] += c; kBy[b] += k;
   });
+  let clicks = 0, keys = 0, hasCounts = false;
+  const kept = [];
+  for (let b = 0; b < n; b++) {
+    const c = Math.min(ACTIVITY_COUNTS_MAX_PER_BLOCK, cBy[b]), k = Math.min(ACTIVITY_COUNTS_MAX_PER_BLOCK, kBy[b]);
+    if (!c && !k) continue;
+    hasCounts = true;
+    level[b] = c + k; clicks += c; keys += k;
+    kept.push([b * size, c, k]);
+  }
   const active = blocks.filter(function (b, i) { return b > 0 || level[i] > 0; }).length;
   return { pings: ok.length, first: ok.length ? hhmm(ok[0]) : '', last: ok.length ? hhmm(ok[ok.length - 1]) : '', blocks: blocks,
-    hasCounts: hasCounts, level: level, clicks: clicks, keys: keys, activeMin: active * size };
+    hasCounts: hasCounts, level: level, clicks: clicks, keys: keys, activeMin: active * size,
+    kept: kept, ignored: Object.keys(unbacked).length };
 }
 // ── Batch G (operator 2026-11-02 — "condense, archive condensed, then
 // delete"): the ActivityLog's raw pings are condensed, each night, into ONE
@@ -4435,21 +4611,37 @@ function activityBlocksDecode_(str, n) {
  *  {date: 'YYYY-MM-DD', min}; todayOf(tz) → 'YYYY-MM-DD'; existing:
  *  {'date|empId': true} already summarised. Only a FINISHED day (before the
  *  rep's today) is condensed — a day still being worked would be cut short —
- *  and a day already summarised is never summarised twice. Returns
+ *  and a day already summarised is never summarised twice. F30 (cycle 26):
+ *  the caller's `todayOf` is the day ACTIVITY_COUNTS_MAX_AGE_MS ago, so a day
+ *  is condensed only once no count for it can still arrive (the server takes
+ *  a block up to that old; counts landing after the 2 am condense were decoded
+ *  and then skipped for ever, the reader preferring the summary). F27: the
+ *  summary keeps only the counts beside a ping, capped (activityDayView_) —
+ *  a ping in a neighbouring day's first or last block vouches across midnight.
+ *  Returns
  *  {summaries: [{date, empId, tz, pings, first, last, activeMin, blocks}],
  *  finished: {'date|empId': true}} — every finished day seen. */
 function activityCondense_(rows, tzOf, localOf, todayOf, existing, blockMin) {
   const size = blockMin > 0 ? blockMin : ACTIVITY_BLOCK_MIN;
   const bms = ACTIVITY_BLOCK_MIN * 60000;
-  const days = {}, today = {};
-  const dayOf = function (id, ms) {
+  const days = {}, today = {}, edges = {};
+  const shift = function (date, n) {
+    const p = String(date).split('-');
+    return new Date(Date.UTC(+p[0], +p[1] - 1, +p[2] + n)).toISOString().slice(0, 10);
+  };
+  const localIn = function (id, ms) {
     const tz = tzOf(id);
     if (today[tz] == null) today[tz] = todayOf(tz);
     const l = localOf(ms, tz);
-    if (!l || !l.date || !(l.date < today[tz])) return null;
-    const k = l.date + '|' + id;
-    return { d: (days[k] = days[k] || { date: l.date, empId: id, tz: tz, mins: [], counts: [] }), min: l.min };
+    return l && l.date ? { tz: tz, date: l.date, min: l.min, finished: l.date < today[tz] } : null;
   };
+  const dayOf = function (id, ms) {
+    const l = localIn(id, ms);
+    if (!l || !l.finished) return null;
+    const k = l.date + '|' + id;
+    return { d: (days[k] = days[k] || { date: l.date, empId: id, tz: l.tz, mins: [], counts: [] }), min: l.min };
+  };
+  const edge = function (date, id, min) { const k = date + '|' + id; (edges[k] = edges[k] || []).push(min); };
   (rows || []).forEach(function (r) {
     const id = String((r && r[0]) || '').trim();
     const ms = Number(r && r[1]);
@@ -4462,6 +4654,13 @@ function activityCondense_(rows, tzOf, localOf, todayOf, existing, blockMin) {
       if (at) at.d.counts.push([at.min, e[1], e[2]]);
     });
     if (String(r[3] || '') === ACTIVITY_COUNTS_KIND) return;
+    // A ping in a day's last block vouches for the next day's first, and the
+    // other way round — whether or not its own day is finished yet.
+    const pl = localIn(id, ms);
+    if (pl) {
+      if (pl.min >= 1440 - size) edge(shift(pl.date, 1), id, pl.min - 1440);
+      if (pl.min < size) edge(shift(pl.date, -1), id, pl.min + 1440);
+    }
     const at = dayOf(id, ms);
     if (at) at.d.mins.push(at.min);
   });
@@ -4470,9 +4669,9 @@ function activityCondense_(rows, tzOf, localOf, todayOf, existing, blockMin) {
     finished[k] = true;
     if ((existing || {})[k]) return;
     const d = days[k];
-    const v = activityDayView_(d.mins, size, d.counts);
+    const v = activityDayView_(d.mins, size, d.counts, edges[k]);
     summaries.push({ date: d.date, empId: d.empId, tz: d.tz, pings: v.pings, first: v.first, last: v.last,
-      activeMin: v.activeMin, blocks: activityBlocksEncode_(v.blocks), counts: activityDayCountsEncode_(d.counts, size) });
+      activeMin: v.activeMin, blocks: activityBlocksEncode_(v.blocks), counts: activityDayCountsEncode_(v.kept, size) });
   });
   return { summaries: summaries, finished: finished };
 }
@@ -4500,14 +4699,27 @@ function activityDayCountsDecode_(str, blockMin) {
 }
 /** PURE (Node-pinned) — which raw rows (0-based data indexes) the purge may
  *  delete: older than `cutoffMs` AND their day summarised. A ping whose day
- *  has no summary row is NEVER deleted, so nothing goes before it is kept. */
+ *  has no summary row is NEVER deleted, so nothing goes before it is kept.
+ *  F30 (cycle 26): a COUNTS-ONLY row is not a ping, so the condense files it
+ *  under the day of each BLOCK it names, never its own — a flush just after
+ *  midnight, on a day the rep never pinged, had no summary key for its own
+ *  date and was never purged. It goes once every day its blocks name is
+ *  summarised. */
 function activityPurgeIndexes_(rows, cutoffMs, summarised, tzOf, localOf, budget) {
   const out = [];
+  const bms = ACTIVITY_BLOCK_MIN * 60000;
   for (let i = 0; i < (rows || []).length && out.length < budget; i++) {
     const id = String((rows[i] && rows[i][0]) || '').trim();
     const ms = Number(rows[i] && rows[i][1]);
     if (!id || !(ms > 0) || !(ms < cutoffMs)) continue;
-    const l = localOf(ms, tzOf(id));
+    const tz = tzOf(id);
+    const blocks = String(rows[i][3] || '') === ACTIVITY_COUNTS_KIND ? activityCountsDecode_(rows[i][2]) : [];
+    if (blocks.length) {
+      const all = blocks.every(function (e) { const bl = localOf(e[0] * bms, tz); return !!(bl && summarised[bl.date + '|' + id]); });
+      if (all) out.push(i);
+      continue;
+    }
+    const l = localOf(ms, tz);
     if (l && summarised[l.date + '|' + id]) out.push(i);
   }
   return out;
@@ -4569,7 +4781,9 @@ function activityLogCondenseAndPurge_(ss, nowMs) {
     const s = Utilities.formatDate(new Date(ms), tz, 'yyyy-MM-dd HH:mm');
     return { date: s.slice(0, 10), min: parseInt(s.slice(11, 13), 10) * 60 + parseInt(s.slice(14, 16), 10) };
   };
-  const todayOf = function (tz) { return Utilities.formatDate(new Date(nowMs), tz, 'yyyy-MM-dd'); };
+  // F30: "today" for the condense is the day it was ACTIVITY_COUNTS_MAX_AGE_MS
+  // ago — a day is finished once nothing more can arrive for it.
+  const todayOf = function (tz) { return Utilities.formatDate(new Date(nowMs - ACTIVITY_COUNTS_MAX_AGE_MS), tz, 'yyyy-MM-dd'); };
   const sumSheet = getOrCreateActivitySummarySheet_();
   activityHealHeader_(sumSheet, ACTIVITY_SUMMARY_HEADERS);
   const existing = activitySummaryKeys_(sumSheet);
@@ -4617,9 +4831,15 @@ function activityDaysFor_(ss, targets, date, keptTz) {
     const span = sum.getRange(r0, 1, r1 - r0 + 1, ACTIVITY_SUMMARY_HEADERS.length).getValues();
     fromSum.forEach(function (d, i) {
       const r = span[nums[i] - r0];
-      const v = activityDayView_([], ACTIVITY_BLOCK_MIN, activityDayCountsDecode_(r[9], ACTIVITY_BLOCK_MIN));
+      // F27: the row's own block map says where the pings were, so a summary
+      // condensed before the rule existed is held to it too; its first and
+      // last block are taken on trust (the neighbouring day is not read here).
+      const blk = activityBlocksDecode_(r[7], Math.ceil(1440 / ACTIVITY_BLOCK_MIN));
+      const at = [];
+      blk.forEach(function (c, b) { if (c > 0) at.push(b * ACTIVITY_BLOCK_MIN); });
+      const v = activityDayView_(at, ACTIVITY_BLOCK_MIN, activityDayCountsDecode_(r[9], ACTIVITY_BLOCK_MIN), [-1, 1440]);
       views[d.id] = Object.assign(v, { pings: Number(r[3]) || 0, first: String(r[4] || ''), last: String(r[5] || ''),
-        blocks: activityBlocksDecode_(r[7], Math.ceil(1440 / ACTIVITY_BLOCK_MIN)), fromSummary: true });
+        blocks: blk, fromSummary: true });
       if (Number(r[6]) > v.activeMin) views[d.id].activeMin = Number(r[6]);
     });
   }
@@ -4636,16 +4856,17 @@ function activityDaysFor_(ss, targets, date, keptTz) {
   }
   const minStart = Math.min.apply(null, rest.map(function (d) { return d.startMs; }));
   const maxEnd = Math.max.apply(null, rest.map(function (d) { return d.endMs; }));
-  const lo = activityLowerBound_(msCol, minStart), hi = activityLowerBound_(msCol, maxEnd + ACTIVITY_COUNTS_MAX_AGE_MS);
+  const bms = ACTIVITY_BLOCK_MIN * 60000;
+  // F27: one block before the first day too — a ping there vouches for the day's first block.
+  const lo = activityLowerBound_(msCol, minStart - bms), hi = activityLowerBound_(msCol, maxEnd + ACTIVITY_COUNTS_MAX_AGE_MS);
   const want = {};
-  rest.forEach(function (d) { want[d.id] = { d: d, mins: [], counts: [] }; });
+  rest.forEach(function (d) { want[d.id] = { d: d, mins: [], counts: [], edges: [] }; });
   const minOf = function (ms, tz) {
     const t = Utilities.formatDate(new Date(ms), tz, 'HH:mm').split(':');
     return parseInt(t[0], 10) * 60 + parseInt(t[1], 10);
   };
   if (hi > lo) {
     const cells = sheet.getRange(2 + lo, 2, hi - lo, 4).getValues();   // id, ms, counts, kind
-    const bms = ACTIVITY_BLOCK_MIN * 60000;
     for (let i = 0; i < cells.length; i++) {
       const w = want[String(cells[i][0]).trim()];
       if (!w) continue;
@@ -4656,9 +4877,11 @@ function activityDaysFor_(ss, targets, date, keptTz) {
       });
       if (String(cells[i][3] || '') === ACTIVITY_COUNTS_KIND) continue;
       if (ms >= w.d.startMs && ms < w.d.endMs) w.mins.push(minOf(ms, w.d.tz));
+      else if (ms >= w.d.startMs - bms && ms < w.d.startMs) w.edges.push(-1);
+      else if (ms >= w.d.endMs && ms < w.d.endMs + bms) w.edges.push(1440);
     }
   }
-  rest.forEach(function (d) { views[d.id] = activityDayView_(want[d.id].mins, ACTIVITY_BLOCK_MIN, want[d.id].counts); });
+  rest.forEach(function (d) { views[d.id] = activityDayView_(want[d.id].mins, ACTIVITY_BLOCK_MIN, want[d.id].counts, want[d.id].edges); });
   return { views: views, keptFrom: base.keptFrom };
 }
 /** Manager-gated, read-only — one rep's app activity on one day of THEIR
@@ -4675,7 +4898,9 @@ function managerGetDayActivity(empId, date) {
     const tz = empTz_(target);
     const base = { date: String(date), timezone: tz, blockMin: ACTIVITY_BLOCK_MIN, gapMin: ACTIVITY_PING_GAP_MIN, retentionDays: ACTIVITY_LOG_DAYS };
     const r = activityDaysFor_(getAdpSS_(), [{ id: target.id, tz: tz }], String(date), tz);
-    return Object.assign(base, r.views[target.id], { keptFrom: r.keptFrom });
+    // F30: rows that could not be written on (or around) this day are said.
+    const dayStart = Utilities.parseDate(String(date) + ' 00:00:00', tz, 'yyyy-MM-dd HH:mm:ss').getTime();
+    return Object.assign(base, r.views[target.id], { keptFrom: r.keptFrom, logFails: activityLogFailsFor_(dayStart, dayStart + 86400000, tz) });
   } catch (err) { return { error: 'Could not read app activity: ' + err.message }; }
 }
 /** PURE (Node-pinned) — a day view as the team table draws it: 24 hourly
@@ -4710,6 +4935,8 @@ function managerGetTeamActivity(date) {
     if (!targets.length) return out;
     const r = activityDaysFor_(getAdpSS_(), targets, String(date), empTz_(caller));
     out.keptFrom = r.keptFrom;
+    const dayStart = Utilities.parseDate(String(date) + ' 00:00:00', empTz_(caller), 'yyyy-MM-dd HH:mm:ss').getTime();
+    out.logFails = activityLogFailsFor_(dayStart, dayStart + 86400000, empTz_(caller));   // F30
     targets.forEach(function (t) { out.reps[t.id] = activityHourly_(r.views[t.id]); });
     return out;
   } catch (err) { return { error: 'Could not read app activity: ' + err.message }; }
@@ -4746,20 +4973,25 @@ function presenceTimes_(empIds) {
   } catch (e) { /* best-effort — no stamps */ }
   return out;
 }
-/** 25post B8 — { empId: lastActivityMs } from the six-hour stamp (best-effort,
- *  like presenceTimes_; a failed read is no stamps, which the idle rule reads
- *  as "measure from the last punch"). */
+/** 25post B8 — { empId: lastActivityMs } from the six-hour stamp, or NULL when
+ *  the read failed. F29 (cycle 26): a failed read used to be `{}` — "no
+ *  stamps" — and the idle rule then measured EVERY clocked-in rep from their
+ *  last punch: at 3 pm the dashboard said the whole team had been idle since
+ *  lunch. "Could not read" is not "nobody was active" (g128); null skips the
+ *  rule, and the view says the check could not run. A rep with no stamp in a
+ *  read that WORKED is still measured from the last punch, as documented. */
 function presenceLastTimes_(empIds) {
   const out = {};
   try {
     const keys = (empIds || []).map(id => PRESENCE_LAST_PREFIX + id);
     if (!keys.length) return out;
-    const hits = CacheService.getScriptCache().getAll(keys) || {};
+    const hits = CacheService.getScriptCache().getAll(keys);
+    if (!hits || typeof hits !== 'object') return null;
     Object.keys(hits).forEach(k => {
       const n = Number(hits[k]);
       if (isFinite(n) && n > 1e12) out[k.slice(PRESENCE_LAST_PREFIX.length)] = n;
     });
-  } catch (e) { /* best-effort */ }
+  } catch (e) { return null; }
   return out;
 }
 /** PURE (25post B8, operator 2026-10-16) — how long a clocked-in rep has gone
@@ -5020,6 +5252,28 @@ function managerParseBreakSlots_(slots) {
  *
  *  Returns `{updates, deletions, additions}` — pure, no sheet access.
  */
+/** PURE (Node-pinned) — cycle 26 DQ3: the clock rows a Day Edit save
+ *  CONFIRMS as they stand. A confirm is explicit (`confirmed[type] === true`,
+ *  sent by the Confirm as is button), and it is refused quietly — nothing is
+ *  written — unless all of this holds: the slot is not also sent as inferred;
+ *  the day's shown row (the last of its type) carries the Inferred mark; and
+ *  the slot still holds that row's HH:mm. A slot whose time changed is an
+ *  edit, which clears the mark by its own path. Returns [{rowIndex, type,
+ *  time}] — `time` is the stored one, seconds and all. */
+function managerConfirmPlan_(rowsByType, cleanSlots, confirmed, inferredIn) {
+  const out = [];
+  ['ClockIn', 'ClockOut'].forEach(function (type) {
+    if (!confirmed || confirmed[type] !== true) return;
+    if (inferredIn && inferredIn[type]) return;
+    const list = (rowsByType && rowsByType[type]) || [];
+    const cur = list[list.length - 1];
+    if (!cur || cur.inferred !== true) return;
+    const slot = (cleanSlots && cleanSlots[type]) || '';
+    if (!slot || String(cur.time || '').substring(0, 5) !== slot) return;
+    out.push({ rowIndex: cur.rowIndex, type: type, time: cur.time });
+  });
+  return out;
+}
 function managerPlanDay_(rowsByType, cleanSlots, cleanBreaks) {
   const updates = [], deletions = [], additions = [];
 
@@ -5232,6 +5486,7 @@ function managerSaveDay(targetEmpId, date, slots, reason) {
       rowsByType[type].push({
         rowIndex: i + 1,
         time: normalizeTime_(allRows[i][ADP.TIME]).trim(),
+        inferred: adpRowInferred_(allRows[i]),   // DQ3: only a marked row can be confirmed
       });
     }
     const changes = [];
@@ -5259,6 +5514,15 @@ function managerSaveDay(targetEmpId, date, slots, reason) {
       writeAuditLog_(targetEmp, 'PunchEdit', date, timeFull, true, daysBack,
         `${u.type}: ${u.oldTime} → ${timeFull} (manager edit)${infNote(u.type)}${noteSuffix}`, callerEmp.email);
       changes.push({ type: u.type, action: 'update' });
+    });
+    // DQ3 (cycle 26): "Confirm as is" — the time stands, the row's mark moves
+    // from Inferred to Confirmed, and the audit row says who. Row indexes are
+    // still the snapshot's here (no delete has run).
+    managerConfirmPlan_(rowsByType, cleanSlots, slots && slots.confirmed, inferredIn).forEach(c => {
+      adpSetSource_(sheet, c.rowIndex, ADP_CONFIRMED_MARK);
+      writeAuditLog_(targetEmp, 'PunchConfirm', date, c.time, true, daysBack,
+        `${c.type}: ${c.time} confirmed as is by manager (was inferred from app activity)${noteSuffix}`, callerEmp.email);
+      changes.push({ type: c.type, action: 'confirm' });
     });
 
     // Then deletions, descending, so earlier removals don't shift later indices.
@@ -5316,7 +5580,8 @@ function exportAdpRange(startDate, endDate) {
       (result.archivedRowCount ? `; archivedRows=${result.archivedRowCount}` : ''));
     return { success: true, url: result.url, fileName: result.fileName, rowCount: result.rowCount,
       archivedRowCount: result.archivedRowCount || 0,
-      inferredCount: result.inferredCount || 0, inferred: result.inferred || [] };   // E2
+      inferredCount: result.inferredCount || 0, inferred: result.inferred || [],   // E2
+      inferredConfirmedCount: result.inferredConfirmedCount || 0 };   // DQ3
   } catch (err) { return { error: err.message }; }
 }
 
@@ -6254,38 +6519,78 @@ function sendPayWeekReminders() {
   assertManagerCaller_('sendPayWeekReminders');
   return runAutomationJob_('PayWeekReminders', function () {
     stampDigestLastRun_('payWeek');
-    if (!getFlag_('payWeekReminderEmail')) return { outcome: automationOutcome_('idle') };
+    // F28 (cycle 26): `ok`, not `idle`, while the toggle is off. `idle` leaves
+    // a stamped failure as it is — so a send that failed the day before the
+    // toggle was turned off stayed on the health dot with nothing left to
+    // clear it. A job that is switched off has nothing wrong with it.
+    if (!getFlag_('payWeekReminderEmail')) return { outcome: automationOutcome_('ok') };
     const tz = CONFIG.MANAGER_TIMEZONE;
     const now = new Date();
-    if (parseInt(Utilities.formatDate(now, tz, 'H'), 10) !== PAY_WEEK_REMINDER_HOUR) return { outcome: automationOutcome_('idle') };
+    // F28: AT OR AFTER the hour, with a record of who was sent to today. It
+    // was an exact hour match with no record: one missed 9 am run (a lock
+    // wait, a trigger hiccup, a failed send) and that pay period's reminder
+    // was gone, silently — every later run that day was the wrong hour.
+    if (parseInt(Utilities.formatDate(now, tz, 'H'), 10) < PAY_WEEK_REMINDER_HOUR) return { outcome: automationOutcome_('idle') };
     const today = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
+    const already = payWeekSentToday_(readPayWeekSent_(), today);
     const rows = getEmployeeRosterRows_();
     const orgAnchor = orgBiweeklyAnchor_(rows);
     let attempted = 0, sent = 0, failed = 0, lastError = '';
-    const failedNames = [];
-    for (let r = 1; r < rows.length; r++) {
-      const email = empRosterEmail_(rows[r]);
-      if (!email) continue;
-      const pc = empPayCycle_(rows[r], orgAnchor);
-      const pw = payWeekForEmp_({ payCycle: pc.payCycle, payAnchor: pc.payAnchor }, today);
-      if (!pw || pw.remindOn !== today) continue;
-      attempted++;
-      const name = String(rows[r][EMP.NAME] || '').trim();
-      try {
-        appSendMail_(payWeekEmail_(email, name, pw));
-        sent++;
-        logDigestDelivery_('payWeek', email, 'sent', 1, pw.periodKey);
-      } catch (e) {
-        failed++; lastError = String((e && e.message) || e); failedNames.push(name || email);
-        logDigestDelivery_('payWeek', email, 'failed', 1, lastError);
+    const failedNames = [], sentNow = [];
+    try {
+      for (let r = 1; r < rows.length; r++) {
+        const email = empRosterEmail_(rows[r]);
+        if (!email) continue;
+        const pc = empPayCycle_(rows[r], orgAnchor);
+        const pw = payWeekForEmp_({ payCycle: pc.payCycle, payAnchor: pc.payAnchor }, today);
+        if (!pw || pw.remindOn !== today) continue;
+        if (already[String(email).toLowerCase()]) continue;   // sent by an earlier run today
+        attempted++;
+        const name = String(rows[r][EMP.NAME] || '').trim();
+        try {
+          appSendMail_(payWeekEmail_(email, name, pw));
+          sent++; sentNow.push(String(email).toLowerCase());
+          logDigestDelivery_('payWeek', email, 'sent', 1, pw.periodKey);
+        } catch (e) {
+          failed++; lastError = String((e && e.message) || e); failedNames.push(name || email);
+          logDigestDelivery_('payWeek', email, 'failed', 1, lastError);
+        }
       }
+    } finally {
+      // Written even when the walk throws part-way: whoever was sent to is
+      // not sent to again by the next hour's run.
+      if (sentNow.length) writePayWeekSent_(today, Object.keys(already).concat(sentNow));
     }
     if (failed) {
+      // A failed send is tried again by the next hourly run today — it is not in the record.
       return { sent: sent, outcome: automationOutcome_(sent ? 'partial' : 'failed',
-        failed + ' pay-week reminder email(s) failed to send (' + lastError + ')', failedNames) };
+        failed + ' pay-week reminder email(s) failed to send (' + lastError + ') — they are tried again each hour today', failedNames) };
     }
     return { sent: sent, outcome: automationOutcome_(attempted ? 'ok' : 'idle') };
   });
+}
+/** PURE (Node-pinned; cycle 26 F28) — who has already been sent TODAY's
+ *  pay-week reminder, from the stored record ({day, to: [emails]}) — a set
+ *  keyed by lowercased address; empty for another day's record or none. */
+function payWeekSentToday_(rec, todayIso) {
+  const out = {};
+  if (!rec || typeof rec !== 'object' || rec.day !== todayIso || !Array.isArray(rec.to)) return out;
+  rec.to.forEach(function (e) { const k = String(e || '').trim().toLowerCase(); if (k) out[k] = true; });
+  return out;
+}
+function readPayWeekSent_() {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty(PAY_WEEK_SENT_PROP) || 'null'); }
+  catch (e) { return null; }
+}
+/** Best-effort, never throws: a record that cannot be written costs a
+ *  duplicate reminder at worst, never a lost one. One day only — the next
+ *  remind day's write replaces it. */
+function writePayWeekSent_(todayIso, emails) {
+  try {
+    const seen = {}, to = [];
+    (emails || []).forEach(function (e) { const k = String(e || '').trim().toLowerCase(); if (k && !seen[k]) { seen[k] = 1; to.push(k); } });
+    propSetBounded_(PAY_WEEK_SENT_PROP, JSON.stringify({ day: todayIso, to: to }), { mode: 'degrade', shrink: propShrinkStripFields_(['to']) });
+  } catch (e) { try { console.warn('writePayWeekSent_ failed: ' + e.message); } catch (_) {} }
 }
 /** P1 — the reminder email (the shared branded chrome, a link to Time / PTO).
  *  It names the period and the last day only — no hours, no punches. */
@@ -6314,12 +6619,13 @@ function payWeekEmail_(email, name, pw) {
  *  (older days are hand-edit only). A pending request for an id no roster row
  *  carries goes to `orphans` — its pay cycle is unknown, so it cannot be put in
  *  a period, and dropping it would read as one less thing to close. */
-function planPayPeriodClose_(roster, perDayByEmp, toRows, parRows, periods, todayIso, adjustWindowDays, graceDays) {
+function planPayPeriodClose_(roster, perDayByEmp, toRows, parRows, periods, todayIso, adjustWindowDays, graceDays, inferredByEmp) {
   const byId = {};
   (roster || []).forEach((r) => { byId[r.id] = r; });
   const checkedThroughMax = addDaysIso_(todayIso, -graceDays);
   const editableFrom = addDaysIso_(todayIso, -adjustWindowDays);
   const pending = [];   // {id, name, date, kind, label}
+  const asked = {};     // FS1: 'id|date|type' → the HH:mm a pending confirm request names
   (toRows || []).slice(1).forEach((r) => {
     if (String(r[TO.STATUS]).toLowerCase().trim() !== 'pending') return;
     pending.push({ id: String(r[TO.EMP_ID]).trim(), name: String(r[TO.EMP_NAME]).trim(), date: normalizeDate_(r[TO.DATE]),
@@ -6329,6 +6635,11 @@ function planPayPeriodClose_(roster, perDayByEmp, toRows, parRows, periods, toda
     if (String(r[PAR.STATUS]).toLowerCase().trim() !== 'pending') return;
     pending.push({ id: String(r[PAR.EMP_ID]).trim(), name: String(r[PAR.EMP_NAME]).trim(), date: normalizeDate_(r[PAR.DATE]),
       kind: 'adjust', label: String(r[PAR.PUNCH_TYPE] || '').trim() });
+    // FS1 (cycle 26): a rep's pending CONFIRM request, by the time it names.
+    if (parAction_(r[PAR.ACTION]) === 'confirm') {
+      asked[payCloseAskKey_(String(r[PAR.EMP_ID]).trim(), normalizeDate_(r[PAR.DATE]), String(r[PAR.PUNCH_TYPE] || '').trim())] =
+        normalizeTime_(r[PAR.REQ_TIME]).trim().substring(0, 5);
+    }
   });
   const orphans = pending.filter((p) => p.date && !byId[p.id]);
   const out = (periods || []).map((per) => {
@@ -6344,8 +6655,9 @@ function planPayPeriodClose_(roster, perDayByEmp, toRows, parRows, periods, toda
         if (d < per.start || d > through) return;
         const v = days[d];
         if (v !== TIMESHEET_DAY_INCOMPLETE && v !== TIMESHEET_DAY_ORPHAN) return;
+        // F31: by the rep's own today when the caller gives one (Day Edit's frame).
         repOf(emp).openDays.push({ date: d, kind: v === TIMESHEET_DAY_INCOMPLETE ? 'no clock-out' : 'clock-out with no clock-in',
-          editable: d >= editableFrom });
+          editable: d >= (emp.todayIso ? addDaysIso_(emp.todayIso, -adjustWindowDays) : editableFrom) });
       });
     });
     pending.forEach((p) => {
@@ -6353,6 +6665,26 @@ function planPayPeriodClose_(roster, perDayByEmp, toRows, parRows, periods, toda
       if (!emp || emp.payCycle !== per.cycle || !p.date || p.date < per.start || p.date > per.end) return;
       repOf(emp)[p.kind === 'timeOff' ? 'pendingTimeOff' : 'pendingAdjust'].push({ date: p.date, label: p.label });
     });
+    // FR1 (cycle 26): clock times set from app activity that nobody has
+    // confirmed. They do not stand between the period and its export (the file
+    // is the same either way), so they are NOT part of `ready` — they are a
+    // list to check, and until now the export's own email was the first place
+    // it was gathered. Whole period (start..end): a time is a time, in progress or not.
+    const inferred = [];
+    (roster || []).forEach((emp) => {
+      if (emp.payCycle !== per.cycle) return;
+      ((inferredByEmp && inferredByEmp[emp.id]) || []).forEach((x) => {
+        if (!x || !x.date || x.date < per.start || x.date > per.end) return;
+        // FS1: `requested` — the rep has asked for THIS time to be confirmed
+        // and the request is still waiting. A request that names another time
+        // (the time was changed since) is not one for this time: approving it
+        // is refused, and the list must not say the rep vouched for what shows.
+        inferred.push({ id: emp.id, name: emp.name, timezone: emp.timezone || '', date: x.date, type: x.type, time: x.time,
+          editable: x.date >= (emp.todayIso ? addDaysIso_(emp.todayIso, -adjustWindowDays) : editableFrom),
+          requested: asked[payCloseAskKey_(emp.id, x.date, x.type)] === x.time });
+      });
+    });
+    inferred.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)));
     const list = Object.keys(reps).map((k) => reps[k]);
     list.forEach((r) => {
       r.pendingTimeOff.sort((a, b) => (a.date < b.date ? -1 : 1));
@@ -6361,11 +6693,17 @@ function planPayPeriodClose_(roster, perDayByEmp, toRows, parRows, periods, toda
     list.sort((a, b) => (b.openDays.length + b.pendingTimeOff.length + b.pendingAdjust.length) -
       (a.openDays.length + a.pendingTimeOff.length + a.pendingAdjust.length) || (a.name < b.name ? -1 : 1));
     const sum = (k) => list.reduce((n, r) => n + r[k].length, 0);
-    const counts = { openDays: sum('openDays'), pendingTimeOff: sum('pendingTimeOff'), pendingAdjust: sum('pendingAdjust') };
+    const counts = { openDays: sum('openDays'), pendingTimeOff: sum('pendingTimeOff'), pendingAdjust: sum('pendingAdjust'),
+      inferred: inferred.length, inferredRequested: inferred.filter((x) => x.requested).length };
     return { cycle: per.cycle, which: per.which, start: per.start, end: per.end, checkedThrough: through,
-      reps: list, counts: counts, ready: !counts.openDays && !counts.pendingTimeOff && !counts.pendingAdjust };
+      reps: list, counts: counts, ready: !counts.openDays && !counts.pendingTimeOff && !counts.pendingAdjust,
+      inferred: inferred.slice(0, PAY_CLOSE_INFERRED_LIST_MAX) };
   });
   return { periods: out, orphans: orphans.map((p) => ({ id: p.id, name: p.name, date: p.date, kind: p.kind, label: p.label })) };
+}
+/** PURE (FS1) — the key a pending confirm request and an inferred time meet on. */
+function payCloseAskKey_(id, date, type) {
+  return String(id) + '|' + String(date) + '|' + String(type);
 }
 /** G1 (cycle 25 E2) — MANAGER-gated, read-only, no lock: the pay-period close
  *  checklist behind Manage Time → Periodic. Every payroll subject (offboarded
@@ -6379,29 +6717,46 @@ function getPayPeriodClose() {
     if (!caller || !caller.isManager) return { error: 'Manager access required.' };
     const rows = getEmployeeRosterRows_();
     const anchor = orgBiweeklyAnchor_(rows);
-    const roster = [], cycles = {};
+    const roster = [], cycles = {}, zones = {};
+    const now = new Date();
     for (let i = 1; i < rows.length; i++) {
       const id = payrollSubjectId_(rows[i]);
       if (!id) continue;
       const pc = empPayCycle_(rows[i], anchor).payCycle;
       cycles[pc] = true;
+      const tz = safeTimezone_(String(rows[i][EMP.TIMEZONE] || '').trim());
+      // F31: Day Edit accepts a day by the REP's own today (managerSaveDay), so
+      // "editable" is judged in that frame too.
       roster.push({ id: id, name: String(rows[i][EMP.NAME] || '').trim(), payCycle: pc,
-        offboarded: !empRosterEmail_(rows[i]), timezone: safeTimezone_(String(rows[i][EMP.TIMEZONE] || '').trim()) });
+        offboarded: !empRosterEmail_(rows[i]), timezone: tz, todayIso: fmtDateTz_(now, tz) });
+      zones[tz] = true;
     }
-    const todayIso = fmtDate_(new Date());
+    // F31 (cycle 26): "today" is the MANAGER's, the frame checkOpenPunches
+    // uses with the same grace constant — it was CONFIG.TIMEZONE (India), a
+    // day ahead from about 12:30 pm Central: the card called a period "(just
+    // ended)" on its last afternoon, disagreed with the 8 am scan on what was
+    // open, and said a day still inside the edit window was past it.
+    const todayIso = fmtDateTz_(now, CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE);
     const periods = payPeriodsForClose_(todayIso, cycles, anchor);
     const dated = periods.filter((p) => !p.error);
-    let perDayByEmp = {};
+    let perDayByEmp = {}, inferredByEmp = {};
     if (dated.length) {
       const from = dated.reduce((m, p) => (p.start < m ? p.start : m), dated[0].start);
       const to = dated.reduce((m, p) => (p.end > m ? p.end : m), dated[0].end);
-      perDayByEmp = workedHoursByEmpForRange_(from, to).perDayByEmp;
+      const idx = workedHoursByEmpForRange_(from, to);
+      perDayByEmp = idx.perDayByEmp;
+      inferredByEmp = idx.inferredByEmp || {};   // FR1 — the same one read
     }
     const toRows = getOrCreateTimeOffSheet_().getDataRange().getValues();
     const parRows = getOrCreatePunchAdjustSheet_().getDataRange().getValues();
-    const plan = planPayPeriodClose_(roster, perDayByEmp, toRows, parRows, periods, todayIso, CONFIG.ADJUST_WINDOW_DAYS, OPEN_PUNCH_GRACE_DAYS);
+    const plan = planPayPeriodClose_(roster, perDayByEmp, toRows, parRows, periods, todayIso, CONFIG.ADJUST_WINDOW_DAYS, OPEN_PUNCH_GRACE_DAYS, inferredByEmp);
+    // The dates listed are Timesheet dates — each in that rep's ROSTER timezone,
+    // never CONFIG.TIMEZONE (the card said "Dates in IST" over Chicago dates).
+    // One zone on the roster is named; more than one is said, not guessed.
+    const zoneList = Object.keys(zones);
     return { periods: plan.periods, orphans: plan.orphans, todayIso: todayIso,
-      adjustWindowDays: CONFIG.ADJUST_WINDOW_DAYS, graceDays: OPEN_PUNCH_GRACE_DAYS, tzAbbr: tzAbbr_(CONFIG.TIMEZONE) };
+      adjustWindowDays: CONFIG.ADJUST_WINDOW_DAYS, graceDays: OPEN_PUNCH_GRACE_DAYS,
+      tzAbbr: zoneList.length === 1 ? tzAbbr_(zoneList[0]) : '', tzMixed: zoneList.length > 1 };
   } catch (err) {
     return { error: err.message };
   }
@@ -6446,7 +6801,8 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
         `Employees:  ${result.employeeCount} (${payCycleFilter})\n` +
         `Rows:       ${result.rowCount}\n` +
         (result.inferredCount ? `Inferred:   ${result.inferredCount} punch(es) set from app activity — ` +
-          exportInferredLines_(result.inferred, result.inferredCount).join('; ') + '\n' : '') + '\n' +
+          exportInferredLines_(result.inferred, result.inferredCount).join('; ') + '\n' : '') +
+        (result.inferredConfirmedCount ? `Confirmed:  ${exportConfirmedLine_(result.inferredConfirmedCount)}\n` : '') + '\n' +
         `Also accessible as a Google Sheet:\n${result.url}\n\n` +
         `— UMS Time Clock (automated)`,
       htmlBody: buildBrandedEmailHtml_('ADP export ready',
@@ -6455,7 +6811,8 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
           ['Employees', result.employeeCount + ' (' + payCycleFilter + ')'],
           ['Rows', String(result.rowCount)],
         ].concat(result.inferredCount ? [['Inferred from app activity',
-          exportInferredLines_(result.inferred, result.inferredCount).join('; ')]] : [])) +
+          exportInferredLines_(result.inferred, result.inferredCount).join('; ')]] : [])
+          .concat(result.inferredConfirmedCount ? [['Confirmed by a manager', exportConfirmedLine_(result.inferredConfirmedCount)]] : [])) +
         '',
         { accent: CN_EMAIL_PALETTE.brand, subLabel: 'Payroll', statusLabel: 'Ready',
           ctaUrl: result.url, ctaLabel: 'Open as a Google Sheet' }),
@@ -6626,6 +6983,7 @@ function generateExportSheet_(startDate, endDate, cycleFilter) {
   }
   const liveCount = read.rows.length - read.archivedRows;   // live rows first, then archive rows
   const inferred = [];   // E2 — named BESIDE the file (the link, the email); the upload itself is untouched
+  let inferredConfirmed = 0;   // DQ3 — an inferred time a manager confirmed as is: counted, not listed
   read.rows.forEach((r, n) => {
     const rowId = String(r[ADP.EMP_ID]).trim();
     if (!rowId && n >= liveCount) return;   // an archive row with no id was skipped before the move too
@@ -6635,6 +6993,7 @@ function generateExportSheet_(startDate, endDate, cycleFilter) {
     matched.push(cleaned);
     if (adpRowInferred_(r)) inferred.push({ id: rowId, name: String(r[ADP.EMP_NAME] || ''), date: normalizeDate_(r[ADP.DATE]),
       time: normalizeTime_(r[ADP.TIME]).substring(0, 5), type: normalizeType_(String(r[ADP.COMMENTS])) });
+    else if (adpRowConfirmed_(r)) inferredConfirmed++;
   });
   const archivedRowCount = read.archivedRows;
 
@@ -6692,6 +7051,7 @@ function generateExportSheet_(startDate, endDate, cycleFilter) {
     // NOT a tab in the file — the file is the ADP upload, kept exactly its
     // shape — but named beside it: the export link and the automated email.
     inferredCount: inferred.length, inferred: inferred.slice(0, EXPORT_INFERRED_LIST_MAX),
+    inferredConfirmedCount: inferredConfirmed,   // DQ3
     // F1: how many of rowCount came from the cold archive (0 in the normal
     // current-period case). Additive — existing callers ignore it.
     archivedRowCount: archivedRowCount };
@@ -7013,7 +7373,7 @@ function empPendingAdjustments_(empId, dateIso) {
         // B3: additive. A pending RESUME must not read as "Clock Out 19:30" —
         // that is the punch it converts, not the one it adds. An older client
         // ignores the field and renders as before.
-        action: String(rows[i][PAR.ACTION] || '').trim().toLowerCase() === 'resume' ? 'resume' : 'set',
+        action: parAction_(rows[i][PAR.ACTION]),
         endTime: parEndTime_(rows[i]),   // T3
         breakIntent: breakIntentNorm_(rows[i][PAR.BREAK_TARGET]),   // TC-02 — what a break request means
       });
@@ -8305,17 +8665,33 @@ function exportInferredLines_(list, total) {
  *  carries. Unmarking a tab that has no column J is a no-op; marking grows the
  *  grid and names the column the first time. Callers hold the script lock. */
 function adpSetInferred_(sheet, rowIndex, on) {
+  adpSetSource_(sheet, rowIndex, on ? ADP_INFERRED_MARK : '');
+}
+/** Cycle 26 DQ3 — write column J's mark: ADP_INFERRED_MARK, ADP_CONFIRMED_MARK
+ *  or '' (a person's own time). The one writer of that column. */
+function adpSetSource_(sheet, rowIndex, mark) {
   const col = ADP.INFERRED + 1;
   if (sheet.getMaxColumns() < col) {
-    if (!on) return;
+    if (!mark) return;
     sheet.insertColumnsAfter(sheet.getMaxColumns(), col - sheet.getMaxColumns());
   }
-  if (on && !String(sheet.getRange(1, col).getValue() || '').trim()) sheet.getRange(1, col).setValue(sheetSafe_('Source'));
-  sheet.getRange(rowIndex, col).setValue(sheetSafe_(on ? ADP_INFERRED_MARK : ''));
+  if (mark && !String(sheet.getRange(1, col).getValue() || '').trim()) sheet.getRange(1, col).setValue(sheetSafe_('Source'));
+  sheet.getRange(rowIndex, col).setValue(sheetSafe_(mark || ''));
 }
-/** PURE (Node-pinned) — is this Timesheet row marked inferred? */
+/** PURE (Node-pinned) — is this Timesheet row marked inferred? A CONFIRMED
+ *  row is not: its time has been checked by a manager (DQ3). */
 function adpRowInferred_(row) {
   return String((row && row[ADP.INFERRED]) || '').trim() === ADP_INFERRED_MARK;
+}
+/** PURE (Node-pinned) — DQ3: was this row's inferred time confirmed as is? */
+function adpRowConfirmed_(row) {
+  return String((row && row[ADP.INFERRED]) || '').trim() === ADP_CONFIRMED_MARK;
+}
+/** PURE (Node-pinned) — DQ3: the export's line for confirmed punches, '' for
+ *  none: "2 punches set from app activity, confirmed by a manager". */
+function exportConfirmedLine_(n) {
+  n = Number(n) || 0;
+  return n > 0 ? n + ' punch' + (n === 1 ? '' : 'es') + ' set from app activity, confirmed by a manager' : '';
 }
 function openPersonalSs_(sheetId) {
   if (!_personalSsCache[sheetId]) _personalSsCache[sheetId] = SpreadsheetApp.openById(sheetId);
@@ -8404,6 +8780,43 @@ function getOrCreatePunchAdjustSheet_() {
  *  recordPunch's adjustment path: date/time shape, known punch type, future
  *  reject, adjust window, reason beyond OLD_ADJUST_ALERT_DAYS). Caller-scoped,
  *  locked. */
+/** PURE (Node-pinned) — a request's ACTION cell, read in ONE place: 'resume'
+ *  (B3), 'confirm' (cycle 26 DS1 — the rep asks that a clock time set from app
+ *  activity be confirmed as it stands) or the ordinary 'set'. A blank legacy
+ *  cell, and anything else, is 'set'. */
+function parAction_(v) {
+  const a = String(v == null ? '' : v).trim().toLowerCase();
+  return a === 'resume' ? 'resume' : a === 'confirm' ? 'confirm' : 'set';
+}
+/** PURE (Node-pinned) — DS1: what a CONFIRM request finds on its day. `matches`
+ *  is the day's rows of that clock type in sheet order ({rowIndex, time 'HH:mm',
+ *  inferred, confirmed}); the SHOWN row is the last. → {code}: 'ok' (still
+ *  inferred at the requested time — with rowIndex), 'done' (already confirmed
+ *  at that time), 'none' (no such punch), 'changed' (another time now stands),
+ *  'plain' (that time, but never marked — nothing to confirm). */
+function confirmRequestTarget_(matches, reqTime) {
+  const list = matches || [];
+  const cur = list[list.length - 1];
+  if (!cur) return { code: 'none' };
+  if (String(cur.time || '') !== String(reqTime || '')) return { code: 'changed', time: cur.time };
+  if (cur.inferred === true) return { code: 'ok', rowIndex: cur.rowIndex, time: cur.time };
+  if (cur.confirmed === true) return { code: 'done', time: cur.time };
+  return { code: 'plain', time: cur.time };
+}
+/** PURE (Node-pinned) — DS1: why a confirm request cannot go ahead ('' for
+ *  'ok' and 'done'). The request is refused, never bent to fit (g163). */
+function confirmRequestError_(t, punchType, date, reqTime) {
+  const label = punchType === 'ClockOut' ? 'Clock Out' : 'Clock In';
+  if (!t || t.code === 'none') return 'There is no ' + label + ' on ' + date + ' to confirm.';
+  if (t.code === 'changed') return 'The ' + label + ' on ' + date + ' is now ' + t.time + ', not the ' + reqTime + ' this request confirms.';
+  if (t.code === 'plain') return 'The ' + label + ' on ' + date + ' is not marked as set from app activity, so there is nothing to confirm.';
+  return '';
+}
+/** PURE (Node-pinned) — DS1: one request as the manager email names it. */
+function adjEntryText_(c) {
+  if (c && c.action === 'confirm') return 'Confirm ' + c.punchType + ' ' + c.time + ' (set from app activity)';
+  return c.punchType + ' ' + c.time;
+}
 function submitPunchAdjustRequests(requests) {
   const emp = getEmployeeInfo_();
   if (!emp) return { success: false, error: 'Employee not found.' };
@@ -8427,12 +8840,18 @@ function submitPunchAdjustRequests(requests) {
       // NOT a punch write — on approval the trailing ClockOut is CONVERTED to a
       // break and the requested time becomes the break's end, so the hours the
       // rep was away are unpaid. Any other value reads as the ordinary 'set'.
-      const action = String(r.action || '').trim().toLowerCase() === 'resume' ? 'resume' : 'set';
+      const action = parAction_(r.action);   // 'resume', 'confirm' (cycle 26 DS1) or the ordinary 'set'
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { success: false, error: label + ': invalid date.' };
       if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return { success: false, error: label + ': invalid time (expected HH:mm).' };
       if (PUNCH_LABELS_.indexOf(punchType) < 0) return { success: false, error: label + ': invalid punch type.' };
       if (action === 'resume' && punchType !== 'ClockOut') {
         return { success: false, error: label + ': a resume request converts the Clock Out — it cannot target ' + punchType + '.' };
+      }
+      // DS1 (cycle 26, operator 2026-11-19): a rep may ASK that a clock time a
+      // manager set from app activity be confirmed as it stands. It is a
+      // request like any other — nothing changes until a manager approves it.
+      if (action === 'confirm' && punchType !== 'ClockIn' && punchType !== 'ClockOut') {
+        return { success: false, error: label + ': only a Clock In or Clock Out can be confirmed.' };
       }
       if (date > todayStr) return { success: false, error: label + ': cannot request a future date.' };
       // F(L-2): same-day future-TIME reject — INV-106 claims parity with
@@ -8444,7 +8863,8 @@ function submitPunchAdjustRequests(requests) {
       }
       const daysBack = daysBetween_(date, todayStr);
       if (daysBack > CONFIG.ADJUST_WINDOW_DAYS) return { success: false, error: label + ': older than the ' + CONFIG.ADJUST_WINDOW_DAYS + '-day adjust window.' };
-      if (daysBack > CONFIG.OLD_ADJUST_ALERT_DAYS && !reason) return { success: false, error: label + ': a reason is required for dates more than ' + CONFIG.OLD_ADJUST_ALERT_DAYS + ' days back.' };
+      // A confirm changes no time, so it owes no reason for an older date.
+      if (daysBack > CONFIG.OLD_ADJUST_ALERT_DAYS && !reason && action !== 'confirm') return { success: false, error: label + ': a reason is required for dates more than ' + CONFIG.OLD_ADJUST_ALERT_DAYS + ' days back.' };
       clean.push({ date: date, time: time, punchType: punchType, reason: reason, action: action,
         breakIntent: (action === 'set' && BREAK_PUNCH_TYPES.indexOf(punchType) >= 0) ? breakIntentNorm_(r.breakIntent) : null });
     }
@@ -8454,13 +8874,25 @@ function submitPunchAdjustRequests(requests) {
     // a correction must name a punch the day actually has. Re-checked at
     // approval — the day can be edited while the request waits.
     // TC-05 (cycle 23): the same ONE read also serves the clock-span check.
-    const breakDates = {}, clockDates = {};
+    const breakDates = {}, clockDates = {}, confirmDates = {};
     clean.forEach(function (c) {
       if (c.breakIntent) breakDates[c.date] = true;
       if (c.action === 'set' && (c.punchType === 'ClockIn' || c.punchType === 'ClockOut')) clockDates[c.date] = true;
+      if (c.action === 'confirm') confirmDates[c.date] = true;
     });
-    const ixDates = Object.assign({}, breakDates, clockDates);
+    const ixDates = Object.assign({}, breakDates, clockDates, confirmDates);
     const bix = Object.keys(ixDates).length ? buildAdjustPunchIndex_(emp.id, ixDates) : null;
+    // DS1: a confirm names a time that must be standing, and still marked
+    // inferred, NOW — and it is re-checked at approval, because the day can be
+    // edited (or confirmed by a manager) while the request waits.
+    for (let i = 0; i < clean.length; i++) {
+      const c = clean[i];
+      if (c.action !== 'confirm') continue;
+      const t = confirmRequestTarget_(bix.all[c.date + '|' + c.punchType], c.time);
+      if (t.code === 'done') return { success: false, error: 'Adjustment #' + (i + 1) + ': that time has already been confirmed.' };
+      const cErr = confirmRequestError_(t, c.punchType, c.date, c.time);
+      if (cErr) return { success: false, error: 'Adjustment #' + (i + 1) + ': ' + cErr };
+    }
     if (Object.keys(breakDates).length) {
       for (let i = 0; i < clean.length; i++) {
         const c = clean[i];
@@ -8597,7 +9029,7 @@ function getMyPunchAdjustRequests() {
         punchType: String(rows[i][PAR.PUNCH_TYPE]).trim(),
         time: normalizeTime_(rows[i][PAR.REQ_TIME]).trim().substring(0, 5),
         reason: String(rows[i][PAR.REASON] || ''),
-        action: String(rows[i][PAR.ACTION] || '').trim().toLowerCase() === 'resume' ? 'resume' : 'set',
+        action: parAction_(rows[i][PAR.ACTION]),
         breakIntent: breakIntentNorm_(rows[i][PAR.BREAK_TARGET]),   // TC-02
         status: String(rows[i][PAR.STATUS]).trim(),
         submittedAt: normalizeAuditTs_(rows[i][PAR.SUBMITTED_AT]),
@@ -8649,7 +9081,7 @@ function managerGetPendingAdjustments() {
         // B3: the manager must see WHICH kind of request this is — a resume
         // converts an existing clock-out and leaves an unpaid gap, which is a
         // materially different decision from adding a missed punch.
-        action: String(rows[i][PAR.ACTION] || '').trim().toLowerCase() === 'resume' ? 'resume' : 'set',
+        action: parAction_(rows[i][PAR.ACTION]),
         // T3: a resume's filed finish ('' when none) — the manager sees whether
         // approving closes the day or leaves it for the rep to clock out.
         endTime: parEndTime_(rows[i]),
@@ -8681,15 +9113,19 @@ function updatePunchAdjustStatusBulk(reqIds, newStatus) {
   return punchAdjustDecideAll_(reqIds, newStatus);
 }
 function punchAdjustDecideAll_(reqIds, newStatus) {
+  // F26 (cycle 26): the caller BEFORE the lock (g17 / F58) — both public
+  // wrappers above reach the lock only through here, so any signed-in rep
+  // calling either one queued on the project lock and then held it, to be
+  // refused. Nothing that changes nothing runs under the lock.
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+  if (newStatus !== 'Approved' && newStatus !== 'Denied') return { success: false, error: 'Invalid status.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   const later = [];                                            // post-lock notifications (M-7)
   let notifyAfter = null;
   const results = [];
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
-    if (newStatus !== 'Approved' && newStatus !== 'Denied') return { success: false, error: 'Invalid status.' };
     const ids = [];
     (Array.isArray(reqIds) ? reqIds : [reqIds]).forEach((x) => {
       const id = String(x || '').trim();
@@ -8725,7 +9161,7 @@ function punchAdjustDecideAll_(reqIds, newStatus) {
       const reqTime = normalizeTime_(rows[i][PAR.REQ_TIME]).trim().substring(0, 5);
       const reason = String(rows[i][PAR.REASON] || '');
       // B3: '' on a legacy row means the ordinary punch write.
-      const action = String(rows[i][PAR.ACTION] || '').trim().toLowerCase() === 'resume' ? 'resume' : 'set';
+      const action = parAction_(rows[i][PAR.ACTION]);
       if (newStatus === 'Approved') {
         const targetEmp = lookupEmployeeById_(empId);
         if (!targetEmp) { fail(id, 'Employee not found.'); return; }
@@ -8748,6 +9184,14 @@ function punchAdjustDecideAll_(reqIds, newStatus) {
           // finish written by the same writer), so this employee's index is
           // kept — the batch used to drop it and re-read the whole Timesheet
           // for the next request, inside the one project lock.
+        } else if (action === 'confirm') {
+          // DS1: the rep's confirm request. The time is NOT written — the
+          // row's mark moves from Inferred to Confirmed, as the manager's own
+          // Confirm as is does. Refused, with the reason, when the time no
+          // longer stands or was never inferred; a time a manager has already
+          // confirmed is simply done.
+          const cres = confirmInferredForEmployee_(targetEmp, date, punchType, reqTime, callerEmp.email, reason, ctxFor(empId), ageDays);
+          if (cres && cres.error) { fail(id, cres.error); return; }
         } else {
           // TC-02 (cycle 23): a break request carries what it means ('add' or
           // 'correct@HH:mm'); the writer refuses a target that is gone (the day
@@ -8779,7 +9223,7 @@ function punchAdjustDecideAll_(reqIds, newStatus) {
       } else {
         const targetForAudit = lookupEmployeeById_(empId) || { id: empId, name: empName, email: '' };
         writeAuditLog_(targetForAudit, 'PunchAdjustStatusChange', date, '', false, 0,
-          `${punchType} ${reqTime} request denied`, callerEmp.email);
+          `${action === 'confirm' ? 'confirm ' : ''}${punchType} ${reqTime} request denied`, callerEmp.email);
         const dnote = breakIntentNote_(punchType, rows[i][PAR.BREAK_TARGET]);
         notifyAfter = function () { notifyEmployeeOfAdjustDecision_(targetForAudit, date, punchType, reqTime, reason, 'Denied', action, '', dnote); };
         later.push(notifyAfter);
@@ -8797,6 +9241,27 @@ function punchAdjustDecideAll_(reqIds, newStatus) {
     later.forEach((fn) => { try { fn(); } catch (e) { console.warn('post-lock notify failed: ' + e.message); } });
   }
 }
+/** DS1 (cycle 26) — applies an APPROVED confirm request: the day's shown row of
+ *  that clock type, still inferred at the requested time, is marked Confirmed
+ *  and one PunchConfirm audit row names the approver. Inside the caller's
+ *  lock; `ctx` is buildAdjustPunchIndex_'s, kept current. → {success} |
+ *  {success, already} (a manager confirmed it first — nothing to write) |
+ *  {error} (the request no longer matches the day; nothing is written). */
+function confirmInferredForEmployee_(emp, date, punchType, reqTime, approverEmail, reason, ctx, daysBack) {
+  if (punchType !== 'ClockIn' && punchType !== 'ClockOut') return { error: 'Only a Clock In or Clock Out can be confirmed — deny this request.' };
+  const list = (ctx && ctx.all && ctx.all[date + '|' + punchType]) || [];
+  const t = confirmRequestTarget_(list, reqTime);
+  if (t.code === 'done') return { success: true, already: true };
+  const err = confirmRequestError_(t, punchType, date, reqTime);
+  if (err) return { error: err + ' Deny this request.' };
+  adpSetSource_(ctx.sheet, t.rowIndex, ADP_CONFIRMED_MARK);
+  const cur = list[list.length - 1];
+  cur.inferred = false; cur.confirmed = true;
+  const note = String(reason || '').trim();
+  writeAuditLog_(emp, 'PunchConfirm', date, reqTime, true, daysBack || 0,
+    `${punchType}: ${reqTime} confirmed as is at the rep's request, approved by manager (was inferred from app activity)${note ? ' — ' + note : ''}`, approverEmail);
+  return { success: true };
+}
 /** Tells the MANAGERS a rep has filed punch-adjustment request(s) (B2,
  *  2026-09-01). Until this shipped, `submitPunchAdjustRequests` wrote its
  *  Pending rows, audited, and told NOBODY — the queue lives inside the manager
@@ -8813,14 +9278,14 @@ function notifyManagersOfAdjustRequests_(emp, entries) {
     const n = entries.length;
     const subj = `${emp.name} requested ${n} punch adjustment${n === 1 ? '' : 's'}`;
     const lines = entries.map(function (c) {
-      return `  ${c.date}  ${c.punchType} ${c.time}` + breakIntentNote_(c.punchType, c.breakIntent) + (c.reason ? `  — ${c.reason}` : '');
+      return `  ${c.date}  ${adjEntryText_(c)}` + breakIntentNote_(c.punchType, c.breakIntent) + (c.reason ? `  — ${c.reason}` : '');
     }).join('\n');
     const body = `${emp.name} submitted ${n} punch adjustment request${n === 1 ? '' : 's'} ` +
       `for your approval:\n\n${lines}\n\n` +
       `Approve or deny from Manage \u2192 Manage Time. Nothing changes on their ` +
       `timesheet until you do.\n\n\u2014 UMS Time Clock (automated)\n`;
     const rows = entries.map(function (c) {
-      return [c.date, c.punchType + ' ' + c.time + breakIntentNote_(c.punchType, c.breakIntent) + (c.reason ? ' \u2014 ' + c.reason : '')];
+      return [c.date, adjEntryText_(c) + breakIntentNote_(c.punchType, c.breakIntent) + (c.reason ? ' \u2014 ' + c.reason : '')];
     });
     const html = buildBrandedEmailHtml_('Punch adjustment' + (n === 1 ? '' : 's') + ' awaiting approval',
       '<p style="margin:0 0 12px;"><b>' + esc_(emp.name) + '</b> submitted ' + n +
@@ -8848,10 +9313,12 @@ function notifyEmployeeOfAdjustDecision_(emp, date, punchType, reqTime, reason, 
     const approved = newStatus === 'Approved';
     const verb = approved ? 'approved' : 'denied';
     const resume = String(action || '') === 'resume';
+    const confirm = String(action || '') === 'confirm';   // DS1
     const label = resume ? 'Resume shift'
-      : (PUNCH_LABELS_.indexOf(punchType) >= 0 ? punchType : String(punchType || '')) + String(intentNote || '');   // TC-02
+      : (confirm ? 'Confirm ' : '') + (PUNCH_LABELS_.indexOf(punchType) >= 0 ? punchType : String(punchType || '')) + String(intentNote || '');   // TC-02
     const subj = resume
       ? `Your request to resume your ${date} shift was ${verb}`
+      : confirm ? `Your request to confirm your ${date} ${punchType} was ${verb}`
       : `Your punch adjustment for ${date} was ${verb}`;
     const hasReason = !!String(reason || '').trim();
     let body = `Hi ${emp.name},\n\n` +
@@ -8869,8 +9336,11 @@ function notifyEmployeeOfAdjustDecision_(emp, date, punchType, reqTime, reason, 
             `you were away is unpaid, and your ${endTime} finish is recorded as your clock-out.`
           : `Your shift is open again. Your earlier clock-out is now a break, so the time ` +
             `you were away is unpaid — clock out as usual when you finish.`)
+      : confirm ? `The time stands as it is, and it is no longer marked as inferred from app activity.`
       : `The punch has been added to your timesheet.`;
-    const deniedLine = `No change was made to your timesheet. Contact your manager if you still need this fixed.`;
+    const deniedLine = confirm
+      ? `The time is still marked as inferred from app activity. If it is wrong, request an adjustment; otherwise contact your manager.`
+      : `No change was made to your timesheet. Contact your manager if you still need this fixed.`;
     body += (approved ? approvedLine : deniedLine) + `\n\n`;
     body += `— UMS Time Clock (automated)\n`;
     const kv = [['Date', date], ['Punch', label], [resume ? 'Back at' : 'Time', reqTime]];
@@ -9037,7 +9507,7 @@ function writeAdjustPunchForEmployee_(targetEmp, date, punchType, time, actorEma
     adpSetInferred_(c.sheet, target.rowIndex, false);   // E2: an approved time replaces an inferred one
     // TC-05 (cycle 23): keep a caller's ctx current, so a later check in the
     // same run (a Clock Out approved after its Clock In) reads this time.
-    ((c.all || {})[key] || []).forEach(function (m) { if (m.rowIndex === target.rowIndex) m.time = time; });
+    ((c.all || {})[key] || []).forEach(function (m) { if (m.rowIndex === target.rowIndex) { m.time = time; m.inferred = false; m.confirmed = false; } });   // DS1: the mark was cleared just above
   } else {
     appendToAdpSheet_(targetEmp, date, timeFull, dir, commentLabel);
     if (c.all) adjustIndexAppend_(c, date, punchType, c.sheet.getLastRow(), time);
@@ -9087,7 +9557,8 @@ function buildAdjustPunchIndex_(empId, dateSet) {
     if (!dateSet[d]) continue;
     const key = d + '|' + normalizeType_(String(rows[i][ADP.COMMENTS]));
     idx[key] = i + 1;
-    (all[key] || (all[key] = [])).push({ rowIndex: i + 1, time: String(normalizeTime_(rows[i][ADP.TIME]) || '').substring(0, 5) });
+    (all[key] || (all[key] = [])).push({ rowIndex: i + 1, time: String(normalizeTime_(rows[i][ADP.TIME]) || '').substring(0, 5),
+      inferred: adpRowInferred_(rows[i]), confirmed: adpRowConfirmed_(rows[i]) });   // DS1: a confirm request reads the shown row's mark
   }
   return { sheet: sheet, idx: idx, all: all };
 }
@@ -9860,6 +10331,11 @@ function empDocValidateIssue_(payload, pdf) {
   if (pdf) bodyMd = (bodyMd.trim() ? bodyMd.trim() + '\n\n' : '') + empDocPdfLine_(pdf.sha, pdf.name);
   if (!bodyMd.trim()) return { ok: false, error: 'Document body is required.' };
   if (bodyMd.length > EMPDOC_BODY_MAX) return { ok: false, error: 'Document is too long (max ~49,000 chars).' };
+  // Cycle 26 F44: what a signer SEES must be what the hash covers. An image by
+  // web address is hashed as its address only, and a converted Google Doc's
+  // image placeholder never becomes an image here — both are refused.
+  const linked = empDocBodyLinkedImage_(bodyMd);
+  if (linked) return { ok: false, error: linked.error };
   const dueAt = String(payload.dueAt || '').trim();
   if (dueAt && !/^\d{4}-\d{2}-\d{2}$/.test(dueAt)) return { ok: false, error: 'Invalid due date.' };
   const fv = empDocValidateFields_(payload.fields, { allowBoxes: !!pdf, pages: pdf ? empDocPdfPagesOf_(pdf.pages, payload.pdfPages) : 0 });
@@ -9877,6 +10353,24 @@ function empDocValidateIssue_(payload, pdf) {
     // later; default behavior (no flag) is to issue immediately (back-compat).
     status: payload.release === false ? 'draft' : 'issued',
   } };
+}
+/** PURE (Node-pinned) — cycle 26 F44: the first image in a document body that
+ *  the content hash cannot vouch for, as { kind, error }, or null. `kbimg:` keys
+ *  are content-addressed (the key IS the picture) and pass; a `kbdoc:` token is
+ *  the Google Doc converter's placeholder, which only a Reference save ever
+ *  turns into an image; any other address is a picture someone else controls. */
+function empDocBodyLinkedImage_(bodyMd) {
+  const re = /!\[[^\]]*\]\(\s*([^)\s]*)/g;
+  let m;
+  while ((m = re.exec(String(bodyMd || '')))) {
+    const url = m[1];
+    if (/^kbimg:kbimg-[a-f0-9]{24}$/.test(url)) continue;
+    if (/^kbdoc:/i.test(url)) {
+      return { kind: 'kbdoc', error: 'The body still holds a placeholder for an image from the converted Google Doc ("Doc image…"). An employee document cannot carry a Doc\'s images — remove the placeholder, or issue the document as a PDF.' };
+    }
+    return { kind: 'link', error: 'The body embeds an image by its web address. The integrity hash covers the address, not the picture, so what a signed document shows could change later — remove the image, or issue the document as a PDF.' };
+  }
+  return null;
 }
 /** Pure (Node-pinned) — normalize + validate a fillable-field schema. Returns
  *  {ok, fields:[{id,label,type,required}]} or {ok:false,error}. Auto-derives a
@@ -10000,6 +10494,16 @@ function empDocValidateResponses_(fields, responses) {
     if (val.length > EMPDOC_RESPONSE_MAX) return { ok: false, error: 'A response is too long (max ' + EMPDOC_RESPONSE_MAX + ' chars).' };
     if (f.type === 'date' && val && !/^\d{4}-\d{2}-\d{2}$/.test(val)) return { ok: false, error: 'Invalid date for: ' + f.label };
     if (val) out[f.id] = val;
+  }
+  // Cycle 26 F44: the answers are stored together in ONE cell. Each fits its
+  // own limit, yet seven long ones overflowed the cell and the employee was
+  // shown the spreadsheet's raw error — refuse here, naming the longest.
+  const total = JSON.stringify(out).length;
+  if (total > EMPDOC_RESPONSES_TOTAL_MAX) {
+    let longest = null;
+    fields.forEach(function (f) { if (out[f.id] && (!longest || out[f.id].length > out[longest.id].length)) longest = f; });
+    return { ok: false, error: 'Your answers together are ' + total.toLocaleString() + ' characters — more than the ' + EMPDOC_RESPONSES_TOTAL_MAX.toLocaleString() +
+      ' this record can hold. Shorten the longest one' + (longest ? ' ("' + longest.label + '")' : '') + ' and submit again.' };
   }
   return { ok: true, responses: out };
 }

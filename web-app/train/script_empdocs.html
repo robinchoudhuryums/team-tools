@@ -125,6 +125,8 @@
   .ed-pdf.is-zoomed .ed-pdf-page { flex: none; margin: 0 auto; }
   .ed-pdf-warn { margin: 6px 0 0; padding-left: 18px; font-size: .8rem; color: var(--warning-deep); }
   .ed-pdf-warn[hidden], .ed-pdf-offer[hidden] { display: none; }
+  .ed-pdf-retry { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 8px 0 4px; }
+  .ed-box-bar input[type="number"] { width: 64px; }
   /* ED4 — a written document on its paper (the letterhead above, its footer
      below, alignment, page breaks, the signature block); Write / Preview and
      the insert buttons; the admin's letterhead cards. The paper is white in
@@ -453,6 +455,22 @@ function edIntegrityNoteHtml_(doc) {
   }
   return doc.isOwner ? '' : '<div class="ed-integrity-note" data-integrity="unverifiable">No content hash on record — this document\'s integrity cannot be checked (a legacy or hand-entered row).</div>';
 }
+/** Cycle 26 F14 — the SIGNATURE record's verdict on a finished document (the
+ *  server's `record`): the signature hash covers the responses, the signature
+ *  and the initials, which `integrity` does not. An altered record is said to
+ *  whoever reads it; one with no hash on file to a manager only. Nothing when
+ *  the text itself is already reported as altered (one note, not two). */
+function edRecordNoteHtml_(doc) {
+  if (!doc || doc.integrity === 'altered' || !doc.record || doc.record === 'ok') return '';
+  if (doc.record === 'altered') {
+    return '<div class="ed-integrity-note" data-integrity="altered" data-record="altered">' + icon('warning', 12) +
+      ' This document\'s signature record no longer matches what was ' + (doc.status === 'completed' ? 'completed' : 'signed') +
+      ' — an answer, the signature or the initials were changed outside the app. ' +
+      (doc.isOwner ? 'Do not rely on it; tell your manager.' : 'Use Verify for the detail. No copy can be made from it.') + '</div>';
+  }
+  return doc.isOwner || doc.integrity === 'unverifiable' ? ''
+    : '<div class="ed-integrity-note" data-integrity="unverifiable" data-record="unverifiable">No signature hash on record — this document\'s signature cannot be checked (a legacy row).</div>';
+}
 function edRenderDoc_(doc) {
   var overlay = document.getElementById('ed-reader-overlay');
   if (!overlay) return;
@@ -464,7 +482,7 @@ function edRenderDoc_(doc) {
   if (doc.status === 'void') {
     body += '<div class="ed-void-note">This document was voided' + (doc.voidReason ? ': ' + esc(doc.voidReason) : '.') + '</div>';
   }
-  body += edIntegrityNoteHtml_(doc);
+  body += edIntegrityNoteHtml_(doc) + edRecordNoteHtml_(doc);
   // Batch H: a PDF document's frozen body ends with the line naming its file's
   // SHA-256; it is drawn as a wrapped fingerprint under the note, not as prose.
   var shownMd = doc.pdf ? edPdfNoteOf_(doc.bodyMd) : (doc.bodyMd || '');
@@ -667,8 +685,19 @@ function edCloseDoc_() {
 // manager draws the boxes when issuing. The server re-hashes the PDF on every
 // read and before every signature.
 var ED_PDF_MAX_BYTES = 4194304;   // = EMPDOC_PDF_MAX_BYTES (pinned)
-var ED_PDFJS_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
-var ED_PDFJS = { state: '', waiting: [] };   // '' | 'loading' | 'ready' | 'failed'
+// Cycle 26 F56: pdf.js draws the document an employee is about to sign and runs
+// in the app's frame, so it gets the pdf-lib loader's posture — fetched, its
+// SHA-256 checked, and run from the checked bytes. The hashes are the npm
+// package's (pdfjs-dist, the version the harness installs — pinned against the
+// installed files). Two sources serve those bytes; each is tried in turn, so a
+// source that is blocked — or that ever serves something else — is passed over.
+var ED_PDFJS_VERSION = '3.11.174';
+var ED_PDFJS_SOURCES = ['https://cdnjs.cloudflare.com/ajax/libs/pdf.js/' + ED_PDFJS_VERSION + '/',
+  'https://cdn.jsdelivr.net/npm/pdfjs-dist@' + ED_PDFJS_VERSION + '/build/'];
+var ED_PDFJS_FILES = [['pdf.min.js', '5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946'],
+  ['pdf.worker.min.js', 'feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b']];
+var ED_PDFJS_TIMEOUT_MS = 20000;   // a request that hangs is a failed one, not "Loading the PDF…" for ever
+var ED_PDFJS = { state: '', waiting: [] };   // '' | 'loading' | 'ready' — a failure is not kept (g129)
 var ED_BOX_LABELS = { text: 'Text', date: 'Date', textarea: 'Paragraph', signature: 'Signature', initials: 'Initials' };
 // ED1 — the legend's words for each box type, in the order the picker lists them.
 var ED_BOX_KEYS = [['text', 'Short text'], ['date', 'Date'], ['textarea', 'Paragraph'], ['signature', 'Signature'], ['initials', 'Initials']];
@@ -681,30 +710,55 @@ var ED_BOX_FS = 10;
 var ED_BOX_FS_MIN = 7;
 var ED_BOX_DEFAULT_PTS = { text: [180, 16], date: [96, 16], textarea: [360, 72], signature: [180, 40], initials: [54, 28] };
 var ED_BOX_MIN_H_PTS = { text: 12, date: 12, textarea: 24, signature: 24, initials: 18 };
-/** pdf.js, loaded once (the handbook app's loader): done(lib) or done(null). */
+/** F56 — one script, from the first source whose bytes match `sha256`:
+ *  fetched (with a time limit), hashed, and run from the bytes that were
+ *  hashed. Resolves once it has run; rejects when no source gave those bytes. */
+function edCheckedScript_(sources, file, sha256, timeoutMs) {
+  var tryAt = function (i) {
+    if (i >= sources.length) return Promise.reject(new Error(file + ' could not be loaded from any source'));
+    var ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    var timer = ctl ? setTimeout(function () { ctl.abort(); }, timeoutMs) : null;
+    var stop = function () { if (timer) clearTimeout(timer); };
+    // Inside a promise, so a browser with no fetch (or no crypto.subtle) is a
+    // failed load like any other, never an uncaught error.
+    return Promise.resolve().then(function () { return fetch(sources[i] + file, ctl ? { signal: ctl.signal } : undefined); })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
+      .then(function (buf) {
+        return crypto.subtle.digest('SHA-256', buf).then(function (d) {
+          if (edHex_(d) !== sha256) throw new Error(file + ' did not match its checksum');
+          return buf;
+        });
+      })
+      .then(function (buf) {
+        stop();
+        var sc = document.createElement('script');
+        sc.textContent = new TextDecoder().decode(buf);
+        document.head.appendChild(sc);
+      }, function () { stop(); return tryAt(i + 1); });
+  };
+  return tryAt(0);
+}
+/** pdf.js, loaded once: done(lib) or done(null). A failed load is NOT kept —
+ *  the next call tries again (it was kept for the whole session, so one network
+ *  blip blocked every PDF document, and signing, until the app was reloaded). */
 function edPdfJs_(done) {
-  if (ED_PDFJS.state === '' && window.pdfjsLib && window.pdfjsWorker) ED_PDFJS.state = 'ready';
+  if (window.pdfjsLib && window.pdfjsWorker) ED_PDFJS.state = 'ready';
   if (ED_PDFJS.state === 'ready') { done(window.pdfjsLib); return; }
-  if (ED_PDFJS.state === 'failed') { done(null); return; }
   ED_PDFJS.waiting.push(done);
   if (ED_PDFJS.state === 'loading') return;
   ED_PDFJS.state = 'loading';
   var finish = function (ok) {
-    ED_PDFJS.state = ok ? 'ready' : 'failed';
-    if (ok) { try { window.pdfjsLib.GlobalWorkerOptions.workerSrc = ED_PDFJS_BASE + 'pdf.worker.min.js'; } catch (e) {} }
+    ED_PDFJS.state = ok ? 'ready' : '';
+    if (ok) { try { window.pdfjsLib.GlobalWorkerOptions.workerSrc = ED_PDFJS_SOURCES[0] + 'pdf.worker.min.js'; } catch (e) {} }
     var w = ED_PDFJS.waiting; ED_PDFJS.waiting = [];
     w.forEach(function (fn) { fn(ok ? window.pdfjsLib : null); });
   };
-  var load = function (file, next) {
-    var sc = document.createElement('script');
-    sc.src = ED_PDFJS_BASE + file;
-    sc.onload = next; sc.onerror = function () { finish(false); };
-    document.head.appendChild(sc);
-  };
-  load('pdf.min.js', function () {
-    if (!window.pdfjsLib) { finish(false); return; }
-    load('pdf.worker.min.js', function () { finish(!!window.pdfjsWorker); });
-  });
+  edCheckedScript_(ED_PDFJS_SOURCES, ED_PDFJS_FILES[0][0], ED_PDFJS_FILES[0][1], ED_PDFJS_TIMEOUT_MS)
+    .then(function () {
+      if (!window.pdfjsLib) throw new Error('pdf.js did not start');
+      return edCheckedScript_(ED_PDFJS_SOURCES, ED_PDFJS_FILES[1][0], ED_PDFJS_FILES[1][1], ED_PDFJS_TIMEOUT_MS);
+    })
+    .then(function () { finish(!!window.pdfjsWorker); }, function () { finish(false); });
 }
 /** PURE (Node-pinned) — a PDF document's note: its frozen body without the
  *  closing line that names the file (empDocPdfLine_'s shape). */
@@ -1138,7 +1192,7 @@ function edRenderPdfPages_(host, bytes, opts, done) {
   var alive = opts.alive || function () { return true; };
   edPdfJs_(function (lib) {
     if (!alive()) return;
-    if (!lib) { done('The PDF viewer could not load in this browser.'); return; }
+    if (!lib) { done('The PDF viewer could not be loaded just now.'); return; }   // F56: not "in this browser" — it is the download that failed, and it is tried again
     lib.getDocument({ data: bytes.slice(0), isEvalSupported: false }).promise.then(function (doc) {
       if (!alive()) return null;
       host.innerHTML = '';
@@ -1274,10 +1328,25 @@ function edLoadDocPdf_(doc) {
   if (!host) return;
   var docId = doc.docId;
   var alive = function () { return ED_STATE.readerDocId === docId && !!document.getElementById('ed-pdf-pages'); };
+  // F56 (cycle 26): a PDF that cannot be shown offers Retry (a failed viewer
+  // load is no longer kept), and — once its bytes are here — the original to
+  // download and read; it still cannot be completed until it shows here.
+  var got = null;
   var fail = function (msg) {
     var h = document.getElementById('ed-pdf-pages'); if (!h || !alive()) return;
     h.removeAttribute('aria-busy');
-    h.innerHTML = errorStateHtml_(msg + (doc.canComplete ? ' It cannot be completed until it shows here.' : ''));   // A12
+    h.innerHTML = errorStateHtml_(msg + (doc.canComplete ? ' It cannot be completed until it shows here.' : '')) +   // A12
+      '<div class="ed-pdf-retry"><button type="button" class="kb-btn" data-ed-pdf-retry="1">' + icon('refresh', 13) + ' Try again</button>' +
+      (got ? '<button type="button" class="kb-btn" data-ed-pdf-dl="1">' + icon('download', 13) + ' Download the PDF</button><span class="ed-cert-msg" id="ed-pdf-dl-msg" role="status"></span>' : '') + '</div>';
+    var rb = h.querySelector('[data-ed-pdf-retry]');
+    if (rb) rb.addEventListener('click', function () {
+      var sb = document.getElementById('ed-sign-btn'); if (sb) sb.disabled = false;
+      h.setAttribute('aria-busy', 'true');
+      h.innerHTML = '<div class="m-loading" role="status">Loading the PDF\u2026</div>';
+      edLoadDocPdf_(doc);
+    });
+    var db = h.querySelector('[data-ed-pdf-dl]');
+    if (db) db.addEventListener('click', function () { edDownloadPdf_(got.bytes, got.name, 'ed-pdf-dl-msg'); });
     var b = document.getElementById('ed-sign-btn'); if (b) b.disabled = true;
   };
   google.script.run
@@ -1285,6 +1354,7 @@ function edLoadDocPdf_(doc) {
       if (!alive()) return;
       if (!res || res.error || !/^data:application\/pdf;base64,/.test(String(res.dataUri || ''))) { fail('The PDF could not be loaded: ' + String((res && res.error) || 'the server did not answer').replace(/\.$/, '') + '.'); return; }
       var bytes; try { bytes = edDataUriBytes_(res.dataUri); } catch (e) { fail('The PDF arrived damaged.'); return; }
+      got = { bytes: bytes, name: String(res.name || (doc.pdf && doc.pdf.name) || 'document.pdf') };
       var mode = doc.canComplete ? 'fill' : 'show';
       edRenderPdfPages_(host, bytes, { alive: alive, label: doc.title,
         boxes: function (pn, pagePts) { return edBoxesHtml_(doc.fields, pn, mode, doc.responses,
@@ -1328,6 +1398,17 @@ function edOpenCertificate_(docId) {
       var bytes; try { bytes = edDataUriBytes_(res.dataUri); } catch (e) { fail('The certificate arrived damaged.'); return; }
       var dl = document.getElementById('ed-cert-dl');
       if (dl) { dl.disabled = false; dl.onclick = function () { edDownloadPdf_(bytes, res.fileName || 'certificate.pdf', 'ed-cert-msg'); }; }
+      // F14 (cycle 26): a certificate whose record did not verify says so above
+      // its pages too (the same sentence is printed on it).
+      if (res.verified === false && res.verdict) {
+        var pagesEl = document.getElementById('ed-cert-pages');
+        var vn = document.createElement('div');
+        vn.className = 'ed-integrity-note';
+        vn.setAttribute('data-integrity', res.tampered ? 'altered' : 'unverifiable');
+        vn.setAttribute('role', 'alert');
+        vn.textContent = res.verdict;
+        pagesEl.parentNode.insertBefore(vn, pagesEl);
+      }
       edRenderPdfPages_(document.getElementById('ed-cert-pages'), bytes, { alive: alive, label: 'Certificate' }, function (err) {
         if (err) { fail(err + ' Use Download to open it on your computer.'); return; }
         var h = document.getElementById('ed-cert-pages'); if (h) h.removeAttribute('aria-busy');
@@ -1487,7 +1568,11 @@ function edFillEllipsis_(line, maxW, size, measure) {
 /** PURE (Node-pinned) — ED3: the line every page of a copy carries. */
 function edCopyLabel_(m) {
   return 'COPY · made ' + m.madeOn + ' from the ' + (m.signed ? 'signed' : 'completed') + ' original' +
-    (m.sha ? ' (PDF SHA-256 ' + String(m.sha).slice(0, 12) + '…)' : '') + ' · the certificate is the record';
+    (m.sha ? ' (PDF SHA-256 ' + String(m.sha).slice(0, 12) + '…)' : '') +
+    // F14 (cycle 26): whether the record verified when the copy was made —
+    // said either way once the certificate has answered.
+    (m.verified === true ? ' · record verified' : (m.verified === false ? ' · record NOT verified' : '')) +
+    ' · the certificate is the record';
 }
 /** PURE (Node-pinned) — ED3: a written document's markdown as blocks to set:
  *  headings, list items and paragraphs, with emphasis marks, code ticks and
@@ -1683,7 +1768,7 @@ function edCopyStamp_(lib, page, label, font) {
  *  as text), every answer and drawing in place, an answers page for what did
  *  not fit and for any field with no box, the certificate appended, every page
  *  labelled. Resolves to a Uint8Array; rejects with a sentence. */
-function edBuildCopy_(lib, doc, srcBytes, certBytes, madeOn) {
+function edBuildCopy_(lib, doc, srcBytes, certBytes, madeOn, rec) {
   var out, font, bold, imgs = {}, rest = [];
   var start = doc.pdf ? lib.PDFDocument.load(srcBytes).catch(function (e) {
     throw new Error(/encrypt/i.test(String(e && e.message)) ? 'This PDF is protected, so a filled copy cannot be made from it. The certificate can still be opened and downloaded.' : 'The original PDF could not be read to make the copy.');
@@ -1724,7 +1809,7 @@ function edBuildCopy_(lib, doc, srcBytes, certBytes, madeOn) {
       return out.copyPages(cert, cert.getPageIndices()).then(function (pp) { pp.forEach(function (p) { out.addPage(p); }); });
     });
   }).then(function () {
-    var label = edCopyLabel_({ madeOn: madeOn, signed: doc.status === 'signed', sha: doc.pdf && doc.pdf.sha });
+    var label = edCopyLabel_({ madeOn: madeOn, signed: doc.status === 'signed', sha: doc.pdf && doc.pdf.sha, verified: rec ? rec.verified : undefined });
     out.getPages().forEach(function (p) { edCopyStamp_(lib, p, label, font); });
     out.setTitle(String(doc.title || 'Document') + ' (copy)');
     out.setSubject(label);
@@ -1795,6 +1880,13 @@ function edOpenCopy_(mode) {
     h.removeAttribute('aria-busy');
     h.innerHTML = errorStateHtml_(msg);   // A12 — no typed input in it (g146)
   };
+  // F14 (cycle 26): a copy is made from a record that VERIFIES. One the reader
+  // already knows is altered makes none — it used to be built, stamped "made
+  // from the signed original" and offered for email all the same.
+  if (doc.integrity === 'altered' || doc.record === 'altered') {
+    fail('No copy was made: this document\u2019s record no longer matches what was ' + what + '. Use Verify for the detail; the certificate says the same.');
+    return;
+  }
   var lib = new Promise(function (ok, no) { edPdfLib_(function (l) { if (l) ok(l); else no(new Error('The PDF tools could not load in this browser, so the copy cannot be made here. The certificate can still be opened and downloaded.')); }); });
   var src = doc.pdf ? edRpc_('getEmpDocPdf', doc.docId).then(function (res) {
     var bytes = edDataUriBytes_(res.dataUri);
@@ -1805,10 +1897,20 @@ function edOpenCopy_(mode) {
       return bytes;
     });
   }) : Promise.resolve(null);
-  var cert = edRpc_('getEmpDocCertificate', doc.docId).then(function (res) { return edDataUriBytes_(res.dataUri); });
+  // The certificate arrives with the server's verdict on the whole record
+  // (text, PDF, signature, responses): a mismatch makes no copy, and anything
+  // short of verified is said on the label and above the preview.
+  var cert = edRpc_('getEmpDocCertificate', doc.docId).then(function (res) {
+    if (res.tampered) throw new Error('No copy was made. ' + String(res.verdict || 'The record no longer matches what was ' + what + '.'));
+    return { bytes: edDataUriBytes_(res.dataUri), verified: res.verified, verdict: res.verdict };
+  });
   Promise.all([lib, src, cert]).then(function (got) {
     if (!alive()) return null;
-    return edBuildCopy_(got[0], doc, got[1], got[2], edToday_());
+    if (got[2].verified === false && got[2].verdict) {
+      var note = document.querySelector('#ed-copy-overlay .ed-copy-note');
+      if (note) { var vn = document.createElement('div'); vn.className = 'ed-integrity-note'; vn.setAttribute('data-integrity', 'unverifiable'); vn.setAttribute('role', 'alert'); vn.textContent = got[2].verdict; note.parentNode.insertBefore(vn, note.nextSibling); }
+    }
+    return edBuildCopy_(got[0], doc, got[1], got[2].bytes, edToday_(), { verified: got[2].verified });
   }).then(function (bytes) {
     if (!bytes || !alive()) return;
     var name = (String(doc.title || 'document').replace(/[\\\/:*?"<>|\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'document') + ' (copy).pdf';
@@ -1915,6 +2017,8 @@ function edCopyMailPreview_() {
       box.innerHTML = '<div class="ed-mail-kv"><b>To</b> ' + esc(res.to.join(', ')) + '</div>' +
         (res.cc.length ? '<div class="ed-mail-kv"><b>Cc</b> ' + esc(res.cc.join(', ')) + '</div>' : '') +
         (res.outside.length ? '<div class="ed-mail-out">' + icon('warning', 12) + ' Outside the company: ' + esc(res.outside.join(', ')) + ' — you will be asked to confirm.</div>' : '') +
+        // F15 (cycle 26): a stored issuer or roster manager who is not a manager today is left out, and named.
+        ((res.notIncluded || []).length ? '<div class="ed-mail-out">' + icon('info', 12) + ' Not included: ' + esc(res.notIncluded.join(', ')) + ' — ' + esc(res.notIncludedWhy || 'not a manager on the roster') + '.</div>' : '') +
         '<div class="ed-mail-kv"><b>Subject</b> ' + esc(res.subject) + '</div>' +
         '<div class="ed-mail-body">' + res.html + '</div>' +
         '<div class="ed-mail-kv"><b>Attached</b> ' + esc(res.fileName) + (c ? ' (' + (Math.round(c.bytes.length / 104857.6) / 10 || 0.1) + ' MB)' : '') + '</div>';
@@ -2294,7 +2398,7 @@ function edIssuePdfFile_(file) {
         if (ED_STATE.issuePageInfo[pn]) ED_STATE.issuePageInfo[pn].textSizes = got.textSizes;
         ED_STATE.issueWidgets = ED_STATE.issueWidgets.concat(got.widgets);
       },
-      onCount: function (n) { ED_STATE.issuePdfPages = n; } }, function (err) {
+      onCount: function (n) { ED_STATE.issuePdfPages = n; var bp = document.getElementById('ed-box-page'); if (bp) { bp.max = String(n); if (!(Number(bp.value) >= 1 && Number(bp.value) <= n)) bp.value = '1'; } } }, function (err) {
       host.removeAttribute('aria-busy');
       if (err) { ED_STATE.issuePdf = null; host.innerHTML = ''; host._edPdf = null; say(err + ' Choose another file.', true); return; }
       ED_STATE.issuePdf = { dataUrl: dataUrl, name: file.name || 'document.pdf' };
@@ -2330,6 +2434,32 @@ function edAddBox_(page, rect) {
   // preventScroll: the manager is placing boxes on the page — naming one must
   // not jump the view down to the field list.
   if (inputs.length) { var last = inputs[inputs.length - 1]; try { last.focus({ preventScroll: true }); } catch (e) { last.focus(); } if (last.select) last.select(); }
+}
+/** PURE (Node-pinned) — F64: the box "Add box" places — the type's default
+ *  size (in points of that page), centred on it. null when the page's size is
+ *  not known (no PDF drawn yet, or a page it does not have). */
+function edBoxAtCentre_(type, pagePts) {
+  if (!pagePts || !(pagePts.w > 0) || !(pagePts.h > 0)) return null;
+  var d = ED_BOX_DEFAULT_PTS[type] || ED_BOX_DEFAULT_PTS.text;
+  var w = d[0] / pagePts.w, h = d[1] / pagePts.h;   // edBoxFromDrag_ keeps the box on the page
+  return edBoxFromDrag_((1 - w) / 2, (1 - h) / 2, (1 - w) / 2, (1 - h) / 2, type, pagePts);
+}
+/** F64 (cycle 26) — "Add box": the keyboard's way to place a box. The box
+ *  lands in the middle of the page typed beside it and is SELECTED (not its
+ *  name field), so the arrow keys move it and Shift + arrow resizes it. */
+function edAddBoxAtCentre_() {
+  if (!ED_STATE.issuePdf) { showToast('Choose the PDF file first.', 'error'); return; }
+  if ((ED_STATE.issueFields || []).length >= ED_FIELD_CAP) { showToast('A document holds at most ' + ED_FIELD_CAP + ' fields.', 'error'); return; }
+  var pages = ED_STATE.issuePdfPages || 0;
+  var pn = Math.round(Number((document.getElementById('ed-box-page') || {}).value));
+  if (!(pn >= 1 && pn <= pages)) { showToast('This PDF has ' + pages + ' page' + (pages === 1 ? '' : 's') + ' — type a page from 1 to ' + pages + '.', 'error'); return; }
+  var type = (document.getElementById('ed-box-type') || {}).value || 'text';
+  var rect = edBoxAtCentre_(type, (ED_STATE.issuePageSizes || {})[pn]);
+  if (!rect) { showToast('That page is still being drawn — try again in a moment.', 'error'); return; }
+  edAddBox_(pn, rect);
+  var i = ED_STATE.issueFields.length - 1;
+  var el = document.querySelector('#ed-is-pdf-pages .ed-pdf-box[data-ed-box="' + i + '"]');
+  if (el) { try { el.scrollIntoView({ block: 'center' }); } catch (e) {} try { el.focus({ preventScroll: true }); } catch (e2) { el.focus(); } }
 }
 /** ED2 — the chosen PDF's warnings, and the offer of its own form fields. */
 function edIssuePdfNotes_(warnings, offer) {
@@ -2586,7 +2716,12 @@ function edRenderMgr_() {
       '<input type="file" id="ed-is-pdf" accept="application/pdf,.pdf" aria-label="PDF file" hidden></div>' +
       '<div class="ed-box-bar"><label for="ed-box-type">Box type</label><select id="ed-box-type"><option value="text">Short text</option><option value="date">Date</option><option value="textarea">Paragraph</option>' +
         '<option value="signature">Signature</option><option value="initials">Initials</option></select>' +
-      '<span class="hint">Drag on a page (or tap it) to place a highlighted box the employee fills in. Drag a box to move it, or its corner to resize it \u2014 both snap to 1/8 inch (hold Alt to place it freely); a selected box moves with the arrow keys, and resizes with Shift and an arrow key. Each box is a field below \u2014 name it there. A signature or initials box is filled by what the employee draws when signing.</span></div>' +
+        // F64 (cycle 26): placing a box needed a pointer. This puts the chosen
+        // type's box in the middle of the page named and selects it, so the
+        // arrow keys take it from there.
+        '<label for="ed-box-page">on page</label><input type="number" id="ed-box-page" min="1" step="1" value="1" inputmode="numeric">' +
+        '<button type="button" class="kb-btn" id="ed-box-add">' + icon('plus', 12) + ' Add box</button>' +
+      '<span class="hint">Drag on a page (or tap it) to place a highlighted box the employee fills in — or press Add box, which puts one in the middle of that page. Drag a box to move it, or its corner to resize it \u2014 both snap to 1/8 inch (hold Alt to place it freely); a selected box moves with the arrow keys, and resizes with Shift and an arrow key. Each box is a field below \u2014 name it there. A signature or initials box is filled by what the employee draws when signing.</span></div>' +
       edBoxLegendHtml_() +
       '<div class="hint" id="ed-is-pdf-msg" role="status"></div>' +
       // ED2: what the chosen PDF is warned about, its own form fields offered
@@ -2688,6 +2823,8 @@ function edRenderMgr_() {
   var pfb = document.getElementById('ed-is-pdf-btn');
   if (pfb && pf) pfb.addEventListener('click', function () { pf.click(); });
   edIssuePdfPointer_(document.getElementById('ed-is-pdf-pages'));
+  var addBox = document.getElementById('ed-box-add');
+  if (addBox) addBox.addEventListener('click', edAddBoxAtCentre_);   // F64
   document.getElementById('ed-is-go').addEventListener('click', function () { edSubmitIssue_(true); });
   document.getElementById('ed-save-draft').addEventListener('click', function () { edSubmitIssue_(false); });
   document.getElementById('ed-is-convert').addEventListener('click', edConvertDoc_);
@@ -2851,6 +2988,21 @@ function edRelease_(docId) {
     });
 }
 
+/** PURE (Node-pinned) — F44 (cycle 26): a converted Doc's markdown for THIS
+ *  surface. The converter marks each image with a `kbdoc:` token that only a
+ *  Reference save ever turns into a picture; in a document that is frozen and
+ *  signed it stayed "Doc image 1 — appears after Save" for good. The tokens
+ *  are taken out (and counted), and the converter's line about images
+ *  uploading "when you press Save" — true of Reference, not here — is dropped. */
+function edConvertedForDoc_(res) {
+  var dropped = 0;
+  var body = String((res && res.markdown) || '').replace(/!\[[^\]]*\]\(\s*kbdoc:[^)\s]*\s*\)/gi, function () { dropped++; return ''; })
+    .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n');
+  var warnings = ((res && res.warnings) || []).map(String).filter(function (w) { return !/press Save/i.test(w); });
+  if (dropped) warnings.unshift(dropped + ' image' + (dropped === 1 ? '' : 's') + ' from the Doc ' + (dropped === 1 ? 'was' : 'were') +
+    ' left out — an employee document cannot carry a Doc\u2019s images. If it needs them, download the Doc as a PDF and issue that.');
+  return { body: body, dropped: dropped, warnings: warnings };
+}
 /** Reuses the manager-gated KB Phase-2 converter to pre-fill the body. */
 function edConvertDoc_() {
   uiPrompt({
@@ -2863,11 +3015,16 @@ function edConvertDoc_() {
     google.script.run
       .withSuccessHandler(function (res) {
         if (!res || res.error) { showToast((res && res.error) || 'Conversion failed.', 'error'); return; }
+        var conv = edConvertedForDoc_(res);
         var body = document.getElementById('ed-is-body');
-        if (body) body.value = res.markdown || '';
+        if (body) body.value = conv.body;
         var title = document.getElementById('ed-is-title');
         if (title && !title.value && res.docTitle) title.value = res.docTitle;
-        showToast('Converted' + (res.warnings && res.warnings.length ? ' with ' + res.warnings.length + ' warning(s) — review the body' : '') + '.', 'success');
+        // F44: the warnings are SHOWN (they were reduced to a count), and stay
+        // until dismissed — the body is about to be frozen and signed.
+        if (conv.warnings.length) showToast('Converted — review the body. ' + conv.warnings.join(' '), 'toast-warn', { sticky: true });
+        else showToast('Converted.', 'success');
+        if (typeof edIssuePreviewRefresh_ === 'function') edIssuePreviewRefresh_();
       })
       .withFailureHandler(function (err) { showToast('Conversion failed: ' + ((err && err.message) || err), 'error'); })
       .kbConvertDriveDoc({ driveUrl: url });
@@ -2928,23 +3085,46 @@ function edSubmitIssue_(release) {
   });
 }
 
+/** PURE (Node-pinned) — cycle 26 F13: what Verify says, from the server's
+ *  verdict → { text, tone }. GREEN only on `verified` — the server's one rule:
+ *  a signature or completion row, nothing mismatched, and nothing left
+ *  unchecked. A PDF that could not be re-hashed used to leave `tampered` false
+ *  and `match` true, so this said "Integrity verified" about bytes nobody had
+ *  read; and an unsigned document's missing or altered PDF was not mentioned. */
+function edVerifyToast_(res) {
+  var pdfNote = String(res.pdfNote || '').trim();
+  var unchecked = res.unchecked || [];
+  if (!res.signed && !res.completed) {
+    if (res.contentMatch === false) return { tone: 'error', text: 'Not signed yet — CONTENT HASH MISMATCH (row altered after issue!)' + (res.pdfMatch === false ? ' ' + (pdfNote || 'The PDF on file is not the one that was issued.') : '') };
+    if (res.pdfMatch === false) return { tone: 'error', text: 'Not signed yet — PDF MISMATCH: ' + (pdfNote || 'the PDF on file is not the one that was issued.') };
+    if (res.warning || unchecked.length) {
+      return { tone: 'warn', text: 'Not signed yet — ' + (res.warning ? res.warning + ' ' : '') +
+        (res.hasPdf && res.pdfMatch == null ? 'The PDF could not be checked' + (pdfNote ? ': ' + pdfNote : '.') : '') };
+    }
+    return { tone: 'info', text: 'Not signed yet.' };
+  }
+  // Cycle-9 M-8: a fields-only completion carries the same hash artifact
+  // (empty-signature DocSignatures row) — res.completed distinguishes it
+  // from a signature so the copy doesn't claim a signature that isn't there.
+  var word = res.completed ? 'completed' : 'signed';
+  if (res.tampered) {
+    return { tone: 'error', text: '✗ INTEGRITY MISMATCH — the stored record was altered after ' + word + '.' + (res.pdfMatch === false && pdfNote ? ' ' + pdfNote : '') + ' Investigate via the AuditLog witness row.' };
+  }
+  if (res.verified === true) {
+    return { tone: 'success', text: '✓ Integrity verified — ' + (res.completed ? 'completion' : 'signature') + (res.hasPdf ? ', content and PDF' : ' and content') +
+      ' hashes match (' + word + ' ' + String(res.signedAt).substring(0, 10) + ').' };
+  }
+  // F-24: a check that could not be made is a WARNING ("cannot verify"), never a pass.
+  var why = res.warning || (res.hasPdf && res.pdfMatch == null ? 'The PDF could not be checked' + (pdfNote ? ': ' + pdfNote : '.') : 'legacy row — no stored hash to verify.');
+  return { tone: 'warn', text: (res.completed ? 'Completed' : 'Signed') + ' — ' + why + ' Integrity NOT verified.' };
+}
 function edVerify_(docId) {
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res || res.error) { showToast((res && res.error) || 'Verify failed.', 'error'); return; }
-      // Cycle-9 M-8: a fields-only completion carries the same hash artifact
-      // (empty-signature DocSignatures row) — res.completed distinguishes it
-      // from a signature so the copy doesn't claim a signature that isn't there.
-      // F-24: a missing content hash is a WARNING ("cannot verify"), never a pass.
-      if (!res.signed && !res.completed) { showToast('Not signed yet' + (res.contentMatch === false ? ' — CONTENT HASH MISMATCH (row altered after issue!)' : (res.warning ? ' — ' + res.warning : '.')), res.contentMatch === false ? 'error' : (res.warning ? 'warn' : 'info')); return; }
-      var word = res.completed ? 'completed' : 'signed';
-      if (!res.tampered && res.match === true) {
-        showToast('✓ Integrity verified — ' + (res.completed ? 'completion' : 'signature') + ' and content hashes match (' + word + ' ' + String(res.signedAt).substring(0, 10) + ').', 'success');
-      } else if (res.match === null || res.warning) {
-        showToast((res.completed ? 'Completed' : 'Signed') + ' — ' + (res.warning || 'legacy row — no stored hash to verify') + ' Integrity NOT verified.', 'warn');   // F-24
-      } else {
-        showToast('✗ INTEGRITY MISMATCH — the stored record was altered after ' + word + '. Investigate via the AuditLog witness row.', 'error');
-      }
+      var t = edVerifyToast_(res);
+      // A verdict that is not a pass stays on screen until it is dismissed.
+      showToast(t.text, t.tone, (t.tone === 'error' || t.tone === 'warn') ? { sticky: true } : undefined);
     })
     .withFailureHandler(function (err) { showToast('Verify failed: ' + ((err && err.message) || err), 'error'); })
     .verifyDocSignature(docId);

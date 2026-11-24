@@ -107,7 +107,8 @@ function copyText_(text, done) {
  *
  *  The text is ASSIGNED to the field, never interpolated into the markup, so a
  *  note full of angle brackets is not an injection surface. */
-function manualCopyModal_(text, what) {
+function manualCopyModal_(text, what, opts) {
+  opts = opts || {};
   var body = String(text == null ? '' : text);
   // 40, not 60: a single-line input showed the TAIL of a 50-character price
   // line, because select() leaves the caret at the end — the rep could not see
@@ -116,13 +117,24 @@ function manualCopyModal_(text, what) {
   // Sized to the content, 3..12 lines. A fixed 8 made a two-line price look
   // like an empty form the rep was meant to fill in.
   var rows = Math.min(12, Math.max(3, body.split('\n').length + Math.floor(body.length / 48)));
-  var overlay = ensureOverlay('manual-copy-overlay', { labelledBy: 'manual-copy-h' });
+  // FX4 (cycle 26): ALWAYS the layer above the two non-modal panels. FT1 gave
+  // that layer only to a caller that asked (the Scratchpad); the Reference
+  // drawer's copy buttons did not ask, so a blocked copy there opened this
+  // dialog at 50 under a drawer at 55 — "nothing was copied", behind the
+  // panel the rep was looking at. It is the one thing on screen that must be
+  // read, wherever it was opened from; no caller has to remember.
+  var overlay = ensureOverlay('manual-copy-overlay', { labelledBy: 'manual-copy-h', extraClass: 'overlay-above-panels' });
   overlay.innerHTML = '<div class="modal manual-copy-modal">' +
-    '<div class="modal-head"><h3 id="manual-copy-h">Copy it by hand</h3>' +
+    '<div class="modal-head"><h3 id="manual-copy-h">' + esc(opts.title || 'Copy it by hand') + '</h3>' +
       '<button type="button" class="modal-x" aria-label="Close" onclick="closeOverlay(this.closest(\'.overlay\'))">' + icon('x', 15) + '</button></div>' +
     '<div class="modal-body">' +
-      '<p class="manual-copy-why">This browser blocked the clipboard, so <b>nothing was copied</b>. ' +
-        'Here it is — select it and press Ctrl/⌘+C.</p>' +
+      // F61 (cycle 26): the dialog is also where a note that did not SAVE is
+      // shown, and it told that rep the browser had blocked the clipboard. A
+      // caller with another reason gives it (`opts.why`, plain text).
+      (opts.why
+        ? '<p class="manual-copy-why">' + esc(opts.why) + '</p>'
+        : '<p class="manual-copy-why">This browser blocked the clipboard, so <b>nothing was copied</b>. ' +
+          'Here it is — select it and press Ctrl/⌘+C.</p>') +
       '<label class="manual-copy-lbl" for="manual-copy-val"></label>' +
       (multiline
         ? '<textarea id="manual-copy-val" class="manual-copy-val" rows="' + rows + '" readonly></textarea>'
@@ -311,7 +323,8 @@ function uiConfirm(opts) {
         + titleHtml
         + bodyHtml
         + '<div class="modal-footer">'
-          + '<button type="button" class="btn-modal-cancel ui-dialog-cancel">' + esc(opts.cancelLabel || 'Cancel') + '</button>'
+          + (opts.hideCancel ? ''   /* FR2 (cycle 26): a notice has nothing to cancel — one button; Escape and the backdrop still close it */
+            : '<button type="button" class="btn-modal-cancel ui-dialog-cancel">' + esc(opts.cancelLabel || 'Cancel') + '</button>')
           + '<button type="button" class="btn-modal-ok ui-dialog-ok' + (isDanger ? ' is-danger' : '') + '">' + esc(opts.confirmLabel || 'Confirm') + '</button>'
         + '</div>'
       + '</div>';
@@ -353,7 +366,8 @@ function uiConfirm(opts) {
         cleanup(!onCancel);
       }
     };
-    overlay.querySelector('.ui-dialog-cancel').addEventListener('click', function () { cleanup(false); });
+    const cancelBtn = overlay.querySelector('.ui-dialog-cancel');   // absent under hideCancel (FR2)
+    if (cancelBtn) cancelBtn.addEventListener('click', function () { cleanup(false); });
     overlay.querySelector('.ui-dialog-ok').addEventListener('click', function () { cleanup(true); });
     overlay.addEventListener('click', function (e) { if (e.target === overlay) cleanup(false); });
     document.addEventListener('keydown', onKey, true);
@@ -592,7 +606,9 @@ function overlayDiscardGuard_(el) {
  *  never get stuck. */
 function closeOverlay(el, opts) {
   if (!el) return;
-  if (!(opts && opts.discard) && overlayDiscardGuard_(el)) return;
+  // F63 (cycle 26): `saved` — a hook-less static modal closing itself after its
+  // own save has nothing to discard, and is not asked.
+  if (!(opts && (opts.discard || opts.saved)) && overlayDiscardGuard_(el)) return;
   var hook = el.id && OVERLAY_CLOSE_HOOKS[el.id];
   if (hook) {
     try { hook(); } catch (err) { el.classList.remove('open'); /* degrade to plain hide */ }
@@ -639,6 +655,10 @@ function overlayFocusTrap_(e) {
   // 22post B-2b: the floating Scratchpad (.cn-float-panel) is NON-modal too —
   // it exists to be typed in while a note (or the composer) is open.
   if (e.target && e.target.closest && e.target.closest('.cn-float-panel')) return;
+  // F60 (cycle 26): the tour's popover is its own dialog, above every overlay.
+  // With an overlay open beneath it (What's new, a modal left open) the trap
+  // pulled focus off the tour's buttons into that overlay, under the dim.
+  if (e.target && e.target.closest && e.target.closest('#tour-pop')) return;
   // F(cycle-8): hover-opened day popovers (.overlay.open.hover-mode — the
   // Time/PTO calendar) are NOT modal: the rep merely rested the pointer on a
   // cell, and trapping focus yanked Tab / month-nav clicks into the popover's

@@ -14,11 +14,17 @@ findings need human eyes. Run it before cutting a deploy that touched
 scenarios `ci-gate.cjs` names (every tool, at the widths its layout defects have
 lived) and exits non-zero on what a screenshot cannot show: sideways overflow,
 a page taller than its content (`verticalRunawayPx` past 200px), a text column
-narrower than a word (`narrowText`), an RPC with no fixture, or an uncaught page
+narrower than a word (`narrowText`), a box its scenario says must be usable
+narrower than it needs (`tooNarrow`), an RPC with no fixture, or an uncaught page
 error. The workflow's `visual-layout` job installs Playwright's Chromium and keeps
 the shots as an artifact when it fails. A finding owned elsewhere goes in
-`ci-gate.cjs`'s `KNOWN` list with its reason — the list only shrinks: an entry
-whose finding stops firing fails the run, so remove it with the fix. A subset
+`ci-gate.cjs`'s `KNOWN` list with its reason and a `match` — a piece of the
+finding's own detail line (cycle 26 F69: an entry is for ONE finding, not for
+every finding of its kind on that screen; one with no `match` excuses nothing).
+The list only shrinks: an entry
+whose finding stops firing fails the run, so remove it with the fix (it is
+EMPTY since cycle 26: its one entry, the chapter masthead's index at 390px,
+was a container query with no container). A subset
 name the matrix lacks is refused before the browser starts.
 
 **The onboarding tour, walked (T1).** `node tour-check.mjs` presses Next
@@ -34,10 +40,30 @@ writes `tour-report.json`. CI runs it after the layout gate. The matrix seeds
 axe-core (pinned in `package.json`) over every scenario whose page is the
 handbook app, against WCAG 2.1 A and AA, after each scenario's post hook — no
 screenshots. It writes `axe-report.json` (each violation's rule, impact, count,
-first targets and failure summary) and exits non-zero on any violation, or when
+first targets and failure summary) and exits non-zero on any violation, when a
+scenario's page BROKE (its hook threw or it logged an uncaught error — the page
+was then not on the screen the scenario names, so it is reported "NOT CHECKED",
+cycle 26 F69), or when
 a filter after `--axe` matched no handbook scenario. CI runs it in the same
 job, after the layout gate and even when that failed. A new handbook screen is
 checked by giving it a scenario.
+
+**The contrast sweep (cycle 26).** axe's colour-contrast rule leaves a pair it
+cannot resolve "incomplete" — not a violation — and which pairs those are
+differs by Chromium build: a PASS here was not CI's, three red runs in a row.
+`contrast.cjs` measures instead of asking: every element with text of its own,
+its colour against every ancestor's background and opacity composited the way
+the browser paints them (read through a canvas, so `color-mix()` and `oklab()`
+values are read, not parsed), at WCAG 2.1's 4.5:1, or 3:1 for 24px / 18.66px
+bold. `shoot.mjs` puts the result in every scenario's report (`contrast: { low,
+lowCount, checked, unchecked }`) and prints LOW CONTRAST by PAIR, with how many
+scenarios show it. `--axe` FAILS on it for the handbook's scenarios, so that
+command fails here where CI's axe would. Team Tools is reported, not gated.
+What it does not judge: text over a background image or gradient (counted
+`unchecked`, never passed), SVG text, placeholder text, disabled controls; a
+positioned element is judged against its DOM ancestors.
+`node contrast-check.mjs` runs the sweep over a page of pairs whose ratios are
+known and fails on a wrong answer — CI runs it. Change the sweep, run it.
 
 **pdf.js (HB4.1).** The handbook's form viewer loads pdf.js from cdnjs; the
 harness has no network, so every context routes that URL to the same pinned
@@ -103,9 +129,13 @@ control groups, Esc closing it, the CSR preview (banner up, Manage tool +
 Spanish tab gone, exit restoring), and the 390px header-gear open with zero
 page overflow. Screenshots land in `shots/settings-*.png`.
 
-Chromium resolution order (`shoot.mjs`): `CHROMIUM_PATH` env var → newest
-`chromium-*` under `PLAYWRIGHT_BROWSERS_PATH` or `/opt/pw-browsers` (the
-Claude Code remote-env pre-install) → Playwright's own managed download.
+Chromium resolution order — ONE resolver, `chromium-path.cjs`, used by every
+script in this folder (cycle 26 F74; each script had its own copy, none of them
+found the web container's `chrome-linux64/` layout, and the two companion
+checks ignored the override): `CHROMIUM_PATH` env var → the newest
+`chromium-*` build under `PLAYWRIGHT_BROWSERS_PATH` or `/opt/pw-browsers` (the
+Claude Code remote-env pre-install; `chrome-linux64/` or `chrome-linux/`) →
+Playwright's own managed download.
 
 ## What to look at
 
@@ -125,6 +155,17 @@ Claude Code remote-env pre-install) → Playwright's own managed download.
   - `narrowText` (cycle 25 F69) — an element holding a real run of its own text
     laid out narrower than a word (under 48px); F68's 22px text column at 390px
     is the shape (g72). Printed under SQUEEZED TEXT.
+  - `tooNarrow` (cycle 26 F65) — a scenario may say what USABLE is: its options
+    carry `minWidth: { selector: px }` (the handbook's `HB_MIN({...})`), and a
+    named box narrower than that — or not found, which is a selector that
+    stopped matching, not a pass — is listed. `narrowText` cannot stand in:
+    its floor is a word, and a 208px column beside a 360px one is past it and
+    still wrong. Printed under TOO NARROW.
+- **Widths.** Most scenarios are a phone (390), the pop-out (360 / 480) or a
+  desk (1440). Since cycle 26 there are also `TABLET` (800) and `HALF` (960)
+  — a window beside another app, half a 1920px screen: the handbook's home,
+  search and Profile, and one landing view per Team Tools tool. Nothing had
+  looked there before; the handbook's hero column was 48px at 800.
 - `shots/*.png` — the renders. Wide scenarios are fullPage; compact/mobile are
   viewport-clipped frames + a `-bottom` frame, because fullPage stitching
   PAINTS off-viewport fixed elements (the closed KB drawer, the mobile nav)

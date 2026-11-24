@@ -1,18 +1,69 @@
+---
+description: "Three-stage whole-codebase audit (broad + deep dive + effectiveness)"
+---
+
 Do not make any changes to any files during the audit phase, other than
-the optional CYCLE OPEN step below.
+the optional CYCLE OPEN, FOLLOW-ON REVIEW and SAVE REPORT steps below.
 
 Read CLAUDE.md (especially Common Gotchas and Key Design Decisions),
 README, and the roadmap carefully before doing anything else.
 
 CYCLE OPEN (optional — only if .cycle/STATE.md exists): this audit opens
-a new cycle, and this is the ONLY file write the session may make. Unless
-STATE.md's Phase is already "audit" (a parallel or re-run audit of a
-cycle that is already open — then leave Cycle alone and say so),
-increment its Cycle field by 1 (treat a missing or non-numeric value as
-0, so a project's first audit is Cycle 1) and set Phase: audit, Scope to
-this audit's scope, and Updated to today's date. Every later phase of
-this cycle carries that number; none of them increments it. Skip if
-.cycle/STATE.md does not exist.
+a new cycle, and this is one of the session's three permitted file writes
+(the others are FOLLOW-ON REVIEW and SAVE REPORT, below).
+Increment STATE.md's Cycle field by 1 (treat a missing or non-numeric
+value as 0, so a project's first audit is Cycle 1) and set Phase: audit,
+Scope to this audit's scope, and Updated to today's date — unless this
+is the SAME audit round: Phase is already "audit" and Updated is within
+the last 7 days (a parallel or re-run audit of a cycle that is already
+open). Then leave Cycle alone, add this audit's scope to the Scope line
+if it is not there, and say so. An older "Phase: audit" is an audit that
+led to no implementation; it does not hold the number — increment past
+it. Every later phase of this cycle carries that number; none of them
+increments it. When you increment:
+- if STATE.md's other sections still describe the cycle you are leaving,
+  do not edit them — end the Scope line with "(sections below still
+  describe Cycle N)", N being that cycle; the first implement CHECKPOINT
+  of the new cycle rolls them into .cycle/HISTORY.md;
+- if .cycle/metrics.csv has a phase=reflect row for cycle N and no
+  phase=synthesis row — while some earlier cycle has one, so this is a
+  project that synthesizes — say at the TOP of your output that cycle N
+  was reflected but never verified or synthesized, and that its
+  verification inputs must now be requested for cycle N by number,
+  because the Cycle field has moved on.
+Skip if .cycle/STATE.md does not exist.
+
+FOLLOW-ON REVIEW (optional — only if .cycle/STATE.md exists): read the
+"Open follow-on items" in .cycle/STATE.md. Each item marked "next audit"
+whose area falls in this audit's scope is a LEAD, not a finding: re-check
+it with fresh eyes and close it as exactly one of —
+- confirmed: it becomes a finding; give the finding its own ID and cite
+  the FO ID beside it;
+- already fixed: say what you checked;
+- still open: keep it, and say why it is not a finding yet.
+List every reviewed item under a FOLLOW-ON REVIEW heading at the end of
+your output. Then move the items closed as already fixed from
+.cycle/STATE.md to .cycle/HISTORY.md with what you checked, and in STATE.md
+change a confirmed item's disposition to "confirmed as <finding
+ID> (Cycle <N>)" — it stays open until the session that implements that
+finding removes it. Items with any other disposition are not this audit's
+to close. Skip this step if .cycle/STATE.md does not exist.
+
+SAVE REPORT (optional — only if .cycle/STATE.md exists): when your output
+is complete, write all of it VERBATIM to .cycle/blocks/ — the third of the
+session's permitted file writes. Name the file by the command that ran:
+<cycle>-scan.md for /broad-scan, <cycle>-audit-<subsystem>.md for /audit,
+<cycle>-targeted-audit-<subsystem>.md for /targeted-audit — <cycle> from
+STATE.md's Cycle field after CYCLE OPEN, <subsystem> in lower case with
+every run of other characters turned into one hyphen. If that name is
+taken (a re-run in the same round), add -2 (then -3, …) before .md; never
+overwrite a block. The saved report is what later sessions read: an
+implement session takes a batch, a finding or a handoff block from it,
+Health Synthesis reads a Tier 1 cycle's FINAL REPORT and batch plan from
+it, and the synthesis pack checks the batch plan against what shipped.
+Write it in full, security findings included; whether .cycle/blocks/ is
+committed to a public repository is the operator's decision. Skip this
+step if .cycle/STATE.md does not exist.
 
 This audit runs in three stages within this session. Complete each stage fully before starting the next.
 

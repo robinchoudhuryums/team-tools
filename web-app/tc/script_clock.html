@@ -363,6 +363,11 @@
   .dash-sp-esc { color: var(--danger-deep); font-weight: 600; }   /* E4 (G5) */
   .dash-sp-snip { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.45; }
   .dash-proj { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--info-deep); margin-top: 8px; }
+  /* Batch PD: the rep's credited days, on a line of their own under the pace
+     (inside the inline-flex pace line the text wrapped in two fragments —
+     measured in the shot); the title lists the partial days. */
+  .dash-partial-row { font-size: 11px; color: var(--info-deep); margin-top: 4px; }
+  .dash-partial { border-bottom: 1px dotted currentColor; cursor: help; }
   .dash-link { font-size: 12px; font-weight: 600; color: var(--accent); text-decoration: none; }
   .dash-link:hover { text-decoration: underline; }
 
@@ -1195,8 +1200,12 @@ function clkDashEmpty_(res) {
  *  company calendar) makes the fraction WORKDAYS — calls accrue on no other
  *  day, so a calendar fraction over-projected a month that opened on a weekend
  *  and under-projected one that opened mid-week. Absent (an older payload), the
- *  calendar fraction is kept. */
-function dashProjection_(value, fromIso, toIso, periodKey, workdays) {
+ *  calendar fraction is kept.
+ *  Batch PD (cycle 26): `partial` ({credited} — the rep's workdays so far with
+ *  each partial day counted as its share) is the DIVISOR on the rep's own
+ *  card: the pace is "while present". Under one credited day there is no pace.
+ *  Absent — every unmarked rep, and the Team card always — nothing changes. */
+function dashProjection_(value, fromIso, toIso, periodKey, workdays, partial) {
   if ((periodKey !== 'mtd' && periodKey !== 'ytd') || value == null ||
       !/^\d{4}-\d{2}-\d{2}$/.test(String(fromIso)) || !/^\d{4}-\d{2}-\d{2}$/.test(String(toIso))) return null;
   var elapsed = Math.round((Date.parse(toIso + 'T00:00:00Z') - Date.parse(fromIso + 'T00:00:00Z')) / 86400000) + 1;
@@ -1214,7 +1223,45 @@ function dashProjection_(value, fromIso, toIso, periodKey, workdays) {
   }
   if (wd) total = wd.total;
   if (elapsed >= total) return null;
-  return { projected: Math.round(value * (total / elapsed)), elapsed: elapsed, total: total, endLabel: endLabel };
+  var out = { projected: Math.round(value * (total / elapsed)), elapsed: elapsed, total: total, endLabel: endLabel };
+  if (wd && partial && partial.credited != null && isFinite(partial.credited)) {
+    var credited = Number(partial.credited);
+    if (!(credited >= 1)) return null;
+    out.projected = Math.round(value * (total / credited));
+    out.credited = credited;
+  }
+  return out;
+}
+/** PURE (Node-pinned) — Batch PD: a count of days as text: 19.75, 12.5, 13. */
+function dashPartialNum_(n) { return String(Math.round(Number(n) * 100) / 100); }
+/** PURE (Node-pinned) — Batch PD: the rep's credited days for the period and
+ *  the partial days behind them, or null when no day is marked (the line is
+ *  drawn only then). {text: "19.75 of 21 workdays, 2 partial", title:
+ *  "Partial days: Tue Nov 10 (0.5 day), Fri Oct 30 (0.25 day)"} — the days
+ *  newest first, a credit of 0 as "not counted", at most eight named. Dates
+ *  and shares only: the server never reads a reason. */
+function dashPartialLine_(res) {
+  var p = res && res.partial, wd = res && res.workdays;
+  if (!p || !wd || !(wd.elapsed > 0) || !p.days || !p.days.length || p.credited == null) return null;
+  var DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'], MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var names = p.days.slice(0, 8).map(function (d) {
+    var dt = new Date(String(d.date) + 'T12:00:00Z');
+    var lbl = isNaN(dt.getTime()) ? String(d.date) : DOW[dt.getUTCDay()] + ' ' + MON[dt.getUTCMonth()] + ' ' + dt.getUTCDate();
+    return lbl + ' (' + (Number(d.credit) === 0 ? 'not counted' : dashPartialNum_(d.credit) + ' day') + ')';
+  });
+  var more = p.days.length - names.length;
+  return {
+    text: dashPartialNum_(p.credited) + ' of ' + wd.elapsed + ' workday' + (wd.elapsed === 1 ? '' : 's') + ', ' + p.days.length + ' partial',
+    title: 'Partial days: ' + names.join(', ') + (more > 0 ? ', +' + more + ' more' : ''),
+  };
+}
+/** PURE (Node-pinned) — Batch PD: the prior window's call count as the delta
+ *  compares it — multiplied by the server's `prev.ownScale` (the two windows'
+ *  credited shares) when there is one. A missing count stays missing. */
+function dashPrevScaled_(prevValue, res) {
+  if (prevValue == null || !isFinite(prevValue)) return null;
+  var sc = res && res.prev ? Number(res.prev.ownScale) : NaN;
+  return (isFinite(sc) && sc > 0) ? prevValue * sc : prevValue;
 }
 
 /** Names the comparison window in the card foot. The LABEL is the disclosure:
@@ -1266,6 +1313,8 @@ function clkDashOwnCard_(res) {
   if (!res.own) return clkDashEmpty_(res);
   var o = res.own;
   var pr = clkDashPrev_(res, 'own'), pv = pr && pr.v, pl = pr && pr.label;
+  var scaled = !!(pl && res.prev && isFinite(Number(res.prev.ownScale)) && Number(res.prev.ownScale) > 0 && Number(res.prev.ownScale) !== 1);
+  var plCount = scaled ? pl + ', adjusted for partial days' : pl;
   var kpis = '<div class="dash-kpis">' +
     clkDashKpi_('Transfer %', o.transferPct != null ? o.transferPct + '%' : '—',
       { big: true, tone: clkDashTone_(res, 'transfer', o.transferPct),
@@ -1275,10 +1324,12 @@ function clkDashOwnCard_(res) {
         delta: dashDelta_(o.pctAnswered, pv && pv.pctAnswered, 'pp', false), prevLabel: pl }) +
     // Volumes carry a delta but NO tone: they track call load, which is not the
     // rep's to be judged on.
+    // Batch PD: the two COUNTS are compared over the same share of credited
+    // days (the rates and talk time are not day-based and are not scaled).
     clkDashKpi_('Answered', o.answered != null ? o.answered : '—',
-      { delta: dashDelta_(o.answered, pv && pv.answered, 'count'), prevLabel: pl }) +
+      { delta: dashDelta_(o.answered, dashPrevScaled_(pv && pv.answered, res), 'count'), prevLabel: plCount }) +
     clkDashKpi_('Missed', o.missed != null ? o.missed : '—',
-      { delta: dashDelta_(o.missed, pv && pv.missed, 'count'), prevLabel: pl }) +
+      { delta: dashDelta_(o.missed, dashPrevScaled_(pv && pv.missed, res), 'count'), prevLabel: plCount }) +
     clkDashKpi_('Avg talk', o.attFormatted || '—',
       { delta: dashDelta_(o.attSeconds, pv && pv.attSeconds, 'sec'), prevLabel: pl }) +
   '</div>';
@@ -1287,10 +1338,13 @@ function clkDashOwnCard_(res) {
   // Run-rate projection (MTD/YTD only, ≥3 days elapsed) — a client calc on the
   // aggregate. The full daily "cone" chart would need a series in the endpoint.
   // M8 (cycle 22): elapsed = the days the CDR HOLDS (dataThrough), never today.
-  var proj = dashProjection_(o.answered, res.from, res.dataThrough, res.periodKey, res.workdays);   // F12: over workdays
+  var proj = dashProjection_(o.answered, res.from, res.dataThrough, res.periodKey, res.workdays, res.partial);   // F12: over workdays; Batch PD: over the rep's credited days
+  // Batch PD: the credited days, only when a day is marked — with or without a pace.
+  var pdl = dashPartialLine_(res);
+  var pdHtml = pdl ? '<span class="dash-partial" role="note" title="' + esc(pdl.title) + '" aria-label="' + esc(pdl.text + '. ' + pdl.title) + '">' + esc(pdl.text) + '</span>' : '';
   var projHtml = proj ? '<div class="dash-proj mono">' + icon('chart', 11) +
     ' On pace for ~' + proj.projected + ' answered by ' + esc(proj.endLabel) + '</div>' : '';
-  return kpis + foot + projHtml;
+  return kpis + foot + projHtml + (pdHtml ? '<div class="dash-partial-row mono">' + pdHtml + '</div>' : '');
 }
 function clkDashTeamCard_(res) {
   if (res === undefined) return clkDashSkelKpis_();   // pending ≠ empty (see own card)
@@ -2171,6 +2225,8 @@ function clkPendingAdjustHtml_(s) {
         (a.endTime ? ' · finished ' + a.endTime : ' · when you finish, add your finish time with Adjust')) + '</span>';
     }
     var label = (PUNCH_META[a.punchType] && PUNCH_META[a.punchType].label) || a.punchType || '';
+    // DS1 (cycle 26): a confirm asks that the time STAND — "Clock In 07:56" alone would read as a change.
+    if (a.action === 'confirm') return '<span class="aj-item">' + esc('Confirm ' + label + ' ' + (a.time || '') + ' as it is') + '</span>';
     return '<span class="aj-item">' + esc(label) + ' ' + esc(a.time || '') + esc(adjIntentText_(a.punchType, a.breakIntent)) + '</span>';
   }).join('<span aria-hidden="true">·</span>');
   return '<div class="clk-adj-pending" role="status">' +
@@ -3036,7 +3092,8 @@ function adjLoadPending_() {
     const label = function (t) { return (PUNCH_META[t] && PUNCH_META[t].label) || t; };
     h.innerHTML = '<div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:4px">Awaiting approval (' + pend.length + ')</div>' +
       pend.map(function (r) {
-        return '<div style="padding:2px 0">' + esc(r.date) + ' · ' + esc(label(r.punchType)) + ' · ' + esc(r.time) + esc(adjIntentText_(r.punchType, r.breakIntent)) + '</div>';
+        return '<div style="padding:2px 0">' + esc(r.date) + ' · ' + esc((r.action === 'confirm' ? 'Confirm ' : '') + label(r.punchType)) + ' · ' + esc(r.time) +
+          esc(r.action === 'confirm' ? ' as it is' : adjIntentText_(r.punchType, r.breakIntent)) + '</div>';   // DS1
       }).join('');
   }).withFailureHandler(function () {}).getMyPunchAdjustRequests();
 }
@@ -3080,6 +3137,7 @@ function openAdjustModal(prefillDate, prefillType) {
     }
   }
   document.getElementById('adj-time').value = timeHmTz(tz);
+  _adjPrefillTime = document.getElementById('adj-time').value;   // F63: the time the modal opens with is not the rep's typing
   document.getElementById('adj-reason').value = '';
   updateAdjReasonRequirement();
   ADJ_BATCH = [];
@@ -3090,7 +3148,18 @@ function openAdjustModal(prefillDate, prefillType) {
   const applyBtn = document.getElementById('adj-apply-now');
   if (applyBtn) applyBtn.style.display = flagOn_('employeeImmediateAdjust') ? '' : 'none';
   adjRefreshBreakTarget_(true);   // TC-02 — fresh each open: the day may have changed since
-  ensureOverlay('adjust-overlay');   // F-40: the focus stash/restore lifecycle
+  // F63 (cycle 26): Escape, the backdrop and Cancel ask first while there is
+  // typed work in it — a list of adjustments, a time or a reason.
+  ensureOverlay('adjust-overlay', { labelledBy: 'adjust-title', unsaved: { what: 'this punch adjustment', dirty: adjModalDirty_ } });   // F-40: the focus stash/restore lifecycle
+}
+/** F63 — is there work in the Adjust modal that a close would lose? The date,
+ *  the punch type and the time are what the modal opens with (the time is now);
+ *  a queued entry, a time the rep changed and a typed reason are work. */
+let _adjPrefillTime = '';
+function adjModalDirty_() {
+  const v = function (id) { const el = document.getElementById(id); return el ? String(el.value || '').trim() : ''; };
+  const t = v('adj-time');
+  return ADJ_BATCH.length > 0 || (!!t && t !== _adjPrefillTime) || !!v('adj-reason');
 }
 
 /**
@@ -3143,7 +3212,7 @@ document.getElementById('adj-add').addEventListener('click', () => {
 document.getElementById('adj-apply-now').addEventListener('click', () => {
   const entry = adjReadEntry_();
   if (!entry) return;
-  closeOverlay(document.getElementById('adjust-overlay'));
+  closeOverlay(document.getElementById('adjust-overlay'), { saved: true });   // F63: applied, not discarded
   submitPunch(entry.punchType, { date: entry.date, time: entry.time, reason: entry.reason, breakIntent: entry.breakIntent || null });
 });
 
@@ -3164,7 +3233,7 @@ document.getElementById('adj-submit').addEventListener('click', () => {
     .withSuccessHandler(function (res) {
       btn.disabled = false;
       if (!res || !res.success) { showToast((res && res.error) || 'Submit failed', 'toast-error'); return; }
-      closeOverlay(document.getElementById('adjust-overlay'));
+      closeOverlay(document.getElementById('adjust-overlay'), { saved: true });   // F63: submitted, not discarded
       ADJ_BATCH = [];
       // T3: a Clock Out for a day whose resume is pending ATTACHES to that
       // request as its finish rather than queuing a second one — say so.

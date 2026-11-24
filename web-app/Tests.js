@@ -23,6 +23,9 @@ const _TEST_INDIA_ID    = 'TEST_IN_001';
 const _TEST_INDIA_EMAIL = 'do-not-send-india@example.invalid';
 const _TEST_PH_ID       = 'TEST_PH_001';
 const _TEST_PH_EMAIL    = 'do-not-send-ph@example.invalid';
+// A drawn signature as the pad exports it: a real 48x16 PNG (a wavy line), long
+// enough to pass empDocDrawnPng_ (cycle 26 F44 — a 1x1 PNG no longer signs).
+const _TEST_SIG_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAQCAAAAAB1xaNtAAAAb0lEQVR42sWSwQ3AIAwDPYSn8/57pCqp2kDMg1d5oZxNYhTE4cEfBpJeOwB6VZKzDNANvIshNUeCZqCei2ID4MsRSwv50OXdeSj6X5o01VE6o8g4Dy4L8AGuQS3AC5reAyQgjd6CDC1Jdhs6OF6+C2QDuF9YvnK7AAAAAElFTkSuQmCC';
 const _TEST_MGR_ID      = 'TEST_US_001';
 const _TEST_MGR_EMAIL   = 'do-not-send-mgr@example.invalid';
 
@@ -287,15 +290,109 @@ function _withTestKb_(fn) {
  *  affects getFlag_ reads (the pre-flag-migration test idiom). */
 function _withFeatureFlags_(overrides, fn) {
   const props = PropertiesService.getScriptProperties();
-  const saved = props.getProperty('CN_FEATURE_FLAGS');
+  const saved = _stashProp_('CN_FEATURE_FLAGS');
   let base = {};
   if (saved) { try { base = JSON.parse(saved) || {}; } catch (e) { base = {}; } }
   props.setProperty('CN_FEATURE_FLAGS', JSON.stringify(Object.assign({}, base, overrides)));
   try { return fn(); }
-  finally {
-    if (saved == null) props.deleteProperty('CN_FEATURE_FLAGS');
-    else props.setProperty('CN_FEATURE_FLAGS', saved);
+  finally { _unstashProp_('CN_FEATURE_FLAGS'); }
+}
+
+// ── A live Script Property a test overwrites is STASHED first (cycle 26 F73) ──
+// A test that rewrites a deployment setting — the feature flags, the admin
+// list, the archive window — kept the real value in a LOCAL variable and put
+// it back in a `finally`. An execution the platform kills (a full run is
+// minutes long) never reaches that `finally`, and the value was then nowhere:
+// every admin toggle back at its default, ADMIN_EMAILS holding one test
+// address, the archive window at 30 days. g132's by-key backstop cannot help —
+// it can strip a test address out of a list, but it cannot know what a
+// replaced VALUE used to be.
+//
+// So the original is written to a second property BEFORE the first change,
+// and removed only once it has been put back. setupTestEnvironment and
+// cleanupTestData restore whatever a killed run left stashed. A stash that is
+// already there IS the original: a re-run must never stash a test's value
+// over it.
+const TEST_STASH_VALUE_PREFIX = 'TEST_STASH_VALUE_';     // the property held this value
+const TEST_STASH_ABSENT_PREFIX = 'TEST_STASH_ABSENT_';   // the property did not exist
+const TEST_STASH_AT_PREFIX = 'TEST_STASH_AT_';           // when it was stashed (ms) — FX1
+// FX1 (cycle 26): a restore puts back the value from BEFORE the run. If the
+// run was killed and a person then changed that setting by hand, the restore
+// replaces their change too — it cannot tell their edit from a test's. So the
+// stash is dated, and a restore that replaces a DIFFERENT value says how old
+// the stash was and writes the value it replaced to the log, where the owner
+// can read it back. Past this age it also says so in capitals.
+const TEST_STASH_OLD_MS = 2 * 3600000;
+
+/** PURE over a properties object — { found, value } for `key`'s stash; value
+ *  is null when the property did not exist before the suite touched it. */
+function _stashRead_(props, key) {
+  if (props.getProperty(TEST_STASH_ABSENT_PREFIX + key) !== null) return { found: true, value: null };
+  const v = props.getProperty(TEST_STASH_VALUE_PREFIX + key);
+  return v === null ? { found: false, value: null } : { found: true, value: v };
+}
+/** Stash `key` (once) and return the value it had before the suite touched it
+ *  — the drop-in for `props.getProperty(key)` at the top of a test. */
+function _stashProp_(key) {
+  const props = PropertiesService.getScriptProperties();
+  const kept = _stashRead_(props, key);
+  if (kept.found) return kept.value;
+  const cur = props.getProperty(key);
+  if (cur === null) props.setProperty(TEST_STASH_ABSENT_PREFIX + key, '1');
+  else props.setProperty(TEST_STASH_VALUE_PREFIX + key, cur);
+  props.setProperty(TEST_STASH_AT_PREFIX + key, String(Date.now()));
+  return cur;
+}
+/** PURE (Node-pinned) — FX1: one line for a property the backstop restored.
+ *  `replaced` is what the property held when the backstop ran, `original`
+ *  what it was restored to (null = absent). The replaced value is printed
+ *  only when it DIFFERED: that is the one case where something is lost. */
+function _stashRestoreLine_(key, atMs, nowMs, replaced, original) {
+  const at = Number(atMs), age = (isFinite(at) && at > 0 && nowMs >= at) ? nowMs - at : -1;
+  const mins = Math.round(age / 60000);
+  const when = age < 0 ? 'stashed at an unknown time' : ('stashed ' + (mins < 60 ? mins + ' min' : (Math.floor(mins / 60) + ' h ' + (mins % 60) + ' min')) + ' ago');
+  if (replaced === original) return key + ' — ' + when + '; it already held its original value.';
+  const old = age < 0 || age > TEST_STASH_OLD_MS;
+  const shown = replaced === null ? '(not set)' : JSON.stringify(String(replaced).length > 300 ? String(replaced).slice(0, 300) + '…' : String(replaced));
+  return key + ' — ' + when + '; restored to its value from before the run. It REPLACED ' + shown + '.' +
+    (old ? ' THIS STASH WAS OLD: if you set ' + key + ' by hand after that run stopped, that value is the one just replaced — set it again.' : '');
+}
+/** Put `key` back as it was stashed, THEN drop the stash — in that order, so
+ *  a kill between the two leaves the stash for the backstop. true when there
+ *  was one. NOT re-entrant for one key: an inner stash of a key already
+ *  stashed returns the original, and its unstash ends the outer's override. */
+function _unstashProp_(key) {
+  const props = PropertiesService.getScriptProperties();
+  const kept = _stashRead_(props, key);
+  if (!kept.found) return false;
+  if (kept.value === null) props.deleteProperty(key);
+  else props.setProperty(key, kept.value);
+  props.deleteProperty(TEST_STASH_VALUE_PREFIX + key);
+  props.deleteProperty(TEST_STASH_ABSENT_PREFIX + key);
+  props.deleteProperty(TEST_STASH_AT_PREFIX + key);
+  return true;
+}
+/** The backstop: restore every property a killed run left stashed. Returns the
+ *  keys it restored. Never throws. */
+function _restoreStashedProps_() {
+  const restored = [], lines = [];
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const now = Date.now();
+    props.getKeys().forEach(function (k) {
+      const key = k.indexOf(TEST_STASH_VALUE_PREFIX) === 0 ? k.slice(TEST_STASH_VALUE_PREFIX.length)
+        : (k.indexOf(TEST_STASH_ABSENT_PREFIX) === 0 ? k.slice(TEST_STASH_ABSENT_PREFIX.length) : '');
+      if (!key || restored.indexOf(key) >= 0) return;
+      // FX1: read what is about to be replaced, and when the stash was taken, BEFORE the restore.
+      const replaced = props.getProperty(key), at = props.getProperty(TEST_STASH_AT_PREFIX + key), original = _stashRead_(props, key).value;
+      if (_unstashProp_(key)) { restored.push(key); lines.push(_stashRestoreLine_(key, at, now, replaced, original)); }
+    });
+  } catch (e) { Logger.log('_restoreStashedProps_ skipped: ' + e.message); }
+  if (restored.length) {
+    Logger.log('Restored ' + restored.length + ' Script Propert' + (restored.length === 1 ? 'y' : 'ies') + ' a killed run had left overwritten: ' + restored.join(', '));
+    lines.forEach(function (l) { Logger.log('  ' + l); });
   }
+  return restored;
 }
 
 /** Resets the session-level CDR in-memory caches (name-map + column-validation
@@ -320,6 +417,8 @@ function _resetCdrCaches_() {
     // not leak across the override boundary.
     _cdrHolidaysMemo = null;
     _cdrStandardsMemo = null;   // H2
+    _cdrPartialMemo = null;     // Batch PD: a fixture's marks must not leak
+    _cdrPartialFailed = false;
   } catch (e) {}
 }
 
@@ -529,6 +628,7 @@ function setupTestEnvironment() {
   _assertSuiteCaller_('setupTestEnvironment');   // S1 — WHO, before assertNotProdInstance_'s WHERE
   try { _suiteEnvCheck_(); } catch (e) { Logger.log('_suiteEnvCheck_ skipped: ' + e.message); }
   assertNotProdInstance_('setupTestEnvironment');   // blue-green guard (see runAllTests)
+  _restoreStashedProps_();   // F73: a killed run's overwritten settings, before anything reads them
   _TEST_DATE_FUTURE = _testWorkdayOnOrAfter_(_TEST_DATE_FUTURE);   // TC-03 — past a company holiday too
   const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
 
@@ -824,6 +924,9 @@ function _setupTestIntakeFixture_() {
 
 function cleanupTestData() {
   _assertSuiteCaller_('cleanupTestData');
+  // F73: FIRST — the stash holds the real values; the by-key backstops below
+  // then strip test addresses out of what was put back.
+  _restoreStashedProps_();
   const ss = getAdpSS_();
 
   // Timesheet (headers in rows 1-2, data from row 3)
@@ -1562,6 +1665,7 @@ function _registerIntegrationA_() {
 
   // #4a — punch-adjustment requests (employee batch → manager approval)
   _integrationTest('punchAdjust_submitApproveWritesPunch',     test_punchAdjust_submitApproveWritesPunch);
+  _integrationTest('punchAdjust_confirmRequestMovesOnlyTheMark', test_punchAdjust_confirmRequestMovesOnlyTheMark);
   _integrationTest('punchAdjust_batchInvalidRejected',         test_punchAdjust_batchInvalidRejected);
   _integrationTest('punchAdjust_nonManagerRejected',           test_punchAdjust_nonManagerRejected);
   _integrationTest('punchAdjust_duplicatePendingRejected',     test_punchAdjust_duplicatePendingRejected);
@@ -1615,6 +1719,7 @@ function _registerIntegrationA_() {
   _integrationTest('managerSaveDay_addOnly',                   test_managerSaveDay_addOnly);
   _integrationTest('managerSaveDay_collapsesDuplicateRows',    test_managerSaveDay_collapsesDuplicateRows);
   _integrationTest('managerSaveDay_updateOnly',                test_managerSaveDay_updateOnly);
+  _integrationTest('managerSaveDay_confirmsInferredAsIs',      test_managerSaveDay_confirmsInferredAsIs);
   _integrationTest('managerSaveDay_deleteOnly',                test_managerSaveDay_deleteOnly);
   _integrationTest('managerSaveDay_mixedChanges',              test_managerSaveDay_mixedChanges);
   _integrationTest('managerSaveDay_openBreakRoundTrips',       test_managerSaveDay_openBreakRoundTrips);
@@ -1671,6 +1776,9 @@ function _registerIntegrationB_() {
   _integrationTest('deptReq_detailScoped',                    test_deptReq_detailScoped);
   // ── Operator testing note 10: presence stamp + activeNotIn (INV-24 amendment)
   _integrationTest('presence_stampAndFlag',                   test_presence_stampAndFlag);
+  _integrationTest('activity_rowLimitRefusesPastTheCap',      test_activity_rowLimitRefusesPastTheCap);
+  _integrationTest('intakeFeedback_limitRefusesPastTheCap',   test_intakeFeedback_limitRefusesPastTheCap);
+  _integrationTest('suite_stashRestoresAnOverwrittenProperty', test_suite_stashRestoresAnOverwrittenProperty);
   // ── Pilot round 2: scheduled-call reminders flow ──────────────────────────
   _integrationTest('scheduledCalls_flow',                     test_scheduledCalls_flow);
   // ── Pilot round 3: scratchpad + Reference comments ────────────────────────
@@ -1680,6 +1788,7 @@ function _registerIntegrationB_() {
   // ── Metrics / CDR endpoint integration (uses the CDR fixture) ───────────
   _integrationTest('companyHolidays_readsFixtureTab',           test_companyHolidays_readsFixtureTab);
   _integrationTest('dashboardStandard_readsFixtureTab',         test_dashboardStandard_readsFixtureTab);
+  _integrationTest('partialDays_readsFixtureTab',               test_partialDays_readsFixtureTab);   // Batch PD (cycle 26)
   _integrationTest('metrics_getMyMetrics_cdrIntegration',       test_metrics_getMyMetrics_cdrIntegration);
   _integrationTest('metrics_getTeamMetrics_queueGrouping', test_metrics_getTeamMetrics_queueGrouping);
   _integrationTest('metrics_getTeamMetrics_queueBreakdown', test_metrics_getTeamMetrics_queueBreakdown);
@@ -2201,6 +2310,54 @@ function test_companyHolidays_readsFixtureTab() {
   });
 }
 
+/** Batch PD (integration, cycle 26): the reader against a REAL `Partial Days`
+ *  tab in the TEST CDR fixture — six columns as the Department Dashboard
+ *  writes them, read three wide: a text date, a coerced Date cell keyed in the
+ *  spreadsheet tz, a Credit-1 dismissal, a duplicate — and the marked day
+ *  beside the DQE reader's result. The Reason column is filled with a marker
+ *  that must appear nowhere in what the app read. The tab is deleted after. */
+function test_partialDays_readsFixtureTab() {
+  _assertSuiteCaller_();
+  _withTestCdr_(function () {
+    const ss = SpreadsheetApp.openById(_TEST_CDR_SS_ID);
+    let tab = ss.getSheetByName(CONFIG.CDR_PARTIAL_DAYS_TAB);
+    if (tab) ss.deleteSheet(tab);
+    tab = ss.insertSheet(CONFIG.CDR_PARTIAL_DAYS_TAB);
+    try {
+      const MARK = 'REASON-MUST-NOT-BE-READ';
+      tab.getRange(1, 1, 1, 6).setValues([['Date', 'Agent', 'Credit', 'Reason', 'Added By', 'Added At']]);
+      tab.getRange(2, 1, 4, 1).setNumberFormat('@');
+      tab.getRange(2, 1, 4, 6).setValues([
+        [_TEST_CDR_DATE, _TEST_INDIA_NAME, 0.5, MARK, 'test', '2026-11-16T00:00:00'],
+        [_TEST_CDR_DATE, _TEST_INDIA_NAME, 0.25, MARK, 'test', '2026-11-16T00:00:00'],
+        ['2026-01-05', _TEST_INDIA_NAME, 1, MARK, 'test', '2026-11-16T00:00:00'],
+        ['2026-01-06', '', 0.5, MARK, 'test', '2026-11-16T00:00:00'],
+      ]);
+      // A date typed without the text pin: Sheets coerces it to a Date.
+      tab.getRange(6, 1).setValue('2026-01-07');
+      tab.getRange(6, 2).setValue(_TEST_INDIA_NAME);
+      tab.getRange(6, 3).setValue(0.75);
+      tab.getRange(6, 4).setValue(MARK);
+      SpreadsheetApp.flush();
+      _cdrPartialMemo = null; _cdrPartialFailed = false;
+      const pd = getCdrPartialDays_();
+      _assertEq(pd.source, 'sheet');
+      _assertEq(pd.kept, 2, 'the first of the duplicate pair and the coerced-date row; the dismissal and the blank agent are no marks');
+      const mine = pd.marks[_TEST_INDIA_NAME] || {};
+      _assertEq(mine[_TEST_CDR_DATE], 0.5, 'the first row wins');
+      _assertEq(mine['2026-01-07'], 0.75, 'a coerced Date cell is keyed in the spreadsheet timezone');
+      _assertTrue(JSON.stringify(pd).indexOf(MARK) < 0, 'the Reason column is nowhere in what was read');
+      const res = getCdrAgentMetrics_(_TEST_CDR_DATE, _TEST_CDR_DATE, [_TEST_INDIA_NAME]);
+      _assertEq((res.partial || {})[_TEST_INDIA_NAME], [[_TEST_CDR_DATE, 0.5]], 'the marked day rides beside the agents map');
+      _assertTrue(!('partial' in res.agents[_TEST_INDIA_NAME]), 'and not on the agent');
+      _assertTrue(JSON.stringify(res).indexOf(MARK) < 0, 'nor any reason');
+    } finally {
+      _cdrPartialMemo = null; _cdrPartialFailed = false;
+      try { ss.deleteSheet(tab); } catch (e) {}
+    }
+  });
+}
+
 function test_holidays_independenceDay_weekendShift() {
   _assertSuiteCaller_();
   // Jul 4 2026 is Saturday → observed Friday Jul 3
@@ -2542,6 +2699,55 @@ function test_punchAdjust_submitApproveWritesPunch() {
   _assertEq(appr2.success, false, 're-approve rejected (no longer pending)');
 }
 
+// Cycle 26 DS1 — a rep asks that a time set from app activity be confirmed.
+// Filing changes nothing; a manager's approval moves column J from Inferred
+// to Confirmed and leaves the time alone. A request that does not match the
+// day is refused at submit.
+function test_punchAdjust_confirmRequestMovesOnlyTheMark() {
+  _assertSuiteCaller_();
+  _clearTestState(_TEST_PH_ID);
+  const clockIn = () => {
+    const rows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
+    for (let i = rows.length - 1; i >= 2; i--) {
+      if (String(rows[i][ADP.EMP_ID]).trim() !== _TEST_PH_ID) continue;
+      if (normalizeDate_(rows[i][ADP.DATE]) !== _TEST_DATE_RECENT) continue;
+      if (normalizeType_(String(rows[i][ADP.COMMENTS])) !== 'ClockIn') continue;
+      return { mark: String(rows[i][ADP.INFERRED] || '').trim(), time: normalizeTime_(rows[i][ADP.TIME]).substring(0, 5) };
+    }
+    return null;
+  };
+  try {
+    _asUser(_TEST_MGR_EMAIL, () => {
+      _assertSuccess(managerSaveDay(_TEST_PH_ID, _TEST_DATE_RECENT,
+        { ClockIn: '07:56', ClockOut: '17:00', breaks: [], inferred: { ClockIn: true, ClockOut: false } }, 'DS1 fixture'));
+    });
+    _assertEq(clockIn().mark, ADP_INFERRED_MARK, 'the fixture Clock In is marked inferred');
+    let sub;
+    _asUser(_TEST_PH_EMAIL, () => {
+      _assertFailure(submitPunchAdjustRequests([{ date: _TEST_DATE_RECENT, time: '08:30', punchType: 'ClockIn', action: 'confirm' }]), 'is now 07:56');
+      _assertFailure(submitPunchAdjustRequests([{ date: _TEST_DATE_RECENT, time: '17:00', punchType: 'ClockOut', action: 'confirm' }]), 'not marked');
+      sub = submitPunchAdjustRequests([{ date: _TEST_DATE_RECENT, time: '07:56', punchType: 'ClockIn', action: 'confirm' }]);
+    });
+    _assertSuccess(sub);
+    _assertEq(clockIn().mark, ADP_INFERRED_MARK, 'filed, not applied — the time is still inferred');
+    let pend;
+    _asUser(_TEST_MGR_EMAIL, () => { pend = managerGetPendingAdjustments(); });
+    const req = (pend.requests || []).filter(function (r) { return r.empId === _TEST_PH_ID && r.action === 'confirm'; })[0];
+    _assertNotNull(req, 'the confirm request is in the manager queue, named as one');
+    const before = _countAuditRows(_TEST_PH_ID, 'PunchConfirm');
+    let appr;
+    _asUser(_TEST_MGR_EMAIL, () => { appr = updatePunchAdjustStatus(req.reqId, 'Approved'); });
+    _assertSuccess(appr);
+    const after = clockIn();
+    _assertEq(after.mark, ADP_CONFIRMED_MARK, 'approved: column J reads Confirmed');
+    _assertEq(after.time, '07:56', 'and the time did not move');
+    _assertEq(_countAuditRows(_TEST_PH_ID, 'PunchConfirm'), before + 1, 'one PunchConfirm audit row');
+    _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_RECENT, null), 2, 'no punch was written');
+  } finally {
+    _clearTestState(_TEST_PH_ID);
+  }
+}
+
 function test_punchAdjust_batchInvalidRejected() {
   _assertSuiteCaller_();
   _clearTestState(_TEST_PH_ID);
@@ -2719,7 +2925,7 @@ function test_recordPunch_immediateAdjustGatedByFlag() {
   _assertSuiteCaller_();
   _clearTestState(_TEST_PH_ID);
   const props = PropertiesService.getScriptProperties();
-  const saved = props.getProperty('CN_FEATURE_FLAGS');
+  const saved = _stashProp_('CN_FEATURE_FLAGS');
   try {
     props.deleteProperty('CN_FEATURE_FLAGS');   // flag off (default)
     let r1;
@@ -2731,8 +2937,7 @@ function test_recordPunch_immediateAdjustGatedByFlag() {
     _asUser(_TEST_PH_EMAIL, () => { r2 = recordPunch('ClockOut', { date: _TEST_DATE_RECENT, time: '17:00', reason: '' }); });
     _assertSuccess(r2);
   } finally {
-    if (saved == null) props.deleteProperty('CN_FEATURE_FLAGS');
-    else props.setProperty('CN_FEATURE_FLAGS', saved);
+    _unstashProp_('CN_FEATURE_FLAGS');
   }
 }
 
@@ -2834,7 +3039,7 @@ function test_reconcileCallNotes_backfillsHandEntered() {
   // run, restored after. (The roster gate that the test manager satisfies is no
   // longer the reconcile gate — cycle-6 F1/F2 fix.)
   const props = PropertiesService.getScriptProperties();
-  const prevMgr = props.getProperty('MANAGER_EMAILS');
+  const prevMgr = _stashProp_('MANAGER_EMAILS');
   props.setProperty('MANAGER_EMAILS', (prevMgr ? prevMgr + ',' : '') + _TEST_MGR_EMAIL);
   try {
     let res;
@@ -2850,7 +3055,7 @@ function test_reconcileCallNotes_backfillsHandEntered() {
     const after2 = sheet.getRange(appended, 1, 1, CN_HEADERS.length).getValues()[0];
     _assertEq(String(after2[CN.NOTE_ID]).trim(), String(after[CN.NOTE_ID]).trim(), 'noteId stable on re-run (idempotent)');
   } finally {
-    if (prevMgr === null) props.deleteProperty('MANAGER_EMAILS'); else props.setProperty('MANAGER_EMAILS', prevMgr);
+    _unstashProp_('MANAGER_EMAILS');
     sheet.deleteRow(appended);   // tidy within the run (cleanupTestData also wipes the test Notes tab)
   }
 }
@@ -4122,6 +4327,57 @@ function test_managerSaveDay_updateOnly() {
   _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, null), 4);
   _assertEq(_countAuditRows(_TEST_PH_ID, 'PunchEdit'), before + 1,
     'Exactly one PunchEdit audit row expected');
+}
+
+/** Cycle 26 DQ3 — "Confirm as is": a Clock In saved as inferred keeps its time,
+ *  its column-J mark moves to Confirmed, and one PunchConfirm audit row is
+ *  written. A save without the press leaves the mark alone. */
+function test_managerSaveDay_confirmsInferredAsIs() {
+  _assertSuiteCaller_();
+  _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
+  const clockIn = () => {
+    const rows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
+    for (let i = rows.length - 1; i >= 2; i--) {
+      if (String(rows[i][ADP.EMP_ID]).trim() !== _TEST_PH_ID) continue;
+      if (normalizeDate_(rows[i][ADP.DATE]) !== _TEST_DATE_OLD) continue;
+      if (normalizeType_(String(rows[i][ADP.COMMENTS])) !== 'ClockIn') continue;
+      return { mark: String(rows[i][ADP.INFERRED] || '').trim(), time: normalizeTime_(rows[i][ADP.TIME]).substring(0, 5) };
+    }
+    return null;
+  };
+  try {
+    const day = { ClockIn: '07:56', ClockOut: '17:00', breaks: [] };
+    _asUser(_TEST_MGR_EMAIL, () => {
+      _assertSuccess(managerSaveDay(_TEST_PH_ID, _TEST_DATE_OLD,
+        Object.assign({}, day, { inferred: { ClockIn: true, ClockOut: false } }), 'DQ3 fixture'));
+    });
+    _assertEq(clockIn().mark, ADP_INFERRED_MARK, 'the fixture row is marked inferred');
+    const before = _countAuditRows(_TEST_PH_ID, 'PunchConfirm');
+    const edits = _countAuditRows(_TEST_PH_ID, 'PunchEdit');
+    // A re-save that still sends the slot as inferred changes nothing.
+    _asUser(_TEST_MGR_EMAIL, () => {
+      const r = managerSaveDay(_TEST_PH_ID, _TEST_DATE_OLD,
+        Object.assign({}, day, { inferred: { ClockIn: true, ClockOut: false } }), 'DQ3 no press');
+      _assertSuccess(r);
+      _assertEq(r.changes, 0, 'no press, no change');
+    });
+    _assertEq(clockIn().mark, ADP_INFERRED_MARK, 'still inferred');
+    // The press.
+    _asUser(_TEST_MGR_EMAIL, () => {
+      const r = managerSaveDay(_TEST_PH_ID, _TEST_DATE_OLD,
+        Object.assign({}, day, { inferred: { ClockIn: false, ClockOut: false }, confirmed: { ClockIn: true, ClockOut: false } }), 'DQ3 confirmed with the rep');
+      _assertSuccess(r);
+      _assertEq(r.changes, 1, 'the confirm is the one change');
+    });
+    const after = clockIn();
+    _assertEq(after.mark, ADP_CONFIRMED_MARK, 'column J reads Confirmed');
+    _assertEq(after.time, '07:56', 'the time did not move');
+    _assertEq(_countAuditRows(_TEST_PH_ID, 'PunchConfirm'), before + 1, 'exactly one PunchConfirm audit row');
+    _assertEq(_countAuditRows(_TEST_PH_ID, 'PunchEdit'), edits, 'and no PunchEdit — nothing was edited');
+    _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, null), 2, 'two rows, as before');
+  } finally {
+    _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
+  }
 }
 
 function test_managerSaveDay_deleteOnly() {
@@ -5484,7 +5740,7 @@ function test_creditPtoAccrual_seedCreditIdempotent() {
   const prevQ = qCell.getValue(), prevR = rCell.getValue(), prevPto = ptoCell.getValue();
   const balBefore = parseFloat(balCell.getValue()) || 0;
   const props = PropertiesService.getScriptProperties();
-  const prevMgr = props.getProperty('MANAGER_EMAILS');
+  const prevMgr = _stashProp_('MANAGER_EMAILS');
   props.setProperty('MANAGER_EMAILS', (prevMgr ? prevMgr + ',' : '') + _TEST_MGR_EMAIL);
   try {
     const nowYm = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM');
@@ -5560,7 +5816,7 @@ function test_creditPtoAccrual_seedCreditIdempotent() {
     _assertEq(accrualStampYm_(rCell.getValue()), backYm, 'disabled rep stamp frozen');
   } finally {
     _clearRowsByEmp(getAdpSS_().getSheetByName(CONFIG.ADP_TAB), _TEST_INDIA_ID, ADP.EMP_ID, 3);
-    if (prevMgr === null) props.deleteProperty('MANAGER_EMAILS'); else props.setProperty('MANAGER_EMAILS', prevMgr);
+    _unstashProp_('MANAGER_EMAILS');
     qCell.setValue(prevQ === null || prevQ === undefined ? '' : prevQ);
     rCell.setValue(prevR === null || prevR === undefined ? '' : prevR);
     ptoCell.setValue(prevPto === null || prevPto === undefined ? '' : prevPto);
@@ -5593,7 +5849,7 @@ function test_previewPtoAccrual_predictsTheCredit() {
   const prevQ = qCell.getValue(), prevR = rCell.getValue(), prevPto = ptoCell.getValue();
   const balBefore = parseFloat(balCell.getValue()) || 0;
   const props = PropertiesService.getScriptProperties();
-  const prevMgr = props.getProperty('MANAGER_EMAILS');
+  const prevMgr = _stashProp_('MANAGER_EMAILS');
   props.setProperty('MANAGER_EMAILS', (prevMgr ? prevMgr + ',' : '') + _TEST_MGR_EMAIL);
   try {
     const nowYm = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM');
@@ -5697,7 +5953,7 @@ function test_previewPtoAccrual_predictsTheCredit() {
       'the ZERO audit row is written and carries the reason, got: ' + zeroNote);
   } finally {
     _clearRowsByEmp(getAdpSS_().getSheetByName(CONFIG.ADP_TAB), _TEST_INDIA_ID, ADP.EMP_ID, 3);
-    if (prevMgr === null) props.deleteProperty('MANAGER_EMAILS'); else props.setProperty('MANAGER_EMAILS', prevMgr);
+    _unstashProp_('MANAGER_EMAILS');
     qCell.setValue(prevQ === null || prevQ === undefined ? '' : prevQ);
     rCell.setValue(prevR === null || prevR === undefined ? '' : prevR);
     ptoCell.setValue(prevPto === null || prevPto === undefined ? '' : prevPto);
@@ -5740,8 +5996,8 @@ function test_accrualReconcile_topsUpLateData() {
   const prevQ = qCell.getValue(), prevR = rCell.getValue();
   const balBefore = parseFloat(balCell.getValue()) || 0;
   const props = PropertiesService.getScriptProperties();
-  const prevMgr = props.getProperty('MANAGER_EMAILS');
-  const prevRec = props.getProperty('PTO_ACCRUAL_RECONCILE');
+  const prevMgr = _stashProp_('MANAGER_EMAILS');
+  const prevRec = _stashProp_('PTO_ACCRUAL_RECONCILE');
   props.setProperty('MANAGER_EMAILS', (prevMgr ? prevMgr + ',' : '') + _TEST_MGR_EMAIL);
   try {
     const nowYm = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM');
@@ -5814,8 +6070,8 @@ function test_accrualReconcile_topsUpLateData() {
     _assertTrue(res.shortfalls >= 1, 'it is reported instead, got ' + res.shortfalls);
   } finally {
     _clearRowsByEmp(getAdpSS_().getSheetByName(CONFIG.ADP_TAB), _TEST_INDIA_ID, ADP.EMP_ID, 3);
-    if (prevMgr === null) props.deleteProperty('MANAGER_EMAILS'); else props.setProperty('MANAGER_EMAILS', prevMgr);
-    if (prevRec === null) props.deleteProperty('PTO_ACCRUAL_RECONCILE'); else props.setProperty('PTO_ACCRUAL_RECONCILE', prevRec);
+    _unstashProp_('MANAGER_EMAILS');
+    _unstashProp_('PTO_ACCRUAL_RECONCILE');
     qCell.setValue(prevQ === null || prevQ === undefined ? '' : prevQ);
     rCell.setValue(prevR === null || prevR === undefined ? '' : prevR);
     balCell.setValue(balBefore);   // ABSOLUTE restore — safe on any partial failure
@@ -5830,7 +6086,7 @@ function test_accrualReconcile_topsUpLateData() {
 function test_timesheetArchive_windowFloorAndDefault() {
   _assertSuiteCaller_();
   const props = PropertiesService.getScriptProperties();
-  const prev = props.getProperty('TIMESHEET_ARCHIVE_DAYS');
+  const prev = _stashProp_('TIMESHEET_ARCHIVE_DAYS');
   try {
     props.deleteProperty('TIMESHEET_ARCHIVE_DAYS');
     _assertEq(getTimesheetArchiveDays_(), 0, 'unset property + CONFIG 0 → disabled');
@@ -5843,8 +6099,7 @@ function test_timesheetArchive_windowFloorAndDefault() {
     props.setProperty('TIMESHEET_ARCHIVE_DAYS', '-5');
     _assertEq(getTimesheetArchiveDays_(), 0, 'negative → disabled');
   } finally {
-    if (prev == null) props.deleteProperty('TIMESHEET_ARCHIVE_DAYS');
-    else props.setProperty('TIMESHEET_ARCHIVE_DAYS', prev);
+    _unstashProp_('TIMESHEET_ARCHIVE_DAYS');
   }
 }
 
@@ -5985,7 +6240,7 @@ function test_whatsNew_propertyGateAndDraftHidden() {
 }
 function _test_whatsNew_propertyGateAndDraftHidden_() {
   const props = PropertiesService.getScriptProperties();
-  const prev = props.getProperty('WHATSNEW_KB_ID');
+  const prev = _stashProp_('WHATSNEW_KB_ID');
   let kbId = null;
   try {
     props.deleteProperty('WHATSNEW_KB_ID');
@@ -6010,8 +6265,7 @@ function _test_whatsNew_propertyGateAndDraftHidden_() {
     _assertContains(String(live.bodyMd || ''), 'TESTWHATSNEWTOKEN', 'body delivered');
     _assertTrue(!!String(live.stamp || ''), 'edit stamp present (drives the client seen-flag)');
   } finally {
-    if (prev == null) props.deleteProperty('WHATSNEW_KB_ID');
-    else props.setProperty('WHATSNEW_KB_ID', prev);
+    _unstashProp_('WHATSNEW_KB_ID');
     if (kbId) {
       _asUser(_TEST_MGR_EMAIL, function () { try { kbDeleteItem(kbId); } catch (e) {} });
     }
@@ -7214,6 +7468,90 @@ function test_presence_stampAndFlag() {
   }
 }
 
+// FS3 (cycle 26): the per-person limit on ActivityLog rows, against the REAL
+// cache. The count for this block is set one under the cap, so the test writes
+// no ActivityLog row at all — it asks the limit, which is what both writers do.
+function test_activity_rowLimitRefusesPastTheCap() {
+  _assertSuiteCaller_();
+  const emp = { id: _TEST_INDIA_ID, name: _TEST_INDIA_NAME, email: _TEST_INDIA_EMAIL };
+  const cache = CacheService.getScriptCache();
+  const now = Date.now();
+  const key = ACTIVITY_ROWS_PREFIX + emp.id + ':' + Math.floor(now / (ACTIVITY_BLOCK_MIN * 60000));
+  const before = _countAuditRows(emp.id, 'ActivityRowsLimited');
+  try {
+    cache.put(key, String(ACTIVITY_ROWS_MAX_PER_BLOCK - 1), ACTIVITY_ROWS_TTL_SEC);
+    _assertEq(activityRowAllowed_(emp, now), true, 'the last row under the cap is allowed');
+    _assertEq(Number(cache.get(key)), ACTIVITY_ROWS_MAX_PER_BLOCK, 'and counted');
+    _assertEq(activityRowAllowed_(emp, now), false, 'the next one is refused');
+    _assertEq(activityRowAllowed_(emp, now), false, 'and the one after');
+    _assertEq(Number(cache.get(key)), ACTIVITY_ROWS_MAX_PER_BLOCK + 1, 'the count stops one past the cap');
+    _assertEq(_countAuditRows(emp.id, 'ActivityRowsLimited'), before + 1, 'exactly one audit row for the block');
+    _assertEq(activityRowAllowed_(emp, now + ACTIVITY_BLOCK_MIN * 60000), true, 'the next block starts again');
+  } finally {
+    cache.remove(key);
+    cache.remove(ACTIVITY_ROWS_PREFIX + emp.id + ':' + (Math.floor(now / (ACTIVITY_BLOCK_MIN * 60000)) + 1));
+  }
+}
+
+// FW4 (cycle 26): the per-sender limit on intake feedback calls (FV2), against
+// the REAL cache — the Node pin drives it over a stand-in. The count for this
+// hour is set one under the cap, so no feedback row is written: the test asks
+// the limit, which is what the endpoint does. The sender carries the TEST_ id,
+// so the one audit row is swept with the rest.
+function test_intakeFeedback_limitRefusesPastTheCap() {
+  _assertSuiteCaller_();
+  const who = { id: _TEST_INDIA_ID, name: _TEST_INDIA_NAME, email: _TEST_INDIA_EMAIL, onRoster: true };
+  const cache = CacheService.getScriptCache();
+  const now = Date.now();
+  const hour = Math.floor(now / 3600000);
+  const key = INTAKE_FEEDBACK_RATE_PREFIX + who.email + ':' + hour;
+  const before = _countAuditRows(who.id, 'IntakeFeedbackLimited');
+  try {
+    cache.put(key, String(INTAKE_FEEDBACK_MAX_PER_HOUR - 1), INTAKE_FEEDBACK_RATE_TTL_SEC);
+    _assertEq(intakeFeedbackAllowed_(who, now), true, 'the last call under the cap is allowed');
+    _assertEq(Number(cache.get(key)), INTAKE_FEEDBACK_MAX_PER_HOUR, 'and counted');
+    _assertEq(intakeFeedbackAllowed_(who, now), false, 'the next one is refused');
+    _assertEq(intakeFeedbackAllowed_(who, now), false, 'and the one after');
+    _assertEq(Number(cache.get(key)), INTAKE_FEEDBACK_MAX_PER_HOUR + 1, 'the count stops one past the cap');
+    _assertEq(_countAuditRows(who.id, 'IntakeFeedbackLimited'), before + 1, 'exactly one audit row for the hour');
+    _assertEq(intakeFeedbackAllowed_(who, now + 3600000), true, 'the next hour starts again');
+  } finally {
+    cache.remove(key);
+    cache.remove(INTAKE_FEEDBACK_RATE_PREFIX + who.email + ':' + (hour + 1));
+  }
+}
+
+// F73 (cycle 26): the stash, against the REAL PropertiesService, on a key no
+// code reads. It plays the killed run: a value overwritten with no `finally`,
+// then the backstop.
+function test_suite_stashRestoresAnOverwrittenProperty() {
+  _assertSuiteCaller_();
+  const props = PropertiesService.getScriptProperties();
+  const KEY = 'TEST_STASH_PROBE', GONE = 'TEST_STASH_PROBE_ABSENT';
+  try {
+    props.setProperty(KEY, 'the real value');
+    props.deleteProperty(GONE);
+    _assertEq(_stashProp_(KEY), 'the real value', 'the stash returns what the property held');
+    _assertTrue(Number(props.getProperty(TEST_STASH_AT_PREFIX + KEY)) > 0, 'and is dated (FX1)');
+    _assertEq(_stashProp_(GONE), null, 'and null for a property that did not exist');
+    props.setProperty(KEY, 'a test value');
+    props.setProperty(GONE, 'a test value');
+    // …the execution is killed here: no finally runs. A re-run stashes again:
+    _assertEq(_stashProp_(KEY), 'the real value', 'a second stash keeps the ORIGINAL, not the test value');
+    const restored = _restoreStashedProps_();
+    _assertTrue(restored.indexOf(KEY) >= 0 && restored.indexOf(GONE) >= 0, 'the backstop names what it restored: ' + restored.join(', '));
+    _assertEq(props.getProperty(KEY), 'the real value', 'the overwritten value is back');
+    _assertEq(props.getProperty(GONE), null, 'a property that did not exist is gone again');
+    _assertEq(_stashRead_(props, KEY).found, false, 'and no stash is left behind');
+    _assertEq(props.getProperty(TEST_STASH_AT_PREFIX + KEY), null, 'nor its date');
+    _assertEq(_unstashProp_(KEY), false, 'nothing to restore twice');
+  } finally {
+    [KEY, GONE, TEST_STASH_VALUE_PREFIX + KEY, TEST_STASH_ABSENT_PREFIX + KEY, TEST_STASH_VALUE_PREFIX + GONE, TEST_STASH_ABSENT_PREFIX + GONE,
+      TEST_STASH_AT_PREFIX + KEY, TEST_STASH_AT_PREFIX + GONE]
+      .forEach(function (k) { props.deleteProperty(k); });
+  }
+}
+
 // ── Pilot round 2 — scheduled-call reminders (create → list → status) ───────
 // Runs against the LIVE forms store (the public-form tests' posture): rows are
 // keyed by the TEST_ EmpId, per-test finally deletes them, and cleanupTestData
@@ -7563,7 +7901,7 @@ function _test_kb_draftLifecycleAndRevisions_() {
 function test_adminEmails_subsetOfManagersEnforced() {
   _assertSuiteCaller_();
   const props = PropertiesService.getScriptProperties();
-  const prev = props.getProperty('ADMIN_EMAILS');
+  const prev = _stashProp_('ADMIN_EMAILS');
   try {
     // List ONLY the non-manager India rep.
     props.setProperty('ADMIN_EMAILS', _TEST_INDIA_EMAIL);
@@ -7582,8 +7920,7 @@ function test_adminEmails_subsetOfManagersEnforced() {
     props.setProperty('ADMIN_EMAILS', _TEST_MGR_EMAIL);
     _assertTrue(empIsAdmin_(_TEST_MGR_EMAIL, true), 'listed manager is an admin');
   } finally {
-    if (prev === null) props.deleteProperty('ADMIN_EMAILS');
-    else props.setProperty('ADMIN_EMAILS', prev);
+    _unstashProp_('ADMIN_EMAILS');
     invalidateRosterCache_();
   }
 }
@@ -7599,7 +7936,7 @@ function test_adminEmails_subsetOfManagersEnforced() {
 function test_adminConfig_propertySizeGuardRefusesOversize() {
   _assertSuiteCaller_();
   const props = PropertiesService.getScriptProperties();
-  const prev = props.getProperty('CN_EMAIL_TEMPLATES');
+  const prev = _stashProp_('CN_EMAIL_TEMPLATES');
   try {
     // Five maximum-length bodies: every field is legal, the blob is not.
     const fat = [];
@@ -7622,8 +7959,7 @@ function test_adminConfig_propertySizeGuardRefusesOversize() {
     _assertNotNull(b, 'and a budget for the key just written');
     _assertTrue(b.bytes > 0 && b.bytes <= b.max, 'the budget reports real bytes under the cap: ' + JSON.stringify(b));
   } finally {
-    if (prev === null) props.deleteProperty('CN_EMAIL_TEMPLATES');
-    else props.setProperty('CN_EMAIL_TEMPLATES', prev);
+    _unstashProp_('CN_EMAIL_TEMPLATES');
   }
 }
 
@@ -8383,10 +8719,17 @@ function test_empdocs_issueSignVerifyFlow() {
       _assertTrue(!full.error && full.bodyMd.indexOf('Policy') >= 0, 'owner reads the frozen body');
       _assertNotNull(full.ackText, 'ack text present while unsigned');
 
-      // Bad signature payload rejected; valid 1x1 PNG accepted.
+      // Bad signature payload rejected; a drawn PNG accepted. Cycle 26 F44: the
+      // signature must be a whole drawn PNG (empDocDrawnPng_) — the prefix
+      // alone, and a PNG too small to hold a drawing (the 1x1 this test used
+      // to sign with), are refused like any other non-signature.
       const badSig = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeDoc(docId, 'not-a-data-url'); });
       _assertFailure(badSig, 'signature', 'non-PNG payload rejected');
-      const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+      const prefixOnly = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeDoc(docId, 'data:image/png;base64,'); });
+      _assertFailure(prefixOnly, 'signature', 'the PNG prefix alone is not a signature');
+      const onePixel = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeDoc(docId, 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='); });
+      _assertFailure(onePixel, 'signature', 'a 1x1 PNG is not a drawn signature');
+      const png = _TEST_SIG_PNG;
       const signed = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeDoc(docId, png); });
       _assertTrue(signed && signed.success, 'owner signs');
       const again = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeDoc(docId, png); });
@@ -8493,7 +8836,7 @@ function test_empdocs_legacyHashDualVerify() {
       _assertEq(v.contentMatch, true, 'legacy space-form content hash still verifies (dual-verify)');
       _assertEq(v.tampered, false, 'legacy hash is never reported as tamper');
       // The owner can still SIGN the legacy-hashed doc (acknowledgeDoc gate).
-      const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+      const png = _TEST_SIG_PNG;
       const signed = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeDoc(docId, png); });
       _assertTrue(signed && signed.success, 'legacy-hashed doc still signs (dual-verify gate)');
       v = _asUser(_TEST_MGR_EMAIL, function () { return verifyDocSignature(docId); });
@@ -8928,6 +9271,7 @@ function test_metrics_getTeamMetrics_cdrIntegration() {
   // Only the two test agents have CDR rows in the fixture (queue sentinel excluded).
   _assertEq(r.teamTotals.rung, 15, "team rung = 10 + 5");
   _assertEq(r.teamTotals.answered, 13, "team answered = 8 + 5");
+  _assertEq(r.teamTotals.hasCallData, true, "F35 (cycle 26): the window holds call data, and says so");
   let india = null;
   for (let i = 0; i < r.reps.length; i++) { if (r.reps[i].repName === _TEST_INDIA_NAME) india = r.reps[i]; }
   _assertNotNull(india, "India rep present in team metrics");

@@ -25,6 +25,21 @@ CLASP="${CLASP:-npx --yes @google/clasp@2.4.2}"
 
 restore_prod() { git -C "$repo_root" checkout -- web-app/.clasp.json 2>/dev/null || true; }
 
+# F43 (cycle 26): restore_prod is a `git checkout` of web-app/.clasp.json — run
+# before every prod push and after every dev push. An UNCOMMITTED edit to that
+# file (a new server file added to filePushOrder, say) was discarded without a
+# word, and the push went out with the old order. Refuse instead, and say why.
+require_committed_clasp() {
+  git -C "$repo_root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0   # not a checkout: nothing is restored either
+  if ! git -C "$repo_root" diff --quiet HEAD -- web-app/.clasp.json; then
+    echo "ERROR: web-app/.clasp.json has uncommitted changes." >&2
+    echo "  This script puts the COMMITTED file back (git checkout) before a prod push and after a dev push," >&2
+    echo "  which would discard your edit — and push with the old filePushOrder." >&2
+    echo "  Commit the change (or stash it), then run this again. Nothing was pushed." >&2
+    exit 1
+  fi
+}
+
 case "$env" in
   dev)
     if [ ! -f .clasp.dev.json ]; then
@@ -36,6 +51,7 @@ case "$env" in
       echo "ERROR: web-app/.clasp.dev.json still has the placeholder scriptId — paste your real dev scriptId." >&2
       exit 1
     fi
+    require_committed_clasp
     trap restore_prod EXIT            # restore prod .clasp.json even on failure
     cp .clasp.dev.json .clasp.json
     echo "→ Pushing to DEV project…"
@@ -43,6 +59,7 @@ case "$env" in
     echo "✓ DEV push complete (open the dev project's HEAD /dev URL — it is live now)."
     ;;
   prod)
+    require_committed_clasp
     restore_prod                      # be certain we target the committed prod scriptId
     echo "→ Pushing to PROD project…"
     $CLASP push -f

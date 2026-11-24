@@ -1,5 +1,12 @@
+---
+description: "Implement from the Tier 2 handoff block"
+argument-hint: "[paste the TIER 2 HANDOFF BLOCK first if it is not in this session]"
+---
+
 If $ARGUMENTS is empty or missing AND no TIER 2 HANDOFF BLOCK exists
-earlier in this session, respond with exactly this and stop:
+earlier in this session or in an audit report file
+(.cycle/blocks/<cycle>-targeted-audit-<subsystem>.md) for the current
+cycle, respond with exactly this and stop:
 
 Usage (same session): /targeted-implement — run after /targeted-audit
 Usage (new session): Paste the TIER 2 HANDOFF BLOCK first, then run
@@ -8,7 +15,11 @@ Usage (new session): Paste the TIER 2 HANDOFF BLOCK first, then run
 
 Read CLAUDE.md (especially Common Gotchas) before starting.
 
-You are implementing the actions from the TIER 2 HANDOFF BLOCK above.
+You are implementing the actions from the TIER 2 HANDOFF BLOCK above. If
+it is not in this session, read it from the newest report file
+.cycle/blocks/<cycle>-targeted-audit-<subsystem>.md for the subsystem
+$ARGUMENTS names (or the only one this cycle), and say which file you
+used.
 
 Rules:
 - Implement ONLY the actions in the handoff block, in order
@@ -64,12 +75,29 @@ Deploy: [Deploy Command for the touched subsystem if configured, else
 the deploy step is confirmed.)
 
 FOLLOW-ON ITEMS:
-- [File: area] — [what to check and why]
+- FO-[cycle]-[n] | [File: area] — [what to check and why] | → [this cycle | next audit | roadmap | decision | won't do (reason)]
 (or "None")
 
 DOCUMENTATION UPDATES NEEDED:
 - [updates or "None"]
 ---END TARGETED IMPLEMENTATION SUMMARY---
+
+FOLLOW-ON IDS (every follow-on item this session reports): number each
+FO-<cycle>-<n>, with <cycle> from .cycle/STATE.md's Cycle field and <n> one
+above the highest FO number already used for that cycle in STATE.md and
+.cycle/blocks/ (FO-<n> if the project keeps no .cycle/). Give each exactly
+one disposition:
+- this cycle — a later implement session takes it by its ID
+- next audit — the next audit whose scope covers it re-checks it, as a
+  lead and not as a finding
+- roadmap — too large for one session; /sync-docs proposes a roadmap item
+- decision — only the operator can settle it; name the choice
+- won't do (reason) — closed now, and the reason is the record
+"Noted" is not a disposition. Only if a .cycle/ directory exists: add
+every item that is not "won't do" to the "Open follow-on items" in .cycle/STATE.md, one
+line each with its ID and disposition, and remove each open item this
+session finished or closed — including one marked "confirmed as" a
+finding this session implemented.
 
 7. CHECKPOINT (optional — only if the project uses .cycle/ state)
 If a .cycle/ directory exists at the project root, create or update
@@ -79,9 +107,18 @@ off" line. This lets /cycle-resume continue cleanly in a fresh session
 if context runs out. Set Phase: implement; leave Cycle exactly as the
 audit's CYCLE OPEN step set it — implement sessions never increment it.
 If .cycle/ does not exist, skip this step.
+If STATE.md's sections still describe an EARLIER cycle (its Scope line
+says so), this is the new cycle's first checkpoint: move the old "In
+progress" and "Completed this cycle" entries to .cycle/HISTORY.md under a
+heading naming that cycle (create the file if needed), keep any pending
+item, follow-on or decision that is still live, and drop the note from
+the Scope line.
 
 ALSO write the summary block VERBATIM to
 .cycle/blocks/<cycle>-<version-or-scope>-targeted-implement.md (create the
 directory if needed) — §4v and §6a read these in a fresh session.
+Never overwrite a block: if that name is taken (a second batch under the
+same version or scope), add the batch number before the command name —
+<cycle>-<version-or-scope>-2-targeted-implement.md.
 
 Suggest /test-sync and /sync-docs if applicable.

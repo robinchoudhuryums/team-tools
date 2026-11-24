@@ -324,6 +324,16 @@ function HB_PEOPLE_VIEW() {
     everyone: [me, boss].concat(team, [p('riley.brooks@example.com', 'Riley Brooks', POWER, 'pat.gone@example.com', 'Pat Gone', 'gone')]) };
 }
 function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); }
+// Cycle 26 F2: a job's last-run record in the SHAPE the server ships
+// (automationRunRecord_) — `timestampMgr` is a display string ("Nov 1, 6:02 PM"),
+// never an ISO stamp, and `ym` is the run's month. The fixtures used to type an
+// ISO string here, a format production never emits.
+function runRecAgo(msAgo, notes) {
+  var d = new Date(Date.now() - msAgo), h = d.getHours();
+  var M = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return { timestampMgr: M[d.getMonth()] + ' ' + d.getDate() + ', ' + (h % 12 || 12) + ':' + String(d.getMinutes()).padStart(2, '0') + ' ' + (h < 12 ? 'AM' : 'PM'),
+           ms: d.getTime(), ym: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), notes: notes };
+}
   function ts(dIso, hms) { return dIso + 'T' + hms; }
   function prefixDate(iso) { return String(iso || '').slice(0, 10); }
 
@@ -353,12 +363,18 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       outbound: ob ? Object.assign({}, ob, { talkFormatted: mFmt(ob.talkSec) }) : null,
       intakeTimed: it ? it.timed : 0, intakeAvgSec: it && it.timed ? Math.round(it.seconds / it.timed) : null, attExIntakeSec: null };
     o.talkFormatted = mFmt(o.talkSec);
-    if (it && it.timed > 0 && ans > it.timed && ttt > it.seconds) o.attExIntakeSec = Math.round((ttt - it.seconds) / (ans - it.timed));
+    o.attSec = ans > 0 ? Math.round(ttt / ans) : null;   // F34: the average the adjusted one is taken from, on the same sum
+    o.attFormatted = o.attSec == null ? null : mFmt(o.attSec);
+    if (it && it.timed > 0 && ans > it.timed && ttt > it.seconds && it.seconds * ans > ttt * it.timed) o.attExIntakeSec = Math.round((ttt - it.seconds) / (ans - it.timed));
     o.attExIntakeFormatted = o.attExIntakeSec == null ? null : mFmt(o.attExIntakeSec);
     return o;
   };
   var myOb = { placed: 6, connected: 4, talkSec: 1325 }, myIt = { timed: 3, seconds: 3240 };   // M1 — My Stats' own day
-  var kpis = { totalRung: 46, totalAnswered: 41, totalMissed: 5, pctAnswered: 89, tttFormatted: '3:12:44', attFormatted: '0:04:41', tttSeconds: 11564, attSeconds: 281 };
+  // F35: the outbound export never holds a day after `outboundThrough` — a
+  // fixture that placed six calls on such a day drew a state the server
+  // cannot produce (INV-185), so the day asked for decides.
+  var myObOn = function (date) { return String(date || todayIso) > daysAgo(1) ? { placed: 0, connected: 0, talkSec: 0 } : myOb; };
+  var kpis = { totalRung: 46, totalAnswered: 41, totalMissed: 5, pctAnswered: 89, tttFormatted: '3:12:01', attFormatted: '0:04:41', tttSeconds: 11521, attSeconds: 281 };   // F34: 41 calls × 281 s — the day's talk and its average agree, as the sheet's do
   // The server's trends walk WORKDAYS only (metricsWorkdayIsos_, 2026-09-04) —
   // the fixture mirrors that (INV-185): weekend dates are skipped, not gaps.
   function isWeekendIso(iso) { var dow = new Date(iso + 'T12:00:00Z').getUTCDay(); return dow === 0 || dow === 6; }
@@ -771,7 +787,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       var base = { tab: 'InsurancePayors', label: 'Insurance payor acceptance', rows: 1035, cols: 25,
         headers: ['Payor / Plan', 'Waystar Payor ID', 'Network Status', 'Qualifaction', 'Reimbursement'],
         sample: [], duplicateNames: ['Wellcare (rows 656, 858)'], blankNameRows: [587], blankNameCount: 2,
-        warnings: [], replacingRows: 1035, currentNote: 'Traditional Medicare or MA: no power orders in OR, WA, ID, ND, SD, WY or MT.',
+        fingerprint: 'c0ffee' + new Array(59).join('0'), warnings: [], replacingRows: 1035, currentNote: 'Traditional Medicare or MA: no power orders in OR, WA, ID, ND, SD, WY or MT.',
         // PT1a: a source-sheet export is converted, each step listed.
         converted: { from: 'source', sourceRows: 1147, note: 'Traditional Medicare or MA: no power orders in OR, WA, ID, ND, SD, WY or MT.',
           changes: ['Header "Network Last Update" → "Last Update" (it would have been read as the network status).',
@@ -831,7 +847,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     // shape depends on its arguments must BE a function of them.
     getMyMetrics: function (date) {
       return { date: date || todayIso, repName: 'Avery Blake', cdr: kpis, trend: trend30(), series: kpiSeries(), kpiMinCohort: 3, noteCount: 35, noteCoverage: 85, missingCount: 6, intakeNotes: 3,
-        outbound: myOb, outboundThrough: daysAgo(1), outboundUnavailable: null, intakeTimed: myIt, adjusted: adjOf(kpis, myOb, myIt),   // M1
+        outbound: myObOn(date), outboundThrough: daysAgo(1), outboundUnavailable: null, intakeTimed: myIt, adjusted: adjOf(kpis, myObOn(date), myIt),   // M1
         transfer: { transferred: 4, transferPct: 9.8 }, alertThreshold: 85, standardSource: 'sheet' };   // F-08: the source rides every Metrics payload
     },
     // Batch 8 — the Catalog browse tab. Mirrors intakeListOfferings exactly:
@@ -857,7 +873,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     getMyMetricsRange: { from: daysAgo(6), to: todayIso, repName: 'Avery Blake',
       cdr: { totalRung: 287, totalAnswered: 254, totalMissed: 33, pctAnswered: 89,
              tttFormatted: '19:54:20', attFormatted: '0:04:42', tttSeconds: 71660, attSeconds: 282 },
-      noteCount: 218, noteCoverage: 86, intakeNotes: 17, trend: trend30(),
+      noteCount: 218, noteCoverage: 86, intakeNotes: 17, trend: trend30(), partialDays: [],   // FQ8
       outbound: { placed: 21, connected: 16, talkSec: 5100 }, outboundThrough: daysAgo(1), outboundUnavailable: null,   // M1
       intakeTimed: { timed: 15, seconds: 15300 },
       adjusted: adjOf({ totalAnswered: 254, tttSeconds: 71660 }, { placed: 21, connected: 16, talkSec: 5100 }, { timed: 15, seconds: 15300 }),
@@ -899,8 +915,9 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         teamTotals: { rung: 0, answered: 0, missed: 0, tttSeconds: 0, noteCount: populated.teamTotals.noteCount,
           transferred: 0, queueTotal: 0, transferCalls: 0, pctAnswered: null, attFormatted: '0:00:00',
           tttFormatted: '0:00:00', noteCoverage: null, transferPct: null,
-          outboundPlaced: 0, outboundConnected: 0, outboundTalkSec: 0, adjusted: null },
-        outboundMeta: { available: true, error: null, through: daysAgo(1) },   // M1
+          outboundPlaced: 0, outboundConnected: 0, outboundTalkSec: 0, adjusted: null,
+          hasCallData: false, callDataPending: true, hasTransferData: false },   // F35: today's call data is not in yet; FQ3
+        outboundMeta: { available: true, error: null, through: daysAgo(1), likelyMismatches: [] },   // M1; FQ7
         unmatchedAgents: [], rosterWithNoCdr: reps.map(function (r) { return r.repName; }), likelyMismatches: [],
         queueRows: [], groupRows: [],
         transferMeta: { available: true, error: null, queueColumns: [] },
@@ -911,14 +928,17 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       var mk = function (id, name, rung, ans, missed, att, notes, cov, transferred, queues, ob, it) {
         var qt = 0; Object.keys(queues).forEach(function (q) { qt += queues[q]; });
         ob = ob || { placed: 0, connected: 0, talkSec: 0 }; it = it || { timed: 0, seconds: 0 };   // M1
-        return { outbound: ob, intakeTimed: it, adjusted: adjOf({ totalAnswered: ans, tttSeconds: 11564 }, ob, it),
+        var adj = adjOf({ totalAnswered: ans, tttSeconds: 11564 }, ob, it);
+        return { outbound: ob, intakeTimed: it, adjusted: adj,
+          handledPerDay: Math.round(((adj ? adj.handled : ans) / 5) * 10) / 10,   // DT1: Handled (adj.) per credited day
           repId: id, repName: name, totalRung: rung, totalAnswered: ans,
           totalMissed: missed, pctAnswered: Math.round((ans / (ans + missed)) * 100),
           tttFormatted: '3:12:44', attFormatted: att, tttSeconds: 11564, attSeconds: 281,
           noteCount: notes, noteCoverage: cov, noteCountUnavailable: false, intakeNotes: Math.max(0, Math.round(notes / 9) - (rung % 2)), hasCdrData: true,
           transferred: transferred, transferPct: Math.round((transferred / ans) * 1000) / 10,
           queues: queues, queueTotal: qt, queueUnattributed: Math.max(0, transferred - qt),
-          hasTransferData: true };
+          hasTransferData: true, partialDays: [],   // DQ1: a manager's row carries the rep's partial days
+          daysActive: 5, creditedDays: 5, answeredPerDay: Math.round((ans / 5) * 10) / 10 };   // DS2: answered per credited day
       };
       var reps = [
         mk('E-1042', 'Avery Blake', 46, 41, 5, '0:04:41', 35, 85, 14, { A_Q_Sales: 6, A_Q_PAP: 3 }, { placed: 6, connected: 4, talkSec: 1325 }, { timed: 3, seconds: 3240 }),
@@ -933,7 +953,12 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         pctAnswered: null, tttFormatted: '0:00:00', attFormatted: '0:00:00', tttSeconds: 0, attSeconds: 0,
         noteCount: 6, noteCoverage: null, noteCountUnavailable: false, intakeNotes: 0, hasCdrData: false,
         transferred: 0, transferPct: null, queues: {}, queueTotal: 0, queueUnattributed: 0, hasTransferData: false,
-        outbound: { placed: 0, connected: 0, talkSec: 0 }, intakeTimed: { timed: 0, seconds: 0 }, adjusted: null });
+        outbound: { placed: 0, connected: 0, talkSec: 0 }, intakeTimed: { timed: 0, seconds: 0 }, adjusted: null, partialDays: [],
+        daysActive: 0, creditedDays: 0, answeredPerDay: null, handledPerDay: null });
+      // DQ1 (cycle 26): one rep with two partial days in the window — the chip beside the name and the line under the table.
+      reps[2].partialDays = [{ date: daysAgo(2), credit: 0.5 }, { date: daysAgo(4), credit: 0 }];
+      reps[2].creditedDays = 3.5; reps[2].answeredPerDay = Math.round((reps[2].totalAnswered / 3.5) * 10) / 10;   // DS2: 5 days with calls, 1.5 not credited
+      reps[2].handledPerDay = Math.round((reps[2].adjusted.handled / 3.5) * 10) / 10;   // DT1: over the same credited days
       var tq = {};
       reps.forEach(function (r) {
         Object.keys(r.queues).forEach(function (q) {
@@ -957,6 +982,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       totals.adjusted = adjOf({ totalAnswered: totals.answered, tttSeconds: totals.tttSeconds },
         { placed: totals.outboundPlaced, connected: totals.outboundConnected, talkSec: totals.outboundTalkSec }, tIt);
       totals.pctAnswered = Math.round((totals.answered / totals.rung) * 1000) / 10;
+      totals.hasCallData = true; totals.callDataPending = false; totals.hasTransferData = true;   // F35; FQ3
       totals.attFormatted = '0:04:30'; totals.tttFormatted = '12:50:56';
       totals.noteCoverage = cnNoteCoverage_(totals.noteCount, totals.answered);
       // #5 — mirrors the server: null unless the Transfer read succeeded AND
@@ -980,7 +1006,9 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         likelyMismatches: [{ roster: 'Bob Smith', cdr: 'Smith, Bob' }],
         trend: trend30(),
         transferMeta: { available: true, error: null, queueColumns: Object.keys(tq) },
-        outboundMeta: { available: true, error: null, through: daysAgo(1) },   // M1
+        // FQ7: one PAIRED outbound name — Jo Tran placed no outbound call under her roster name.
+        outboundMeta: { available: true, error: null, through: daysAgo(1), likelyMismatches: [{ roster: 'Jo Tran', cdr: 'Tran, Jo' }] },   // M1; FQ7
+        partialDaysUnavailable: false,   // DQ1 — the marks were read
         queueRows: qRows,
         alertThreshold: 85,   // #4 / H2 — mirrors the published Dashboard Standards target
         alertBand: 5,         // H2 — the amber band that rides with it
@@ -1012,6 +1040,10 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         // M8 (cycle 22): MTD/YTD run to TODAY and carry dataThrough (the last
         // day the CDR holds) — the projection's denominator; yesterday is one day.
         to: period === 'yesterday' ? daysAgo(1) : todayIso,
+        // F12 (cycle 25): the workday basis; Batch PD (cycle 26): the rep's
+        // partial days — null here, a marked rep under `?partial=1` below.
+        workdays: period === 'yesterday' ? null : (mtd ? { elapsed: 16, total: 21 } : { elapsed: 143, total: 261 }),
+        partial: null,
         dataThrough: period === 'yesterday' ? undefined : daysAgo(1) };   // kpiMinCohort mirrors the operator-2026-08-06 MIN_COHORT=1
     },
     // activeNotIn (note 10, 2026-09-10): the server's ONE presence boolean —
@@ -1190,6 +1222,34 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       { reason: 'ack', label: 'the reply only acknowledges the email', waiting: 1, resolved: 6, open: 2, answered: 8, overridePct: 75 },
       { reason: 'question', label: 'the reply asks a question', waiting: 2, resolved: 1, open: 9, answered: 10, overridePct: 10 },
       { reason: 'unattributed', label: 'the thread is shared with another request and the reply does not name this one', waiting: 1, resolved: 0, open: 0, answered: 0, overridePct: null }] },
+    // FW6 (cycle 26): Team Training (Training → Team Training). The view had no
+    // fixture for any of its three reads, so it was never photographed. Shapes
+    // are the server's own — a pin drives getTrainingDashboard, getQuizzes and
+    // trainQuizAnalytics_ and compares their keys with these (INV-185).
+    // On camera: a done, a pending and an overdue cell; a quiz with attempts;
+    // a rep waiting out the retry limit; an analytics row with no attempts yet.
+    getTrainingDashboard: {
+      items: [
+        { key: 'kb:kb-1', itemType: 'kb', itemId: 'kb-1', title: 'HIPAA refresher', assigned: 3, done: 1, overdue: 1 },
+        { key: 'quiz:quiz-1', itemType: 'quiz', itemId: 'quiz-1', title: 'CPAP resupply quiz', assigned: 3, done: 1, overdue: 0 }],
+      reps: [
+        { id: 'E-1002', name: 'Avery Blake', items: { 'kb:kb-1': 'done', 'quiz:quiz-1': 'done' }, attempts: { 'quiz:quiz-1': 2 } },
+        { id: 'E-1104', name: 'Leo Kim', items: { 'kb:kb-1': 'overdue', 'quiz:quiz-1': 'pending' }, attempts: { 'quiz:quiz-1': 3 } },
+        { id: 'E-1077', name: 'Sam Ortiz', items: { 'kb:kb-1': 'pending', 'quiz:quiz-1': 'pending' }, attempts: {} }],
+      assignments: [
+        { assignId: 'as-2', itemType: 'quiz', itemId: 'quiz-1', title: 'CPAP resupply quiz', empId: '*', empLabel: 'All employees', assignedBy: 'manager@example.com', assignedAt: ts(daysAgo(3), '09:05:00'), dueDate: daysAgo(-6) },
+        { assignId: 'as-1', itemType: 'kb', itemId: 'kb-1', title: 'HIPAA refresher', empId: '*', empLabel: 'All employees', assignedBy: 'manager@example.com', assignedAt: ts(daysAgo(9), '09:00:00'), dueDate: daysAgo(2) }],
+      locked: [{ empId: 'E-1104', empName: 'Leo Kim', quizId: 'quiz-1', title: 'CPAP resupply quiz', retryAtMs: Date.now() + 5 * 3600000, retryLabel: 'tomorrow, 9:15 AM' }],
+      maxAttempts: 3, lockHours: 24 },
+    getQuizzes: { quizzes: [
+      { quizId: 'quiz-1', title: 'CPAP resupply quiz', kbItemId: 'kb-1', passPct: 80, questionCount: 2, questions: [
+        { q: 'How often is a CPAP mask cushion resupplied?', options: ['Every month', 'Every three months', 'Once a year'], correct: [0] },
+        { q: 'Which of these needs a new prescription?', options: ['A filter', 'A pressure change'], correct: [1] }] },
+      { quizId: 'quiz-2', title: 'Wheelchair intake quiz', kbItemId: '', passPct: 70, questionCount: 1, questions: [
+        { q: 'A power chair order starts with…', options: ['A mobility evaluation', 'A delivery date'], correct: [0] }] }] },
+    getQuizAnalytics: { quizzes: [
+      { quizId: 'quiz-1', title: 'CPAP resupply quiz', passPct: 80, attemptCount: 5, repsAttempted: 2, repsPassed: 1, passRate: 50, avgScore: 68, avgAttemptsPerRep: 2.5 },
+      { quizId: 'quiz-2', title: 'Wheelchair intake quiz', passPct: 70, attemptCount: 0, repsAttempted: 0, repsPassed: 0, passRate: null, avgScore: null, avgAttemptsPerRep: null }] },
     getMyTraining: { items: [
       { itemId: 'kb-1', title: 'HIPAA refresher', type: 'article', itemType: 'kb', status: 'pending', dueDate: daysAgo(-6), assignedAt: ts(daysAgo(3), '09:00:00'), attempts: 0 },
       { itemId: 'quiz-1', title: 'CPAP resupply quiz', type: 'quiz', itemType: 'quiz', status: 'done', quiz: { questionCount: 5, passPct: 80 }, attempts: 2, completedAt: ts(daysAgo(1), '11:00:00') }] },
@@ -1573,7 +1633,9 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     hbMyTraining: function () {
       var me = function (o) { return Object.assign({ locked: false, retryAtMs: null, attemptsLeft: 3, maxAttempts: 3, attempts: 0, best: null, passed: false }, o || {}); };
       return { setUp: true, plans: [
-        { id: 'pl-000000000001', title: 'New starter: first week', authorName: 'Dana Reyes', due: daysAgo(3), overdue: true, done: 2, total: 4, items: [
+        // Cycle 26 F50: one item can no longer be done (its quiz was archived) — shown, said, not counted.
+        { id: 'pl-000000000001', title: 'New starter: first week', authorName: 'Dana Reyes', due: daysAgo(3), overdue: true, done: 2, total: 4, missing: 1, items: [
+          { kind: 'quiz', id: 'tq-00000000000z', key: 'quiz:tq-00000000000z', title: 'Last year\'s intake checks', done: false, missing: true, quiz: me() },
           { kind: 'section', id: 'man-0-11', key: 'section:man-0-11', done: true },
           { kind: 'section', id: 'man-0-10', key: 'section:man-0-10', done: true },
           { kind: 'chapter', id: 'Chapter 03 \u2014 Respiratory & Resupply', key: 'chapter:x', done: false, sign: { state: 'resign', signedMs: Date.now() - 40 * 86400000, changed: true } },
@@ -1587,7 +1649,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
           { type: 'single', q: 'What do you confirm before a pick-up?', options: ['The address and the equipment', 'The weather'], correct: 0, explain: 'The ticket must match what is collected.', section: 'man-0-11', anchor: '' },
           { type: 'multi', q: 'Which go on the ticket?', options: ['Serial number', 'Condition', 'Your opinion'], correct: [0, 1], explain: '', section: '', anchor: '' },
           { type: 'truefalse', q: 'A pick-up can be closed without a signature.', options: ['True', 'False'], correct: 1, explain: '', section: '', anchor: '' }] } }],
-        plans: [{ id: 'pl-000000000001', author: 'dana.reyes@example.com', authorName: 'Dana Reyes', live: true, reaches: 3, plan: { title: 'New starter: first week', due: daysAgo(-7),
+        plans: [{ id: 'pl-000000000001', author: 'dana.reyes@example.com', authorName: 'Dana Reyes', live: true, reaches: 3, missing: 1, plan: { title: 'New starter: first week', due: daysAgo(-7),
           items: [{ kind: 'section', id: 'man-0-11' }, { kind: 'quiz', id: 'q-core-calls' }], assign: { people: ['alex.kim@example.com'], departments: ['Chapter 03 \u2014 Respiratory & Resupply'] } } },
           { id: 'pl-000000000003', author: 'dana.reyes@example.com', authorName: 'Dana Reyes', live: false, reaches: 0, plan: { title: 'Last quarter\'s refresher', due: '', items: [{ kind: 'section', id: 'man-0-10' }], assign: { people: [], departments: ['Chapter 05 \u2014 Power Mobility'] } } }],
         team: [{ email: 'alex.kim@example.com', name: 'Alex Kim', department: 'Chapter 03 \u2014 Respiratory & Resupply' }, { email: 'jordan.lee@example.com', name: 'Jordan Lee', department: 'Chapter 03 \u2014 Respiratory & Resupply' }, { email: 'casey.nguyen@example.com', name: 'Casey Nguyen', department: 'Chapter 05 \u2014 Power Mobility' }],
@@ -1614,7 +1676,8 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     },
     hbTeamProgress: function () {
       var R = 'Chapter 03 \u2014 Respiratory & Resupply', P = 'Chapter 05 \u2014 Power Mobility';
-      return { remindersOn: false, people: [
+      // Cycle 26 F54: reminders on, and what the last run did.
+      return { remindersOn: true, reminders: { at: Date.now() - 5 * 3600000, status: 'partial', sent: 1, failed: 1, overdue: 2, error: 'Service invoked too many times for one day: email.' }, people: [
         { email: 'alex.kim@example.com', name: 'Alex Kim', department: R, overdue: 1, signed: 6, resign: 1,
           plans: [{ id: 'pl-000000000001', title: 'New starter: first week', due: daysAgo(3), done: 2, total: 4, overdue: true }],
           quizzes: [{ id: 'q-core-calls', title: 'Taking a call', best: 50, attempts: 1, passed: false, locked: false },
@@ -1626,7 +1689,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     },
     hbSaveTeamQuiz: { success: true, id: 'tq-00000000000b' },
     hbSavePlan: { success: true, id: 'pl-000000000004', reaches: 2 },
-    hbArchiveTraining: { success: true },
+    hbArchiveTraining: { success: true, inPlans: ['New starter: first week'] },   // F50: the live plans that still list an archived quiz
     // Cycle 25 E3 (G2): the handbook feedback export — a window that did not reach the tab's first row.
     exportHandbookFeedback: { success: true, url: 'https://docs.google.com/spreadsheets/d/MOCKFEEDBACK/edit', fileName: 'Handbook feedback (20261015_101500)',
       sections: 160, open: 7, truncated: true, windowFrom: daysAgo(200) },
@@ -1704,7 +1767,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       pd.pending = (pd.pending || []).filter(function (p) { return !want[p.threadId]; });
       // SP1: one reply per resolved email thread; a voicemail gets none.
       const vm = picked.filter(function (p) { return p.kind === 'voicemail'; }).length;
-      return { success: true, resolved: resolved, already: [], failed: [], replies: { sent: resolved.length - vm, voicemail: vm, failed: [], off: false } };
+      return { success: true, resolved: resolved, already: [], failed: [], replies: { sent: resolved.length - vm, voicemail: vm, outside: 0, failed: [], off: false } };
     },
     getSpanishInboxResolved: { resolved: [
       { threadId: 't3', requester: 'jrivera@umsupply.com', senderDept: 'Billing', receivedMs: Date.now() - 2 * 86400000, resolver: 'avery@umsupply.com', manual: false, resolveMinutes: 45, resolveWallMinutes: 1180, resolvedAtMs: Date.now() - 7200000, subject: 'Pregunta sobre facturación', permalink: 'https://mail.google.com/mail/u/0/#inbox/t3' },
@@ -1824,7 +1887,10 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         // 25post B4 — a day's adjustment requests with the rep's reason and status.
         adjustments: (function () { var o = {}; o[range.start.substring(0, 8) + '05'] = [
           { punchType: 'ClockOut', time: '17:05', endTime: '', action: 'set', reason: 'Forgot to clock out after the last call', status: 'Approved', submittedAt: '' },
-          { punchType: 'LunchIn', time: '13:00', endTime: '', action: 'set', reason: 'Break ran over — callback', status: 'Pending', submittedAt: '' }]; return o; })(),
+          { punchType: 'LunchIn', time: '13:00', endTime: '', action: 'set', reason: 'Break ran over — callback', status: 'Pending', submittedAt: '' }];
+          // DS1 (cycle 26): the 28th's inferred Clock In has a confirm request waiting — no button there, its line under the day.
+          o[range.start.substring(0, 8) + '28'] = [{ punchType: 'ClockIn', time: '08:02', endTime: '', action: 'confirm', reason: '', status: 'Pending', submittedAt: '' }];
+          return o; })(),
         adjError: '',
         maxOffset: 6,
         viewingOther: rid ? { id: rid, name: 'Priya Raman' } : null,
@@ -1870,7 +1936,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
                         { empId: 'E-1088', empName: 'Sam Ortiz', date: daysAgo(1), time: '17:02:00', type: 'ClockOut', isAdjustment: true, empTzAbbr: 'PHT', canDelete: true }],
         recentAudits: [{ timestamp: daysAgo(0) + ' 08:04:12', empName: 'Avery Blake', action: 'PunchIn', actor: '', notes: '', punchDate: todayIso, punchTime: '08:04:00', isAdjustment: false },
                        { timestamp: daysAgo(1) + ' 17:03:40', empName: 'Sam Ortiz', action: 'TimeOffStatusChange', actor: 'mgr@umsupply.com', notes: 'Pending->Approved (Full Day)', punchDate: daysAgo(-4), punchTime: '', isAdjustment: false }],
-        missedLookbackDays: 7, mgrDeleteWindowDays: 7, adjustWindowDays: 30, ptoEnabled: true, mgrTzAbbr: 'CST',
+        missedLookbackDays: 7, mgrDeleteWindowDays: 7, adjustWindowDays: 30, ptoEnabled: true, mgrTzAbbr: 'CST', idleCheckFailed: false, idleAlertMin: 30,
         punchTrend: wspark(8, 3, 0).map(function (x) { return { date: x.date, count: 10 + x.count * 3 }; }),
         toSummary: { approved: 6, pending: 1, denied: 1 },
         pendingTrend: spark(14, 1), missedTrend: wspark(14, 2, 1),
@@ -1881,10 +1947,14 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     // with an OFFBOARDED rep's open day (editable) and one past the edit window,
     // pending requests, a current period that is ready, and an orphan request.
     getPayPeriodClose: {
-      todayIso: todayIso, adjustWindowDays: 30, graceDays: 2, tzAbbr: 'IST',
+      todayIso: todayIso, adjustWindowDays: 30, graceDays: 2, tzAbbr: 'CST', tzMixed: false,   // F31: the roster's own zone, never CONFIG.TIMEZONE
       periods: [
         { cycle: 'Monthly', which: 'previous', start: daysAgo(44), end: daysAgo(14), checkedThrough: daysAgo(14),
-          counts: { openDays: 3, pendingTimeOff: 1, pendingAdjust: 1 }, ready: false,
+          counts: { openDays: 3, pendingTimeOff: 1, pendingAdjust: 1, inferred: 2, inferredRequested: 1 }, ready: false,
+          // FR1 (cycle 26): two times set from app activity that nobody has confirmed — one inside the edit window, one past it.
+          // FS1: the rep has asked for the second to be confirmed (the pending adjustment counted above).
+          inferred: [{ id: 'E-1007', name: 'Avery Blake', timezone: 'Asia/Kolkata', date: daysAgo(40), type: 'ClockOut', time: '17:06', editable: false, requested: false },
+            { id: 'E-1077', name: 'Nina Patel', timezone: 'Asia/Kolkata', date: daysAgo(18), type: 'ClockIn', time: '07:56', editable: true, requested: true }],
           reps: [
             { id: 'E-1042', name: 'Jordan Reyes', offboarded: true, timezone: 'Asia/Kolkata',
               openDays: [{ date: daysAgo(20), kind: 'no clock-out', editable: true }, { date: daysAgo(36), kind: 'clock-out with no clock-in', editable: false }],
@@ -1893,11 +1963,12 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
               openDays: [{ date: daysAgo(16), kind: 'no clock-out', editable: true }], pendingTimeOff: [{ date: daysAgo(15), label: 'Full Day' }], pendingAdjust: [] },
           ] },
         { cycle: 'Monthly', which: 'current', start: daysAgo(13), end: daysAgo(-17), checkedThrough: daysAgo(2),
-          counts: { openDays: 0, pendingTimeOff: 0, pendingAdjust: 0 }, ready: true, reps: [] },
+          counts: { openDays: 0, pendingTimeOff: 0, pendingAdjust: 0, inferred: 1, inferredRequested: 0 }, ready: true, reps: [],
+          inferred: [{ id: 'E-1077', name: 'Nina Patel', timezone: 'Asia/Kolkata', date: daysAgo(3), type: 'ClockIn', time: '08:02', editable: true, requested: false }] },
         { cycle: 'Biweekly', which: 'previous', start: daysAgo(20), end: daysAgo(7), checkedThrough: daysAgo(7),
-          counts: { openDays: 0, pendingTimeOff: 0, pendingAdjust: 0 }, ready: true, reps: [] },
+          counts: { openDays: 0, pendingTimeOff: 0, pendingAdjust: 0, inferred: 0, inferredRequested: 0 }, ready: true, reps: [], inferred: [] },
         { cycle: 'Biweekly', which: 'current', start: daysAgo(6), end: daysAgo(-7), checkedThrough: daysAgo(2),
-          counts: { openDays: 1, pendingTimeOff: 0, pendingAdjust: 0 }, ready: false,
+          counts: { openDays: 1, pendingTimeOff: 0, pendingAdjust: 0, inferred: 0, inferredRequested: 0 }, ready: false, inferred: [],
           reps: [{ id: 'E-1088', name: 'Sam Ortiz', offboarded: false, timezone: 'Asia/Manila',
             openDays: [{ date: daysAgo(4), kind: 'no clock-out', editable: true }], pendingTimeOff: [], pendingAdjust: [] }] },
       ],
@@ -2038,7 +2109,8 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       return {
         days: [{
           date: start, dayName: 'Tue',
-          clockIn: '08:00:00', clockOut: '21:00:00', infClockIn: false, infClockOut: false,
+          // `?inferred=1` (DQ3, cycle 26): the Clock In was SAVED as inferred — the Confirm as is button's case.
+          clockIn: '08:00:00', clockOut: '21:00:00', infClockIn: /[?&]inferred=1\b/.test(window.location.search), infClockOut: false,
           lunchOut: '12:00:00', lunchIn: '12:30:00',
           breaks: [{ out: '12:00:00', in: '12:30:00' }, { out: '17:00:00', in: '19:00:00' }],
           openBreak: null,   // T1: a closed day — the leave-with-no-return field is null
@@ -2066,14 +2138,16 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       }
       return { date: date, timezone: 'America/Chicago', blockMin: 10, gapMin: 10, retentionDays: 14, keptFrom: '2026-09-01',
         pings: blocks.filter(function (x) { return x; }).length, first: '07:56', last: '17:06', blocks: blocks,
-        hasCounts: true, level: level, clicks: clicks, keys: keys, activeMin: blocks.filter(function (x) { return x; }).length * 10 };
+        hasCounts: true, level: level, clicks: clicks, keys: keys, activeMin: blocks.filter(function (x) { return x; }).length * 10,
+        // Cycle 26 Batch 9: `kept` is the reader's own list (not drawn); nothing ignored (F27), no lost rows (F30).
+        kept: [], ignored: 0, logFails: null };
     },
     // AC1: the team day table's read — keys mirror activityHourly_'s return
     // (INV-185). Three reps active (one only on/off, a day before levels),
     // Leo Kim with nothing.
     managerGetTeamActivity: function (date) {
       var hrs = function (from, to, base) { var h = []; for (var i = 0; i < 24; i++) h.push(i >= from && i < to && i !== 12 ? base + (i * 37) % 90 : 0); return h; };
-      return { date: date, blockMin: 10, keptFrom: '2026-09-01', reps: {
+      return { date: date, blockMin: 10, keptFrom: '2026-09-01', logFails: null, reps: {
         'E-1042': { hours: hrs(8, 17, 120), hasCounts: true, clicks: 640, keys: 2210, activeMin: 470, pings: 48, first: '08:01', last: '16:58' },
         'E-1077': { hours: hrs(8, 17, 60), hasCounts: true, clicks: 410, keys: 980, activeMin: 430, pings: 44, first: '07:57', last: '16:55' },
         'E-1088': { hours: [0, 0, 0, 0, 0, 0, 0, 0, 3, 6, 6, 5, 0, 4, 6, 6, 2, 0, 0, 0, 0, 0, 0, 0], hasCounts: false, clicks: 0, keys: 0, activeMin: 440, pings: 40, first: '08:31', last: '16:20' },
@@ -2171,7 +2245,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
           note: "Use the row for the patient's primary insurance. Branch to Delivery Locations (Can deliver beyond an hour for priority referrals): Dallas-Fort Worth, TX (Irving, Texas); Austin/San Antonio; O'ahu Island, HI (Honolulu, HI).",
           legend: { MO: 'Medicaid Only', Yes: 'We can process', No: 'Do not process', OOP: 'OOP Only', 'Yes - Delivery Only': 'Based on several factors including shipping cost and profitability' } }],
       matches: [
-      { table: 'InsurancePayors', name: 'AETNA NETWORK GOLD S Plan Number 000001-EXTX0107', networkStatus: 'status not recorded',
+      { table: 'InsurancePayors', tableLabel: 'Medicare / MA', name: 'AETNA NETWORK GOLD S Plan Number 000001-EXTX0107', networkStatus: 'status not recorded',
         waystar: '60054', qualification: 'Standard', reimbursement: '',
         details: [
           // T3: the server names each code column from the pricing tab. K0800
@@ -2189,27 +2263,28 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
             code: { shaped: true, certain: false, tokens: [] }, item: '', itemCount: 0 },
           { label: 'Category', value: 'POV/Scooter',
             code: { shaped: false, certain: false, tokens: [] }, item: '', itemCount: 0 }] },
-      { table: 'InsurancePayors', name: 'MDX HAWAII (UHC AND HUMANA — MEDICARE ADVANTAGE PLANS)', networkStatus: 'in-network',
+      { table: 'InsurancePayors', tableLabel: 'Medicare / MA', name: 'MDX HAWAII (UHC AND HUMANA — MEDICARE ADVANTAGE PLANS)', networkStatus: 'in-network',
         waystar: 'MDXHI', qualification: 'Yes', reimbursement: 'Yes', details: [] },
-      { table: 'InsurancePayors', name: 'PACIFICARE (UHC)', networkStatus: '', waystar: 'MULTIPLE', qualification: '', reimbursement: 'No', details: [] },
-      { table: 'MedicaidPayors', name: 'Aetna Better Health of Texas (MCO)', networkStatus: 'OON W/ PA', waystar: '128TX', qualification: 'X',
-        reimbursement: 'Testing', details: [{ label: 'K0814', value: 'TRY', code: { shaped: true, certain: true, tokens: ['K0814'] }, item: '', itemCount: 0 }] },
+      { table: 'InsurancePayors', tableLabel: 'Medicare / MA', name: 'PACIFICARE (UHC)', networkStatus: 'Accepted except HI', waystar: 'MULTIPLE', qualification: '', reimbursement: 'No', details: [] },
+      { table: 'MedicaidPayors', tableLabel: 'Primary Medicaid', name: 'Aetna Better Health of Texas (MCO)', networkStatus: 'OON W/ PA', waystar: '128TX', qualification: 'X',
+        reimbursement: 'Testing', alsoUnchecked: true,   // F38: the bounded cross-table check stopped before this card
+        details: [{ label: 'K0814', value: 'TRY', code: { shaped: true, certain: true, tokens: ['K0814'] }, item: '', itemCount: 0 }] },
       // D3 (operator 2026-10-27): a plan whose name excludes the searched state ranks last, named.
-      { table: 'InsurancePayors', name: 'UHC (ALL STATES OTHER THAN TX)', networkStatus: 'in-network', waystar: '87726', qualification: 'Yes',
+      { table: 'InsurancePayors', tableLabel: 'Medicare / MA', name: 'UHC (ALL STATES OTHER THAN TX)', networkStatus: 'in-network', waystar: '87726', qualification: 'Yes',
         reimbursement: 'Yes', details: [], excludedState: 'TX' },
       // PT2: a sheet grouped by state — the plan's state chip, its insurer, and a
       // catch-all row that covers any plan of its state the sheet does not list.
-      { table: 'UhcPayors', name: 'TEXAS-All TX UHC Plans unless the specific plan code is below TRY it', state: 'Texas', catchAll: true,
+      { table: 'UhcPayors', tableLabel: 'UHC by state', name: 'TEXAS-All TX UHC Plans unless the specific plan code is below TRY it', state: 'Texas', catchAll: true,
         networkStatus: 'In-Network', waystar: '87726', qualification: '', reimbursement: '',
         details: [{ label: 'K0821/K0823 (Up to 285 lbs)', value: 'L ( Up To 285) & SI/PR', code: { shaped: true, certain: true, tokens: ['K0821', 'K0823'] }, item: '', itemCount: 0 }] },
-      { table: 'BcbsPayors', name: 'Anthem Blue Cross MediBlue Plus (HMO)', state: 'Ohio', company: 'Anthem',
+      { table: 'BcbsPayors', tableLabel: 'BCBS / Anthem', name: 'Anthem Blue Cross MediBlue Plus (HMO)', state: 'Ohio', company: 'Anthem',
         networkStatus: 'INN', waystar: '', qualification: '', reimbursement: '',
         details: [{ label: 'K0800', value: 'SI', code: { shaped: true, certain: true, tokens: ['K0800'] }, item: 'Drive Scout 3 Wheel', itemCount: 1 }],
         // PT3: the same plan answered differently on the Medicare / MA sheet.
         alsoIn: [{ table: 'InsurancePayors', label: 'Medicare / MA', state: '',
           differs: [{ codes: ['K0800', 'K0816', 'K0821', 'K0825'], here: 'SI', there: 'X' }] }] },
       // PT4: a row per payor, its codes under their item; no network status.
-      { table: 'ManualMobilityPayors', name: 'Aetna', networkStatus: '', waystar: '', qualification: '', reimbursement: '',
+      { table: 'ManualMobilityPayors', tableLabel: 'Manual Mobility items', name: 'Aetna', networkStatus: '', waystar: '', qualification: '', reimbursement: '',
         details: [
           { label: 'K0001', value: 'Yes', group: 'Wheelchair', code: { shaped: true, certain: true, tokens: ['K0001'] }, item: '', itemCount: 0 },
           { label: 'K0006 w/ E1226 (22") (K0007 billed as K0006)', value: 'Yes - DFW, SA, Austin', group: 'Wheelchair', code: { shaped: true, certain: false, tokens: [] }, item: '', itemCount: 0 },
@@ -2218,6 +2293,13 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
           { label: 'E0149', value: 'MO', group: 'Walker', code: { shaped: true, certain: true, tokens: ['E0149'] }, item: '', itemCount: 0 },
           { label: 'A4670', value: 'OOP Only', group: 'BPM', code: { shaped: true, certain: true, tokens: ['A4670'] }, item: '', itemCount: 0 },
           { label: 'Any singular supply code - i.e. A7003, A7004, A7013, A7015', value: 'Needs a supervisor exception', group: 'Nebulizer Supplies Only', code: { shaped: true, certain: false, tokens: [] }, item: '', itemCount: 0 }] }],
+      // Cycle 26 F5: what became of every configured payor table (all searched here).
+      coverage: [
+        { key: 'InsurancePayors', label: 'Medicare / MA', state: 'searched', rows: 1035, unread: 0 },
+        { key: 'MedicaidPayors', label: 'Primary Medicaid', state: 'searched', rows: 212, unread: 0 },
+        { key: 'UhcPayors', label: 'UHC by state', state: 'searched', rows: 562, unread: 0 },
+        { key: 'BcbsPayors', label: 'BCBS / Anthem', state: 'searched', rows: 318, unread: 0 },
+        { key: 'ManualMobilityPayors', label: 'Manual Mobility items', state: 'searched', rows: 26, unread: 0 }],
       codeJoin: { attempted: true, error: '' } },
     // D2: the Synonyms editor's "Suggest payor aliases" (kbSuggestPayorSynonyms).
     kbSuggestPayorSynonyms: { payors: 212, groups: [['uhc', 'unitedhealthcare', 'united healthcare', 'united health care'],
@@ -2295,8 +2377,8 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     // server's viewUsageAggregate_ / getViewUsageStats shapes).
     recordClientError: { success: true },
     recordViewEnter: { success: true },
-    recordPresence: { success: true },   // note 10 — the shell's gesture beacon
-    recordActivityCounts: { success: true },   // AC1 — the pause flush
+    recordPresence: { success: true, logged: true },   // note 10 — the shell's gesture beacon; F30: the row was written
+    recordActivityCounts: { success: true, logged: true },   // AC1 — the pause flush
     getViewUsageStats: { url: '', truncated: false, stats: {
       views: [
         { view: 'callNotes', n7: 61, n30: 240, reps30: 7 },
@@ -2683,14 +2765,14 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     getAutomationHealth: {
       syncFails: { count: 0, recent: [], windowDays: 30 },
       automationLastRuns: [
-        { action: 'CallNotesReconcile', last: { timestampMgr: daysAgo(0) + ' 05:00:12', ms: Date.now() - 3600000, notes: 'rowsBackfilled=0' } },
+        { action: 'CallNotesReconcile', last: runRecAgo(3600000, 'rowsBackfilled=0') },
         { action: 'AdpExportAuto', last: null },
         { action: 'FormDataPurge', last: null },
         { action: 'CallNotesPurge', last: null },
         { action: 'CallNotesArchive', last: null },
         { action: 'CallNotesArchivePurge', last: null },
         { action: 'TimesheetArchive', last: null },
-        { action: 'PtoAccrualCredit', last: { timestampMgr: daysAgo(0) + ' 06:00:03', ms: Date.now() - 7200000, notes: 'credited=2' } }],
+        { action: 'PtoAccrualCredit', last: runRecAgo(7200000, 'credited=2') }],
       // F4: stamped last-errors for jobs that catch their own failure. Empty on
       // a healthy deployment — the shape, not a fault, is what the panel reads.
       automationErrors: {},
@@ -2736,6 +2818,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         { key: 'cdrOffRoster', label: 'CDR off-roster diagnostic channel present', ok: true, detail: '' }],
       clientErrors: { count: 0, last24h: 0, recent: [], windowDays: 7, url: '' },
       witnessFails: { count: 0, lastAt: null, lastAction: '', recent: false },
+      activityLogFails: null,   // F30 (cycle 26): no ActivityLog row failed to write lately
       // The last PTO accrual reconcile pass (operator 2026-09-15). A CLEAN
       // pass: nothing topped up, and nothing the pass deliberately declined to
       // fix — but the shapes automationProblems_ reads must still be present,
@@ -2802,8 +2885,9 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
             // F-08 / F-09 — cdrStandardProbe_ / cdrHolidayProbe_'s shapes: the
             // published, all-clear state (the System tab still reads clean).
             { standard: { dept: 'CSR', target: 92, band: 2, source: 'sheet', error: '' },
-              holidays: { source: 'sheet', ranges: 9, thisYear: 9, year: '2026', error: '' } }),
-          store('Intake (PHI)', 'Offerings + PPD/PMD/PAP submissions', 'PHI', 'Optional purge', 'INTAKE_SS_ID'),
+              holidays: { source: 'sheet', ranges: 9, thisYear: 9, year: '2026', error: '' },
+              partialDays: { source: 'sheet', rows: 7, marks: 6, agents: 3, offRoster: 1, likely: [], error: '' } }),   // Batch PD; FQ9
+          store('Intake (PHI)', 'Offerings + PPD/PMD/PAP submissions + IntakeFeedback', 'PHI', 'Kept — no purge exists', 'INTAKE_SS_ID'),
           store('Forms (PHI)', 'FormTokens + FormSubmissions', 'PHI', '90-day purge (if enabled)', 'FORMS_SS_ID',
             // ADM-04 (cycle 23): the shape the server now ships for an unset
             // fallback store — NOT configured, but the fallback opened.
@@ -2861,12 +2945,20 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       if (id === 'd-pdf-signed') {
         var signed = FIXTURES.getMyDoc('d-pdf');
         signed.docId = 'd-pdf-signed'; signed.status = 'signed'; signed.signedAt = daysAgo(0) + ' 10:12:00';
+        signed.record = 'ok';   // cycle 26 F14: the signature record's state rides a finished document
         delete signed.canComplete; delete signed.ackText; delete signed.ackVersion;
         signed.responses = { 'review-date': daysAgo(-14), 'anything-else': 'No.',
           'employee-comments': 'I understand the goals. I will answer within three rings and write a note on every call, and I would like a check-in after the first week to make sure I am on track with both. I also want to note that the queue was short-staffed during two of the weeks this plan covers, which affected my numbers on those days. Two of the calls listed in the review were transfers from the Spanish queue that reached me after a long hold, and I do not think they reflect how I answer my own queue. I have already started keeping a short note template open during calls so that every call gets a note before the next one rings, and I have asked Robin for a few minutes in our next one-on-one to go through the transfers together. I would also like the plan to name who I should go to when the queue is short-staffed again, and to say how the review date can move if that happens.' };
         signed.signatureImage = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAABACAYAAACgPErgAAACBklEQVR42u3bTU7EMAwG0DkCCxbc/6IgdiMEZfLX2M57UjWIBYya5ovjto8HAAAAAAAAAAAAAAAAAAAAAAAAAAAAANm8vX98Pn/+/BkgRDh9f14dwgvYFlKjh7MJLA2r2YeqC9gSVL9tE1urMme7v+q9Ou9Xv4PyQdV78au6YlW8V4EHZcJqVlUgvNacNz3GONWuBSFxUI1uOY3LvYdJ9no4WQwCTYgo1YNqas6Wr/dvq2zdJT+yqhqZrJVX/R0TorVSOKXqWrn9ljpFgirz94yy5dNj3DsWIXtY2QcpWwhUDK3ZK3iECXzKWIQJotYBFFS2iSsCoHXyRJrU0cdi5JWydHM+86pSaVXMGrxV+iDZHgY++iZD1uqk2oBkuthmVVMRxyzaFmr0cYOSTfHs/Z9K4xC14nr1u1VZ7XdUMTMeNygbUtlC67RbqlEuyqw9qp1b37/6RDOfIUvfj6ocCic//7EjBFobuKf0T+58lcizT0m3XQZsbV+l90HL0yfWSG/Jy9zFguK/W/4nj8lIX2XWqywqgPkV2PHbu9WhteqkmgRr+iqzGriCqj28XulhcdPEyPZ/rOr9WznjQ4ngWtU3sQKt7av09EgEFSVX895JZCKsDbEZi4DxQQ9FUAGZQssZBUL1TXr7XgC3hJhwAgAAAAAAAAAAAAAAAAAAAAAAAACACb4AeenYjKoA5AMAAAAASUVORK5CYII=';
         signed.initialsImage = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAG4AAAAwCAYAAADw3098AAABDUlEQVR42u2ZOQ7DMAwE/YQUKfz/jyZVWis81ga1M4A7g4BndVDycQAAAAAAAAAAAAAY8Hqfn9+DjYGhEd7g0KaGZzPgrkKbJMFqtViFNkXCLqtFeZROEmAf2lVwGRFqeTvty617QjU0pURCW3xwRohapm1o/+5hFTEKmbt0v+l9JfLRGTl3h7bVLOp6NypKIdYmtMgsUg6Iqtitl8ao4KwAZW3rBiTTJWZC657NdI3Bc1m1xVeEZrM0ZoLJiljVroq2PputZka33K6mxD606P1jV+2OhoefuIf2V01XXQITylXNEkJ7aBmq1CW0guC7b2rUV2KWZzv1TY3qkA4PDigsAAAAAAAAAAAAjOULTnojrgUB7rkAAAAASUVORK5CYII=';
         return signed;
+      }
+      // Cycle 26 F14: the same policy with a signature record that no longer
+      // verifies — the reader says so, and makes no copy from it.
+      if (id === 'd-altered') {
+        var alt = FIXTURES.getMyDoc('d-signed');
+        alt.docId = 'd-altered'; alt.record = 'altered'; alt.isOwner = false;
+        return alt;
       }
       if (id === 'd-signed') {
         // ED4: on its letterhead, with a centred heading, a page break and a
@@ -2875,7 +2967,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         return { docId: 'd-signed', empId: 'E-1042', docType: 'policy', title: 'Phone etiquette policy', status: 'signed', requiresSignature: true,
           bodyMd: ':::center\n**Customer Service Department**\n:::\n\nAnswer within three rings, name the company, and confirm the caller\'s identity before discussing an order.\n\n- Smile while you speak\n- Never place a caller on hold for more than two minutes\n\n[page break]\n\nI have read and will follow this policy.\n\n[signature]',
           issuedAt: daysAgo(20) + ' 09:00:00', empName: 'Avery Blake',
-          dueAt: '', signedAt: daysAgo(18) + ' 10:12:00', voidReason: '', isOwner: true, fields: [], responses: {}, integrity: 'ok', pdf: null,
+          dueAt: '', signedAt: daysAgo(18) + ' 10:12:00', voidReason: '', isOwner: true, fields: [], responses: {}, integrity: 'ok', record: 'ok', pdf: null,
           letterhead: { id: lh.id, name: lh.name, address: lh.address, footer: lh.footer, logo: lh.logo },
           signatureImage: FIXTURES.getMyDoc('d-pdf-signed').signatureImage };
       }
@@ -2915,14 +3007,17 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       (opts.extra || []).forEach(function (a) { a = String(a).toLowerCase(); cc.push(a); if (!/@(universalmedsupply|umsupply)\.com$/.test(a)) outside.push(a); });
       if (opts.preview) {
         return { success: true, preview: true, to: to, cc: cc, outside: outside, subject: 'Copy: Performance Improvement Plan (signed ' + daysAgo(0) + ')',
+          // cycle 26 F15: the document's issuer has since left the manager role — left out, and named.
+          notIncluded: opts.managers ? ['jordan.pike@universalmedsupply.com'] : [], notIncludedWhy: opts.managers ? 'no longer a manager on the team roster' : '',
           html: '<p style="margin:0 0 12px;">Avery Blake sent you a copy of <b>Performance Improvement Plan</b>, signed by Sam Ortiz on ' + daysAgo(0) + '.</p>' +
             (opts.note ? '<p style="margin:0 0 12px;white-space:pre-wrap;"><i>Avery Blake wrote:</i> ' + String(opts.note).replace(/[&<>"]/g, '') + '</p>' : '') +
-            '<p style="margin:0 0 4px;">Attached: <b>Performance Improvement Plan (copy).pdf</b> — a copy made from the signed original. The certificate on its last pages is the record; the HR record holds the original.</p>',
+            '<p style="margin:0 0 8px;">Attached: <b>Performance Improvement Plan (copy).pdf</b> — a copy made from the signed original. The certificate on its last pages is the record; the HR record holds the original.</p>' +
+            '<p style="margin:0 0 4px;color:#555;font-size:12px;">This copy was put together on Avery Blake\'s computer; Team Tools did not produce the attachment. The record is the certificate held in Team Tools (Training &amp; Employee Docs).</p>',
           fileName: 'Performance Improvement Plan (copy).pdf', maxBytes: 10485760 };
       }
       return { success: true, sent: to.length + cc.length, to: to, cc: cc };
     },
-    getEmpDocCertificate: { success: true, dataUri: 'data:application/pdf;base64,JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAwIFIgPj4gPj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCAzOTggPj4Kc3RyZWFtCkJUIC9GMSAxNCBUZiA2MCA3NDAgVGQgKFVNUyBUZWFtIFRvb2xzKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNzAwIFRkIChDZXJ0aWZpY2F0ZSBvZiBzaWduYXR1cmUpIFRqIEVUCkJUIC9GMSAxMSBUZiA2MCA2NzQgVGQgKERvY3VtZW50OiBQZXJmb3JtYW5jZSBJbXByb3ZlbWVudCBQbGFuKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNjQ4IFRkIChFbXBsb3llZTogU2FtIE9ydGl6IChFLTEwODgpKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNjIyIFRkIChTaWduZWQ6IDIwMjYtMTEtMDQgMTA6MTI6MDApIFRqIEVUCkJUIC9GMSAxMSBUZiA2MCA1OTYgVGQgKFBERiBTSEEtMjU2OiAzZjJhLi4uKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNTcwIFRkIChTaWduYXR1cmUgaGFzaDogOWIxYy4uLikgVGogRVQKZW5kc3RyZWFtCmVuZG9iago1IDAgb2JqCjw8IC9UeXBlIC9Gb250IC9TdWJ0eXBlIC9UeXBlMSAvQmFzZUZvbnQgL0hlbHZldGljYSA+PgplbmRvYmoKeHJlZgowIDYKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNTggMDAwMDAgbiAKMDAwMDAwMDExNSAwMDAwMCBuIAowMDAwMDAwMjQxIDAwMDAwIG4gCjAwMDAwMDA2ODkgMDAwMDAgbiAKdHJhaWxlcgo8PCAvU2l6ZSA2IC9Sb290IDEgMCBSID4+CnN0YXJ0eHJlZgo3NTkKJSVFT0YK', fileName: 'Phone etiquette policy - certificate.pdf' },
+    getEmpDocCertificate: { success: true, dataUri: 'data:application/pdf;base64,JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAwIFIgPj4gPj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCAzOTggPj4Kc3RyZWFtCkJUIC9GMSAxNCBUZiA2MCA3NDAgVGQgKFVNUyBUZWFtIFRvb2xzKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNzAwIFRkIChDZXJ0aWZpY2F0ZSBvZiBzaWduYXR1cmUpIFRqIEVUCkJUIC9GMSAxMSBUZiA2MCA2NzQgVGQgKERvY3VtZW50OiBQZXJmb3JtYW5jZSBJbXByb3ZlbWVudCBQbGFuKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNjQ4IFRkIChFbXBsb3llZTogU2FtIE9ydGl6IChFLTEwODgpKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNjIyIFRkIChTaWduZWQ6IDIwMjYtMTEtMDQgMTA6MTI6MDApIFRqIEVUCkJUIC9GMSAxMSBUZiA2MCA1OTYgVGQgKFBERiBTSEEtMjU2OiAzZjJhLi4uKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNTcwIFRkIChTaWduYXR1cmUgaGFzaDogOWIxYy4uLikgVGogRVQKZW5kc3RyZWFtCmVuZG9iago1IDAgb2JqCjw8IC9UeXBlIC9Gb250IC9TdWJ0eXBlIC9UeXBlMSAvQmFzZUZvbnQgL0hlbHZldGljYSA+PgplbmRvYmoKeHJlZgowIDYKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNTggMDAwMDAgbiAKMDAwMDAwMDExNSAwMDAwMCBuIAowMDAwMDAwMjQxIDAwMDAwIG4gCjAwMDAwMDA2ODkgMDAwMDAgbiAKdHJhaWxlcgo8PCAvU2l6ZSA2IC9Sb290IDEgMCBSID4+CnN0YXJ0eHJlZgo3NTkKJSVFT0YK', fileName: 'Phone etiquette policy - certificate.pdf' , verified: true, tampered: false, verdict: 'Verified ' + daysAgo(0) + ' 09:00:00 CST: the content hash and the signature hash were recomputed from the HR record when this certificate was made, and match.' },
     getDocsDashboard: { docs: [
       { docId: 'd-pdf', empId: 'E-1088', empName: 'Sam Ortiz', docType: 'pip', title: 'Performance Improvement Plan', status: 'issued', requiresSignature: true,
         issuedBy: 'robin@umsupply.com', issuedAt: daysAgo(1) + ' 09:00:00', dueAt: daysAgo(-6), signedAt: '', fieldCount: 3, hasPdf: true, overdue: false }],
@@ -2946,6 +3041,21 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       { id: 'E-1042', name: 'Avery Blake', timezone: 'Asia/Kolkata', tzAbbr: 'IST' },
       { id: 'E-1088', name: 'Sam Ortiz', timezone: 'Asia/Manila', tzAbbr: 'PHT' },
       { id: 'E-1090', name: 'Leo Kim', timezone: 'America/Chicago', tzAbbr: 'CST' }] },
+  };
+  // Cycle 26 F5: the payor lookup answers for its QUERY. "molina" is the plan
+  // nobody lists while one payor table has never been imported and another is
+  // only partly read — the no-match that must not say "plan not listed".
+  var INS_PAYORS_FOUND = FIXTURES.searchInsurancePayors;
+  FIXTURES.searchInsurancePayors = function (q) {
+    if (!/molina/i.test(String(q || ''))) return INS_PAYORS_FOUND;
+    return { matches: [], total: 0, notFound: true, cap: 8, codeJoin: { attempted: false, error: '' },
+      tables: INS_PAYORS_FOUND.tables.slice(0, 2),
+      coverage: [
+        { key: 'InsurancePayors', label: 'Medicare / MA', state: 'searched', rows: 5000, unread: 35 },
+        { key: 'MedicaidPayors', label: 'Primary Medicaid', state: 'searched', rows: 212, unread: 0 },
+        { key: 'UhcPayors', label: 'UHC by state', state: 'missing', rows: 0, unread: 0 },
+        { key: 'BcbsPayors', label: 'BCBS / Anthem', state: 'empty', rows: 0, unread: 0 },
+        { key: 'ManualMobilityPayors', label: 'Manual Mobility items', state: 'searched', rows: 26, unread: 0 }] };
   };
   // The agent-facing scoped audio endpoint serves the SAME chunk shape as the
   // reviewer one (both delegate to qaAudioChunkFor_ server-side — INV-185),
@@ -2984,6 +3094,37 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
   // `?pendingadj=1` — seeds a pending punch-adjustment request so the Clock
   // view's awaiting-approval chip renders on camera (the state the operator
   // reported as invisible). Not a missing fixture; a deliberate variant.
+  // `?partial=1` (Batch PD, cycle 26) — a rep with two partial days this
+  // month: the Dashboard card's credited days and scaled deltas, and the My
+  // Stats count trends' ring and note. The shapes are the server's: `partial`
+  // {uncredited, credited, days newest first}, `prev.ownScale`, and a
+  // `partial` credit on the rep's own Answered / Missed points.
+  try {
+    if (/[?&]partial=1\b/.test(window.location.search)) {
+      var pdWork = [];
+      for (var pdi = 2; pdi <= 14 && pdWork.length < 2; pdi++) { if (!isWeekendIso(daysAgo(pdi))) pdWork.push(daysAgo(pdi)); }
+      var pdDash = FIXTURES.getDashboardMetrics;
+      FIXTURES.getDashboardMetrics = function (period) {
+        var r = pdDash(period);
+        if (r.workdays) {
+          r.partial = { uncredited: 0.75, credited: Math.round((r.workdays.elapsed - 0.75) * 100) / 100,
+            days: [{ date: pdWork[0], credit: 0.5 }, { date: pdWork[1], credit: 0.75 }] };
+          if (r.prev) r.prev.ownScale = Math.round(((r.workdays.elapsed - 0.75) / r.workdays.elapsed) * 10000) / 10000;
+        }
+        return r;
+      };
+      // FQ8: the same two days on the range view.
+      FIXTURES.getMyMetricsRange.partialDays = [{ date: pdWork[0], credit: 0.5 }, { date: pdWork[1], credit: 0.75 }];
+      var pdMy = FIXTURES.getMyMetrics;
+      FIXTURES.getMyMetrics = function (date) {
+        var r = pdMy(date);
+        ['answered', 'missed'].forEach(function (k) {
+          (r.series[k] || []).forEach(function (pt) { if (pt.date === pdWork[0]) pt.partial = 0.5; if (pt.date === pdWork[1]) pt.partial = 0.75; });
+        });
+        return r;
+      };
+    }
+  } catch (e) {}
   try {
     if (/[?&]pendingadj=1/.test(window.location.search)) {
       FIXTURES.getEmployeeState.pendingAdjustments = [{ punchType: 'ClockIn', time: '08:30' }];
@@ -3094,7 +3235,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     })(),
     getAutomationHealth: {
       syncFails: { count: 0, recent: [], windowDays: 30 },
-      automationLastRuns: [{ action: 'CallNotesReconcile', last: { timestampMgr: daysAgo(0) + ' 05:00:12', ms: Date.now() - 3600000, notes: 'rowsBackfilled=0' } }],
+      automationLastRuns: [{ action: 'CallNotesReconcile', last: runRecAgo(3600000, 'rowsBackfilled=0') }],
       automationErrors: {},
       digests: [
         { key: 'eod', last: daysAgo(0) + ' 17:00:04', stale: false },
@@ -3117,6 +3258,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       detectors: [{ key: 'cnTimestamp', label: 'CN timestamp boundary round-trip', ok: true, detail: '' }],
       clientErrors: { count: 0, last24h: 0, recent: [], windowDays: 7, url: '' },
       witnessFails: { count: 0, lastAt: null, lastAction: '', recent: false },
+      activityLogFails: null,   // F30 (cycle 26): no ActivityLog row failed to write lately
       // The last PTO accrual reconcile pass (operator 2026-09-15). A CLEAN
       // pass: nothing topped up, and nothing the pass deliberately declined to
       // fix — but the shapes automationProblems_ reads must still be present,

@@ -86,6 +86,37 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   renders muted as "Not set up on this deployment". A SET store that will not
   open is still an error. Verify: the ADM-08 pin (server walk + panel).
 
+  **A FOURTH instance (cycle 26 F2): the monthly accrual line.** The check
+  for "the monthly PTO accrual credit ran this month" tested the run's
+  `timestampMgr` for a `2026-11` prefix. `timestampMgr` is a DISPLAY string
+  ("Nov 1, 6:02 PM"), so the test was false for every run there has ever
+  been: from the 3rd to the end of every month the health dot was red and the
+  daily failure email said the credit "has not run this month — the trigger
+  may be missing", beside a credit that had been paid on the 1st. It trained
+  the reader to ignore the dot, and it sent the operator checking whether
+  September had been credited. Two earlier fixes to this same alarm (cycle 22
+  A1, 25post) each corrected a different cause and neither could have made it
+  clean. A run's record now carries its MONTH (`ym`, in the manager's
+  timezone), built from the stored stamp by ONE builder
+  (`automationRunRecord_`), and the check compares months; a stamp that cannot
+  be read is "unknown", said as such. Verify: the F2 pin, driven through the
+  real builder.
+
+  **A FIFTH instance (cycle 26 F50): a plan nobody can finish.** A handbook
+  training plan lists chapters, sections and quizzes. Its progress counted
+  every item, and "missing" was decided only for a quiz, by whether a TITLE
+  could be found — among archived quizzes too. So a plan that listed a quiz
+  its author later archived showed "Take the quiz" (refused: "not in the
+  handbook"), could never reach done = total, turned Overdue for good, sat in
+  the manager's overdue tile, and — reminders on — emailed its reader every
+  day. A section an import removed did the same through "I've read this".
+  `hbItemMissing_` decides for every kind (a quiz that cannot be TAKEN now; a
+  chapter or section not published); a missing item is shown and said, and
+  is not in the total, the done count or the overdue test. A plan with
+  nothing left is "Nothing to do", never Overdue. Archiving a quiz answers
+  with the live plans that still list it, and the author's plan card says
+  how many items are gone. Verify: the F50 pin and DOM drive.
+
 <a id="g03-roster-inclusion-goes-through-emprosteremail-row-the"></a>
 
 - **Roster INCLUSION goes through `empRosterEmail_(row)` — the one predicate
@@ -143,6 +174,15 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   repurpose slips through, into a manual diagnostic rather than a metric).
   Pinned by the F1 tripwire (every CONFIG key has a reader, allowlist must
   self-declare).
+
+  **AMENDED (cycle 26 F35): `sortable: true` is a declaration too.** The Team
+  table's Intake column (Batch 6, 2026-08-25) was marked sortable, and
+  `mSortReps_` had no `intakeNotes` case — its `default` returns 0, so every
+  row compared equal. The header drew ▼ and `aria-sort="descending"`, the
+  rows stayed in the server's name order, and Copy table exported that order
+  as the sorted one. The three M1 columns got cases two months later; this
+  one was never noticed because nothing fails. The pin derives the sortable
+  keys from the column definitions and requires a case for each.
 
 <a id="g05-cdr-enrichment-in-managergetshiftstats-is-best-effort"></a>
 
@@ -219,6 +259,18 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   once each copy reads back. A property you must set past the page's limit can
   be set from a one-line editor function
   (`PropertiesService.getScriptProperties().setProperty(k, v)`).
+
+  **AMENDED (cycle 26 F54): a ledger that grows with the audience.** The
+  handbook's reminders kept `{email: day}` for every reader still overdue in
+  ONE property, written once after the whole loop. About two hundred
+  addresses fill a value: the write then failed with a warning in a log, and
+  any second run that day emailed everyone again; a run cut off part-way had
+  recorded nobody. The list is today's addresses only now, split into pieces
+  of whole addresses (`HANDBOOK_REMINDERS_LAST` is `{day, pieces}`; the
+  pieces are `…_1`, `…_2` — a fixed few, not a key per reader), written every
+  25 emails and at the end, pieces before the head. A list too long to keep
+  is said in the run's outcome. The older shape is still read. Verify: the
+  F54 helper pin (600 readers, a 9 KB property).
 
 <a id="g08-a-test-function-defined-twice-silently-wins"></a>
 
@@ -428,6 +480,49 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   stamp and the card names it. Verify: the TC-08 drive (calcHours_ before and
   after the collapse).
 
+  **AMENDED (cycle 26 DQ3, operator 2026-11-19): confirming an inferred time
+  is not an edit.** A time saved from app activity kept its Inferred mark until
+  somebody CHANGED it, so a manager who had checked a correct time had to
+  nudge it by a minute to clear the mark. Day Edit now has "Confirm as is".
+  Three rules keep it from becoming a way to launder a guess: (1) the button
+  is offered only on a time the day was LOADED with as inferred — never one
+  applied from the activity panel in the same open, which nobody has checked;
+  (2) the save sends an explicit `slots.confirmed[type] === true`, and
+  `managerConfirmPlan_` writes only when the day's shown row carries the
+  Inferred mark and the slot still holds its HH:mm — a changed time is an
+  ordinary edit, a row with no mark is nothing; (3) the time cell is never
+  written: column J moves to `Confirmed (app activity)` and a `PunchConfirm`
+  audit row names the manager. Range mode confirms nothing.
+
+  **AMENDED (cycle 26 DS1, operator 2026-11-19): a rep may ask; only a
+  manager confirms.** The operator's rule for a rep's own inferred time: the
+  rep can "confirm" it, and that submits it for manager approval rather than
+  applying it. So it is a REQUEST on the punch-adjustment queue with a third
+  action, `confirm` (beside `resume` and the ordinary `set`), read in one
+  place (`parAction_`). Filing writes one Pending row and nothing else. It is
+  checked against the day twice — at submit and again at approval, because
+  the day can change while it waits — by one pure rule,
+  `confirmRequestTarget_`: the day's shown row of that clock type must still
+  be Inferred at the requested HH:mm. A changed time, or a time that was
+  never inferred, is refused with its reason and the request stays Pending
+  for the manager to deny (g163: a writer that cannot tell refuses). A time a
+  manager already confirmed in Day Edit is the one case that simply
+  succeeds — the request's purpose is met, and denying it would tell the rep
+  "denied" about a time that IS confirmed. Approval writes what the manager's
+  own Confirm as is writes: column J, and a PunchConfirm audit row.
+
+  **AMENDED (cycle 26 F61): a reminder's punch is for the punches it saw.**
+  A reminder toast is sticky and carries the punch as a button. The click
+  re-checked that the punch was ALLOWED — but Lunch out is allowed again
+  once the rep is back from lunch (a second break is legal), so a lunch
+  reminder left on screen through lunch recorded a second one. And "where
+  the rep is" was this window's own copy: a lunch punched in the main window
+  left the pop-out's reminder live. The button now carries a signature of
+  the day's punches as offered (`remindPunchSig_` — the day, the count, the
+  last punch); the click asks the server for the rep's state first and
+  punches only when that signature is unchanged. A failed ask judges on what
+  the window has.
+
 <a id="g16-cn-date-local-is-a-sheets-coerced"></a>
 
 - **`CN.DATE_LOCAL` is a Sheets-coerced Date on read.** The
@@ -518,6 +613,118 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   scan of its own body. A leased action never takes the ScriptLock as well. A
   killed save's lease expires after 60 seconds. Verify: the 25post lease pins
   (the derived writer net, driven acquire / release / wait).
+
+  **AMENDED (cycle 26 F18): a save that replaces a stored map from a page's
+  copy is a lost update.** The Admin page sends EVERY feature toggle it shows,
+  and `saveFeatureFlags` replaced the stored map with them; the retention
+  panel sends every window, and `saveRetentionConfig` wrote them all. So a
+  page left open since morning put back whatever another admin had changed
+  since — a flag turned off came back on, and a purge window set to 0 came
+  back as 365 days: an irreversible PHI delete re-armed by someone who never
+  touched it. Neither save took the lock. Both now take what the page LOADED
+  as a second argument and write only the keys the caller changed
+  (`adminSettingsMerge_`), onto what is stored NOW, inside the lock; a
+  retention window someone else moved meanwhile refuses the save by name with
+  its current value (a toggle has two values, so two admins who both flipped
+  one have made the same change); a call with no baseline — a page from
+  before the deploy — is refused with "reload". The other blob saves
+  (department emails, templates, links, …) still replace whole maps; that is
+  the scan's ST3, not this fix. Verify: the three F18 pins + the F18 DOM
+  drive.
+
+  **AMENDED (cycle 26 F44): work that changes nothing runs before the
+  lock.** `issueDoc` took the project lock and THEN decoded the uploaded PDF
+  (up to 4 MB of base64), hashed it, counted its pages and validated the
+  payload; `createCoaching` did the same with a screenshot. None of that
+  writes, and all of it is slow — every punch and note save in the building
+  waited on it. The checks now run first; only the store and the append are
+  inside the lock. (A refused caller is still refused before any of it —
+  F58.) Verify: the F44 "heavy checks" pin, which reads each function's
+  order.
+
+  **AMENDED (cycle 26 F52): the caller before the person named.** The
+  handbook's `hbConfirmPerson` took the lock, looked up the address it was
+  given, and answered "That person has not chosen a manager" before it asked
+  whether the CALLER could answer for anyone — so any signed-in reader could
+  learn, address by address, who had picked a manager, and held the lock to
+  be told. A caller who is neither an admin nor a manager is refused before
+  the lock, and every non-admin refusal is one sentence whatever the reason;
+  only an admin (who sees everyone anyway) is told what is actually wrong.
+  The same finding's other halves are limits, not order: synced notes are
+  capped per ACCOUNT (the check counted the keys in one call) and taken only
+  for a published section, new ones written in one block; and the two writers
+  into Team Tools' tabs (section feedback, topic requests) take a per-reader
+  count in the script cache — a window that does not slide, the same thing
+  once — failing OPEN when the cache cannot be read. Verify: the two F52 pins.
+
+  **AMENDED (cycle 26 F26): one hop down.** F58's net derived its set from
+  PUBLIC functions that call `waitLock` themselves. `recordPunch` does not —
+  it calls `recordPunchCore_`, which does — and `updatePunchAdjustStatus` /
+  `…Bulk` call `punchAdjustDecideAll_`. Both helpers took the lock and THEN
+  read the caller, so a signed-in domain user who is not on the roster, or any
+  rep calling a manager endpoint, waited up to 15 s on the one project lock
+  and then held it through a roster read, in front of every punch. The gate
+  still refused; the rule was about who waits. Both helpers read the caller
+  first now (in the helper, so both wrappers are covered at once), and the
+  decide helper refuses a bad status before the lock too. The F26 pin follows
+  the hop: every private helper that takes the project lock, and every public
+  function that reaches one, must be gated before the lock — by the helper
+  ahead of its lock, or by the wrapper ahead of the call (`getEmployeeInfo_`,
+  `assertManagerCaller_` or the suite's `_assertSuiteCaller_`). A new wrapper
+  with no gate over a locking helper fails it.
+
+  **AMENDED (cycle 26 F42 + F41): whose lock, how long, and how many.**
+  `saveMyScratchpad` and `scratchpadPageOp` took the USER lock, with the
+  comment "the user lock still serializes one rep's double-fires". The web
+  app runs as the deployer (`executeAs: USER_DEPLOYING`), so there is ONE
+  user: `getUserLock()` is a single lock shared by every rep. The pad
+  autosaves 800 ms after typing stops, and each save held that lock across
+  an `openById`, a page read and three writes — with ten reps typing, the
+  tail waited past its 15 seconds and failed. They now hold a per-rep lease
+  of their own (`CN_SCRATCH_LEASE_<sheetId>` — the note lease's machinery
+  under a second key, so an autosave and the same rep's note save do not
+  wait on each other either). The caller is checked before anything is
+  waited for, and a wait that times out is an `{error}` the pad shows.
+
+  The note lease had a wait of its own that was too long.
+  `getCallNotesSheetForWrite_` — used by every writer that HOLDS the project
+  lock and touches a rep's Sheet — waited for the lease's whole life plus a
+  second. One killed save (or a release that failed) left the lease for 60 s,
+  and the next manager comment, tag rename or nightly job on that rep slept
+  for up to 61 s with the project lock held: every punch, time-off and note
+  save in the app timed out behind it. The wait is capped at
+  `CN_REP_LEASE_HOLDER_WAIT_MS` (under the 15 s the other waiters give the
+  lock, far past a healthy save) and then REFUSES by name; a cross-rep job
+  already names a rep whose Sheet it could not write.
+
+  And `answerDeptReplyLook('resolved')` wrote its two facts under two locks:
+  the answer row, release, then the resolve — which waits for the lock again.
+  A timeout there left "resolved" on the review report for a request that
+  was still open, and the retry counted it twice. The resolve write is split
+  out (`drResolveRowLocked_`, for a caller that holds the lock) and runs
+  first, under the same lock as the answer row.
+
+  **AMENDED (cycle 26 FU1 + FU2): a lease ends on its own.** A lock is held
+  until it is released; a lease is held until it is released OR its time is
+  up — that is what lets a killed save's lease free itself. The other side
+  of that: a save still RUNNING when its 60 seconds end no longer has the
+  Sheet to itself, and nothing told it. A second window could start, and the
+  two would both run a positional append (whose contract is "the caller is
+  the only writer") or one would write by row index after the other's
+  delete. The holder is now told when its lease ends (`until`), and every
+  leased function calls `cnAssertLeaseLive_` right before it writes: with
+  less than `CN_REP_LEASE_GUARD_MS` left it refuses, having written nothing.
+  The check reads nothing — the guard covers the write's own time and any
+  difference between clocks.
+
+  Batch 12 moved the Scratchpad onto a lease and, with it, onto the project
+  lock for the lease's check-and-set — a few milliseconds, but a wait behind
+  whatever holds that lock. A tag rename walks every rep's Sheet with it
+  held; for that long every pad autosave timed out. The NOTE lease needs the
+  project lock there (a holder of it must know no new note lease can start).
+  The Scratchpad's needs only a mutex, and the "user" lock is one — a single
+  lock for everyone, apart from the project lock — so its check-and-set is
+  taken under that instead.
 
 <a id="g18-normalizetype-strips-the-adj-prefix"></a>
 
@@ -914,6 +1121,44 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   MANAGER dashboard only. The four-key pin (D-N10) and the editor test's
   allow-list both hold it.
 
+  **AMENDED (cycle 26 Batch PD): the same boundary, drawn for partial days.**
+  The Department Dashboard marks a day an agent worked only part of, with a
+  Reason "for admins only". Two rules follow here. (1) THE REASON IS NEVER
+  READ: every range on the tab is `CDR_PARTIAL_COLS` (3) wide from column 1
+  — the reader's two reads and the data stamp's probe — and the pins drive a
+  six-column tab whose `getRange` throws on anything past column C. Not
+  "read and dropped": never asked for, so it cannot be logged, cached or
+  shipped by a later change. (2) A REP'S PARTIAL DAYS GO TO THAT REP ONLY.
+  `getCdrAgentMetrics_` returns them in a `partial` map BESIDE `agents`,
+  never as a field on an agent's object — Team Metrics, the shift stats and
+  the Dashboard all pass those objects on, and a field added there would
+  ride every one of them. `getDashboardMetrics` takes `partial[emp.name]`
+  and nothing else; the My Stats series marks only the caller's own point;
+  Storage Health ships counts.
+
+  **AMENDED (cycle 26 FQ7): a whitelist that copies an object.**
+  `teamMetricsRepView_` names every field a rep may see, and for `outboundMeta`
+  it named the object: `outboundMeta: full.outboundMeta`. That was a
+  whitelist while the object held three scalars. FQ7 added
+  `likelyMismatches` — colleague names — to the manager's object, and the
+  rep view would have shipped them on the same line without a character of it
+  changing. It is built field by field now (`available`, `error`, `through`),
+  and the pin drives a manager payload carrying a pair through the view.
+  **The check when adding a field to a nested object:** grep for who copies
+  the parent whole.
+
+  **AMENDED (cycle 26 DQ1, operator 2026-11-19): managers see their reps'
+  partial days.** Batch PD kept a rep's marks to that rep, as the handoff from
+  call-data-reporting asked. The operator decided managers should see them in
+  Team Tools too. They ride ONE place: `reps[].partialDays` on the manager's
+  Team Metrics payload (dates and shares, newest first), built from the same
+  `partial` map of the cohort read. `teamMetricsRepView_` lists its fields and
+  `reps` is not one of them, so the rule above still holds for a rep — the
+  DQ1 pin drives a manager payload with marked rows through the view and finds
+  no row, no date and not even `partialDaysUnavailable` in it. The Reason
+  column is still never opened. **No figure is computed from the marks on
+  Team Metrics** — the line under the table says so.
+
 <a id="g34-fire-and-forget-email"></a>
 
 - **Fire-and-forget email.** Decision emails
@@ -975,6 +1220,17 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   deliberately a single locked unit). New in-lock mail = move it to a
   post-lock closure or allowlist it WITH a reason.
 
+  **AMENDED (cycle 26 F33): a reply on a thread is a send.** `MAIL_BCC_ALL`
+  rides every mail the app sends because every send goes through
+  `sendRepEmail_` or `appSendMail_`, and the MAIL-SWEEP pin fails on a third
+  `sendEmail`. The two "resolved" replies (DR1, SP1) called
+  `message.replyAll(…)` themselves — not a `sendEmail`, so the sweep never
+  saw them and the BCC list never rode them. `appReplyAll_` (10_core) is the
+  third sanctioned sender: it merges the BCC list (never an address the reply
+  already reaches), sends as "UMS Team Tools" from the alias when one is set,
+  and the sweep now counts `replyAll` / `reply` / `forward` too. Verify: the
+  F33 pin (driven + derived) and MAIL-SWEEP.
+
 <a id="g35-callnoteemail-audit-row-is-deliberately-phi-free"></a>
 
 - **CallNoteEmail audit row is deliberately PHI-free.**
@@ -1015,6 +1271,21 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   through `drRecipientDomains_` (one deduped domain per address — the Dept
   Request row's helper). Use the list helper wherever a field can hold several
   addresses.
+
+  **AMENDED (cycle 26 F12): a reply-all goes to everyone on the message.** The
+  Spanish resolved reply (SP1) carries the resolver's free-text note — which
+  may name a patient — and it was a reply-all to the latest request message,
+  with no look at who that reaches; the dialog said "to the requester". A
+  copied outside address, an outside Reply-To or an outside requester got the
+  note. `spanishSendResolveReply_` now reads everyone the reply can reach
+  (`mailReplyAudience_`: From, Reply-To, To and Cc — the widest reading, by
+  pattern, never by splitting on commas) and sends NOTHING when any address
+  is outside `CONFIG.ORG_EMAIL_DOMAINS` (`spanishReplyLeavesOrg_`; nobody to
+  judge is not "inside"). The resolver is told (`outside`), the audit row says
+  `reply=outside`, Resolve selected counts it apart from a failed reply, and
+  the dialog and the Admin toggle say who the reply reaches. The Dept Request
+  reply carries no free text (the label, who and when), so it is unchanged.
+  Verify: the F12 pin + the F11 + F12 DOM drive.
 
 <a id="g37-buildcallnoteemailhtml-must-esc-every-user-supplied-field"></a>
 
@@ -1192,6 +1463,23 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   solid" row "matches no seat branch" while the engine recommended it AS solid
   — a diagnostic that pointed away from the real effect (g142). With the
   negation read, the engine and the validator now agree.
+
+  **AMENDED (cycle 26 F6): a marker's scope is what directly follows it, in
+  its own cell.** A payor name can exclude a state ("UHC (all states other
+  than TX)"), and the lookup ranks such a plan last and labels it "TX
+  excluded". The reader matched an exclusion word and then took EVERY state
+  from there to the end of the text — and the text was the name joined to the
+  row's State and Company cells. So "UHC Community Plan Non-Dual", in the
+  Texas section of the by-state table, read as a plan that excludes Texas: the
+  word was "Non", the state was the next cell. `insPayorNameStates_` now
+  takes only the states that DIRECTLY follow the word (`insLeadingStates_`: a
+  list of states joined by "and"/"or", after at most a few lead-in words —
+  "plans in", "the state of", "for members in" — ended by the first other
+  word or the closing bracket); a word followed by anything else excludes
+  nothing. And
+  `insPayorMatch_` is handed the name and the other cells separately, each
+  read for states on its own. Verify: the F6 pin — the grammar grid, the
+  matcher, and the endpoint over a by-state table.
 
 <a id="g42-intake-ppd-controls-are-engine-safe-via"></a>
 
@@ -1547,6 +1835,32 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   "did this happen today" check over a `fmtDate_` stamp owes the same
   conversion. Pinned in PR4-1.
 
+  **AMENDED (cycle 26 F53): whose day.** The handbook app copies Team Tools'
+  readers, and with them `fmtDate_` — Team Tools' storage timezone, India.
+  It used that for its OWN days: a plan's due day against today, and the day
+  a sign-off was made. Its readers are the whole domain and its project is
+  in Chicago (appsscript.json; the reminder trigger's 8 am), so a plan due
+  on the 13th read "Overdue" from about 12:30 pm Central ON the 13th.
+  `hbDay_` formats in `Session.getScriptTimeZone()`; `fmtDate_` stays for
+  what the app writes into Team Tools' tabs. Verify: the F53 pin, which runs
+  with real timezones and a clock set to 1 pm Central.
+
+  **AMENDED (cycle 26 F31): the pay-period close card was a third frame.**
+  `getPayPeriodClose` computed today with `fmtDate_` — CONFIG.TIMEZONE, India
+  — while `checkOpenPunches`, which shares its grace constant, uses the
+  manager's timezone. From about 12:30 pm Central the card was a day ahead: a
+  period was "(just ended)" on its last afternoon, the card and the 8 am scan
+  disagreed about which days were open, and a day exactly thirty days back was
+  "past the 30-day edit window: hand-edit the Timesheet" while Day Edit, which
+  judges by the REP's own today, still took it. And it captioned the list
+  "Dates in IST" — the dates are Timesheet dates, each in that rep's roster
+  timezone. Today is the manager's now; `editable` is judged by each rep's own
+  today (`roster[].todayIso`), which is what Day Edit will do with the click;
+  and the caption names the roster's zone when there is one, says "each date
+  is in that person's own timezone" when there are several, and claims nothing
+  otherwise. Three frames, as the family heading says — the fix was to name
+  which one each number is in.
+
 <a id="g52-the-test-roster-rows-keep-their-fixture"></a>
 
 - **The TEST roster rows keep their FIXTURE timezones, and setup restores them
@@ -1726,6 +2040,136 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   — on a missing tab too, the case where it matters most. Verify: the E1
   follow-ups write-failure pin.
 
+  **AMENDED (cycle 26 F17 + F25 + F28): the contract's outcome must be the
+  TRUE one.** One contract for every job (E1) closed "a job that says
+  nothing"; three jobs still said the wrong thing. (F17) The monthly check's
+  grace days — "before the 3rd its absence is normal" — were a `return` out of
+  the whole job, so the failure the accrual job STAMPED on the 1st was not
+  reported until the 3rd. The grace days now hold back only the liveness line.
+  (F25) The hourly call-data read-ahead said `ok` although its year-to-date
+  transfer window was never kept (the cache put threw — see g157); it was
+  `partial` every hour for ever on a deployment without the OPTIONAL Transfer
+  tab, and `failed` every hour on one with no CDR store at all. It now reads
+  the totals the Dashboard reads, calls a window that was read but too large
+  to keep a partial run (named), treats a missing optional tab as no failure,
+  and is `ok` where there is no store. (F28) The pay-week reminder acted only
+  in the exact hour, with no record of having sent: a 9 am run that was
+  missed lost that period's reminder silently. It now sends at or after the
+  hour, once per person per day (`PAY_WEEK_REMINDER_SENT`), so a later run
+  makes up a missed or failed one; and with its toggle off it returns `ok`,
+  because `idle` leaves a stamped failure in place and nothing else would
+  ever clear it. Rule of thumb: `idle` is for "nothing to do this time";
+  "switched off" and "not set up here" are `ok`. Verify: the F17 pin, the PF1
+  read-ahead pin, the P1 email-job pin.
+
+  **AMENDED (cycle 26 F5 + F37): a source that was not read must be named.**
+  The payor lookup searches every payor table as one. A table whose tab had
+  not been imported yet, or held no rows, was skipped with a bare `return` —
+  and a search that then found nothing told the rep the plan "isn't in the
+  payor sheet" and to follow the TRY rules: a claim about every table, made
+  after reading some of them. `searchInsurancePayors` now returns `coverage`
+  — every configured payor table as searched (rows read, rows left unread),
+  missing or empty — the client names a table that was not searched above the
+  cards, and a no-match under a gap says it is NOT YET "plan not listed" and
+  withholds the TRY instruction. The same batch found the server building a
+  warning (`noteWarning`) that no client code read: an import's standing note
+  could be lost with nothing on screen. It is shown now, as a sticky warning.
+  Verify: the F5 pure pins (server and client) and the F5 DOM drive; the F37
+  client pin.
+
+  **AMENDED (cycle 26 F54): a trigger reads nothing.** The handbook's daily
+  reminder run ended `return { sent, failed, overdue }` — and on a store that
+  would not open, `return { error }`. Run from the editor that is a log line;
+  run from its trigger it reaches nobody, and the app has no health surface.
+  Every path past the owner check now writes `HANDBOOK_REMINDERS_OUTCOME`
+  (status ok / partial / failed / off, the counts, the first error) — and
+  `running` at its start, which is what a run the platform cut off leaves
+  behind. Team progress shows the last run beside "Reminder emails are on",
+  and says so when NO run is on record. The same batch: one run at a time (a
+  claim taken under the lock, held past it, fifteen minutes at most); the
+  sent list written as the run goes; and the link made the deployed address
+  (`/dev` → `/exec`, or the `HANDBOOK_URL` property). Verify: the two F54
+  pins and the F54 DOM drive.
+
+  **AMENDED (cycle 26 F47 + F55): the handbook page.** Three boot reads ended
+  `if (!r || r.error) return;` with an empty failure handler, and each "nothing
+  loaded" state was drawn as an answer. Sign-offs: no "I've read this" on any
+  section for the whole visit (the comment claimed the button was offered),
+  home's My reading a loading bar that never ended, and re-reads missing from
+  "Due for you". Training: "Nothing is due — you're up to date" and an empty
+  count for a reader with an overdue plan — and one failed open of the
+  Training page REPLACED the plans home had loaded. Bookmarks: "Nothing
+  bookmarked yet" under "Kept in your account". Each read now keeps its
+  failure apart from "not loaded" and from "loaded, and empty": the bar, the
+  shelf, Due and Saved say "could not be loaded" with a Try again; the rail's
+  Training count reads "?"; a refresh that fails keeps the plans that loaded
+  and says they may be out of date; Saved shows a loading bar until its answer
+  arrives. A failure after a good load still changes nothing (g129). F55, the
+  same shape: a kept copy of the chapters shown because the server could not
+  be reached was marked by a toast that left after 3.5 seconds — superseded
+  text for the whole visit with nothing on the page saying so. It is a banner
+  now, there for as long as the copy is, with a Try again that replaces the
+  copy, the contents and the text on screen. Verify: the three F47 DOM drives
+  and the F55 kept-copy drive; the visual scenarios `handbook-failed-light-wide`,
+  `handbook-saved-failed-light-mobile` and `handbook-stale-dark-mobile`.
+
+  **AMENDED (cycle 26 F30): the activity record could fail without a trace.**
+  Every gesture ping appends a row to ActivityLog, best-effort: the presence
+  stamp must not depend on its record. But "best-effort" was `console.warn`
+  and nothing else. `recordPresence` returned `success: true` whether or not
+  the row was written; `recordActivityCounts` returned `success: false`
+  through a success handler that ignored its argument. So the counts in a lost
+  row were gone (the page only put them back when the CALL failed), and if
+  appends kept failing — a protected tab, the workbook at its cell limit —
+  Day Edit and Team Punches read "No app activity recorded" for everyone,
+  indefinitely, with nothing anywhere saying why. Now: both endpoints return
+  `logged`; the page restores a send's counts on `logged: false`
+  (`actSent_`), dropping blocks the server would refuse as too old; each lost
+  row increments `ACTIVITY_LOG_FAILS` (the DigestDeliveries counter's shape);
+  Automation Health reports it for 48 hours after the latest; and the two
+  activity views name it on a day the failures touch — "none recorded" is
+  then not "none happened". The counter does not know about later successes,
+  which is why it ages out rather than clears.
+  The same batch found two quieter losses in the nightly condense: a day was
+  summarised at 2 am although the server still takes a block up to six hours
+  old, so an evening's counts arriving at 2:30 were decoded and then skipped
+  for ever (a day is now condensed only once it ended more than that long
+  ago); and a counts-only row sent just after midnight on a day the rep never
+  pinged was keyed for purging by its own day, which is never summarised — it
+  is purged by the days of the blocks it names.
+
+  **AMENDED (cycle 26 FR3 + FR4): a kept last-good view must say it was
+  kept.** The stale-while-revalidate tabs paint the last complete round and
+  refresh behind it; when the refresh fails, keeping the painted round is
+  right — and saying nothing about it is this gotcha again, because the
+  absence of a notice reads as "this is current". Two places did: **Team
+  Punches** re-reads today's app activity on every select, and a failed
+  re-read left the earlier bars under the note "App activity is clicks and
+  keystrokes…" (the failure message was written only for a day with nothing
+  kept); and the **Spanish inbox**, where a transport failure toasted but a
+  server `{error}` on the stats, and either list half failing in the
+  background, were silent. Team Punches now prefixes the note with how old
+  the bars are (`tcalActStaleText_`, timed from `TEAMACT.at`); the Spanish
+  inbox says "showing last loaded" once per round (`spanishRefreshFailed_`).
+  **The check when you keep last-good:** find the branch that keeps it and ask
+  what the page says there.
+
+  **AMENDED (cycle 26 FX5 + FX6): two more absences.** `searchMyCallNotes`
+  keeps the newest 200 matches and has shipped `truncated` since cycle 23 —
+  added for the patient timeline, which reads it. The rep's own Search view
+  never did: a search with five hundred matches read "200 results", and the
+  older calls were simply not there. It now says "Showing the newest N
+  results … there are more. Narrow by date range to see older ones", as the
+  manager's cross-rep search has since F30.
+
+  `getTimesheetData` has shipped `archiveError` since TC2-9, and the calendar
+  beside it says so (seams F8). The pay-period tile — total hours against a
+  target, "all complete" — drew the same payload without a word, so a period
+  whose older days sat in an archive that would not open read as a short one.
+  The tile carries the same note now. (Day Edit also receives the field and
+  does not draw it: its date range never reaches the archive.) Verify:
+  `FX5 DOM`, and the `FX4 + FX6` pin.
+
 <a id="g54-an-unknown-duration-is-not-the-same"></a>
 
 - **An UNKNOWN duration is not the same as an elapsed one — never substitute
@@ -1748,6 +2192,23 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   because a gap is visibly a gap and a substitute silently becomes data** —
   the same instinct as the note-count and PTO-overlay entries above, applied to
   arithmetic rather than to a read outcome.
+
+  **AMENDED (cycle 26 F34): a lower bound is not a length.** M1's "Avg talk
+  excl. intake" took each timed intake form's seconds (first input to send)
+  out of the rep's talk time and the form out of the call count. A form's
+  time is the LEAST its call can have lasted — the call began before the
+  first keystroke and usually ran past the send. When the forms averaged
+  less than the rep's own average, removing those "calls" RAISED the
+  average: forty calls at 4:00 with forms of 60 s and 90 s read "Avg talk
+  excl. intake 4:09", on the panel that exists to explain a long talk time.
+  `metricsAdjusted_` now gives the figure only when the timed forms averaged
+  longer than talk ÷ answered (`isec × ans > ttt × timed`), and ships that
+  average (`attSec`) so the line reads "3:25 · 4:00 with them" — both on the
+  same sum, where the actual "Avg talk" above is the sheet's own ATT column
+  and can differ by a second. An amended intake send no longer logs a form
+  time at all (`intakeNoteTimedSec_`): correcting a sent form is not a call.
+  **The check:** before subtracting an estimate from a measure, ask which
+  way the estimate is biased, and what the result reads as when it is small.
 
 <a id="g55-timetomins-returns-null-never-nan-and-an"></a>
 
@@ -1797,6 +2258,55 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   which a pure hue rotation leaves untouched. Now pinned by the V-1 tripwire
   (source-level `in oklab` + a computed ≤20° hue-drift bound, both modes) —
   don't add a `-deep` alias, or "correct" a fallback hex, without re-running it.
+
+  **AMENDED (cycle 26 FO1): "deep" goes the other way in the dark.** In light
+  mode a `-deep` tone is the semantic colour mixed toward the ink — darker, for
+  text on the colour's own `-soft` tint. In dark mode the tokens mix it toward
+  the PAPER instead, which is darker too: the handbook reader's CRITICAL
+  callout kicker (`--danger-deep` on `--danger-soft`) measured 3.34:1, under
+  axe's 4.5 for 10.5px text. It was found by accident — a scenario added for
+  another reason happened to shoot a section with a CRITICAL callout in dark
+  mode without high contrast, which none had. The first fix was a rule for
+  the kicker alone (`color-mix(in oklab, var(--destructive), var(--ink) 30%)`,
+  the light mode's recipe), leaving the token as it was (the watch-out kicker
+  is at 4.53:1 and passes). Verify: axe on
+  `handbook-stale-dark-mobile` (section 0.11), which fails without the rule.
+  **A second instance, the same day, found by CI and not here:** with that
+  scenario on section 0.11, CI's axe failed an HCPCS code chip
+  (`a.kb-hcpcs`: `--info-deep` on `--info-soft`, 4.34:1 in dark mode,
+  measured) that the SAME command had passed locally — axe reports a contrast
+  it cannot fully determine as "incomplete", not as a violation, and which
+  elements those are depends on the browser build. The chip was given its
+  own dark rule — and the NEXT run failed the "Updated" badge, the same pair
+  again. The pair is the problem, so the fix moved to the pair: inside the
+  reader (`.kb-main`, `.kb-article`) the three `-deep` tones are redefined for
+  dark mode, mixed toward the ink, and every consumer follows; the
+  per-consumer rules are gone, and Team Tools' app-wide tokens are untouched.
+  Every text element of nine dark handbook screens was then measured directly
+  (its colour against its composited background) rather than trusted to the
+  local gate: nothing under 4.5 but three masthead labels at 4.50, which CI
+  has always passed. A local axe PASS is not CI's; a colour pair is measured,
+  and fixed where the pair is defined.
+
+  **AMENDED (cycle 26 FP2): the fix moved to the token.** FO1 fixed the three
+  tones inside the reader, because the reader was what axe was pointed at. The
+  numbers were the same everywhere else: with the contrast sweep kept in the
+  matrix (g116), Team Tools' dark screens showed `--info-deep` (#5995c0) under
+  4.5:1 on 75 scenario-pairs — avatars, claim pills, "you" tags — and
+  `--danger-deep` (#bd5261) on 57: "Overdue", "4 overdue", "1 escalated", the
+  critical KPI delta, 3.99:1 on a PLAIN card, not only on a tint. The dark
+  block's own comment said the tones "read as lighter shades against the dark
+  canvas", and its pre-color-mix fallback hexes are lighter; the color-mix
+  under them mixed 25% toward `--paper-card`, which is darker. So the recipe
+  now mixes toward `--ink` (30%; `--info-deep` 35%), for all four, and the
+  reader's scoped copy is deleted — one definition. Computed from the token
+  file as the browser computes it (the FP2 pin) and held to 4.5:1 in every
+  palette; in Console the lowest pair is now 7.08:1 on its own tint (it was
+  3.32:1). Two things to know when you
+  use a `-deep` tone: in dark mode it is now LIGHTER than its base, so (1) as
+  TEXT it is safe on a card, the canvas and its own tint, and (2) as a FILL
+  its text must be a token that flips (g170) — four hover fills use it, and
+  one of them carried a literal white.
 
 <a id="g57-a-var-x-fallback-on-a-token"></a>
 
@@ -2019,6 +2529,27 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   and the counter: paper has no Next. Pinned by the 2026-10-19 slideshow pin,
   which reads the rule inside the one block.
 
+  **AMENDED (cycle 26 F58 + F59): two keys that hold a rep's words.**
+  `umsScratchUnsaved` mirrors the Scratchpad's UNSAVED text only — a reload
+  or a closed tab inside the autosave's 800 ms, or after a failed save, used
+  to lose it. It is keyed to the account that typed it (another account on
+  the same computer neither sees nor removes it), removed the moment the
+  text is saved, and dropped after the sticky draft's 24 hours. On the next
+  open the text is shown at once but saved only after its page has been
+  read: if the page's server stamp is still the one the text was typed on
+  top of, it is saved; if the page was saved from somewhere else since, the
+  text goes onto a new "Recovered text" page. The comparison uses two SERVER
+  stamps — a computer clock that is off cannot decide it.
+  `umsCallNotesParkedDrafts` is the parked call-note drafts (g86).
+
+  **AMENDED (cycle 26 FU3): the end of the 24 hours.** Unsaved Scratchpad
+  text (and, since FT1, text held because no page could take it) is kept in
+  `umsScratchUnsaved` for 24 hours and then removed at the next start-up —
+  without a word, so its owner found the pad without it and no explanation.
+  The removal is now said, in a notice that stays until dismissed, to the
+  account the text belonged to; another account's expired copy is removed
+  silently, as before. Nothing is kept longer.
+
 <a id="g113-read-the-server-through-serversource-never-by"></a>
 
 - **Read the server through `serverSource()` — never by FILENAME, and never by
@@ -2069,6 +2600,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   still commit-before-biting; the difference is that the tool now enforces it
   instead of the rule living only in this paragraph. Verify: the F1-followon pin
   (the guard precedes the mutation, the restore is still last).
+
+  **AMENDED (cycle 26 F43): the same checkout in the deploy script.**
+  `scripts/push-env.sh` restores the committed `web-app/.clasp.json` with a
+  `git checkout` — before every prod push, and on exit of every dev push. An
+  operator who had just added a server file to `filePushOrder` and pushed
+  before committing lost the edit without a word, and the push went out with
+  the old order. The script now refuses while that file differs from HEAD
+  (staged or not) and says why; nothing is pushed.
 
 <a id="g66-an-outerhtml-patch-replaces-one-element-so"></a>
 
@@ -2167,6 +2706,23 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   failed silently left a form whose Save would wipe the day; it now disables
   Save and says "reopen to retry". Apply the same two guards to any modal that
   prefills asynchronously. Pinned by the Day Edit DOM test.
+
+  **AMENDED (cycle 26 F16): a suggestion is a read of the form, too.** Day
+  Edit opens with two reads — the day's punches (the prefill) and the rep's
+  app activity (the suggestion panel) — and either can land first. The panel
+  offers "In 7:56 AM [Apply]" for a slot the day left EMPTY, and it decided
+  "empty" by looking at the inputs, which are blank until the punches arrive.
+  With the activity first, Apply was offered over a real 08:00 Clock In;
+  applying marked the slot touched, so the prefill (rightly, by the rule
+  above) skipped it, the 08:00 was never shown, and Save rewrote the punch to
+  07:56, marked Inferred. The prefill was correct and the user's action was
+  respected — the defect was a THIRD reader of the same fields that did not
+  know they were unfilled. The state of the punches read now rides the panel
+  (`_dePunches`: loading, loaded, failed): nothing is suggested, and Apply
+  itself refuses, until it is `loaded` for this open. A day with no Timesheet
+  row is `loaded` too (known empty), and the panel is redrawn when it lands.
+  The pure renderer treats anything but `'loaded'` — including "not said" — as
+  "do not suggest": the safe direction is the default.
 
 <a id="g69-location-reload-reloads-the-iframe-not-the"></a>
 
@@ -2272,6 +2828,72 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   own text laid out under 48px wide — and the run prints SQUEEZED TEXT, so a
   `min-width: 0` column squeezed by an unshrinkable sibling no longer needs an
   eye on the right screenshot to be found.
+
+  **AMENDED (cycle 26 F65): a breakpoint set where the rail goes.** The
+  handbook's only narrow breakpoint was 760px — where its 252px rail is
+  hidden. Every two-column layout therefore kept two columns for as long as
+  the rail was on screen: MEASURED in Chromium, the home hero's own column
+  (the greeting, the heading, the search box) was 48px beside the 360px shelf
+  at an 800px window, 9px at 761 and 208px at 960; the results list 222px
+  beside its 260px filters. No sideways overflow, no console error, and the
+  matrix shot the handbook only at 390 and 1440. The hero folds from 1100px
+  (its column is 349px at 1101), results and home's two cards from 1040, in
+  blocks BEFORE the 760 one so the phone's rules still win. The matrix has the
+  widths in between now (`TABLET` 800, `HALF` 960) and two of those scenarios
+  ride CI's gate. **And the first version of that guard could not fail:** the
+  matrix's squeezed-text measure reports text under 48px — narrower than a
+  word — and the unfolded column was EXACTLY 48px at 800 (208 at 960). CI's
+  gate passed on the old stylesheet; it was run there because a scenario that
+  has never failed has not been shown to work (g116). A scenario now names the
+  boxes that carry its content and the width each needs (`minWidth`); one
+  that is narrower, or no longer found, is `tooNarrow` in the report and a
+  finding in the gate, which fails on the old stylesheet with the measured
+  widths. Verify: the F65 pin; `handbook-home-light-tablet`.
+
+  **AMENDED (cycle 26 FO8 + FO11): the same shape twice more, and where
+  nobody had looked.** Profile's two columns folded at 900px: at 960 the team
+  column was 304px beside the 340px profile card (measured). It folds at 1040
+  with the others — and the first attempt at that did nothing: the override
+  was written into the 1040 block that sits BEFORE the base rule in the
+  sheet, and a same-weight rule earlier in the sheet loses. Measuring after
+  the edit is what showed it. Team Tools itself had never been shot between
+  480 and 1440px; it has a landing view per tool at 800 and two at 960 now.
+  They are clean except one: the Reference reader's handbook chapter at 800px
+  squeezes its chapter-end card's text to 5px (open — a Team Tools layout
+  finding, not part of these follow-ons). Verify: the FO8 and FO11 pins;
+  `handbook-people-light-half`.
+
+  **AMENDED (cycle 26 FP1): a fifth, and the fold is the container's.**
+  Reference stacked at `@media (max-width: 720px)`. But below 1024px the shell
+  is the phone layout — bottom nav, and `.view-area { max-width: 600px }` — so
+  from 721 to 1023px the view was 568px wide whatever the window was, holding a
+  280px tree, a 16px gap and what was left: MEASURED at an 800px window,
+  `.kb-main` 272px, a chapter's text column 226px. A viewport breakpoint is a
+  proxy for "the container has run out of room", and this container stops
+  growing at 600px; the fold is the shell's own, 1023px, and the FP1 pin
+  DERIVES it from the shell's rule rather than restating it. Found by FO11's
+  800px scenarios — nothing had ever been shot between 480 and 1440px.
+  The same scenarios showed the chapter-end cards with a 5px title, which is a
+  different mechanism: **an `@container` rule with no container above it never
+  matches.** The reader's queries were written for "a narrow reader", but in
+  Team Tools nothing above the masthead or the chapter-end nav declared
+  `container-type`, so their one-column forms never applied at any width (the
+  handbook app had given the masthead a container on its own side, which is why
+  it looked right there). The masthead is a container now; the nav is one whose
+  CARDS the query restyles, because a container cannot restyle itself. The FP1
+  pin maps every class a reader query restyles to the container it sits under
+  and fails on one that has none. Fixing the fold then put the reader bar at
+  566px, where its chapter name had 9px — its narrow form starts at 640px now
+  (measured: the name has a word's room from about 630px).
+
+  **AMENDED (cycle 26 DS1): a sixth, the same shape as the third.** The
+  rep's "Confirm Clock In" button was first put beside the day's hours on
+  the pay statement — an unshrinkable sibling in the same row as the
+  `min-width: 0` column that holds the day's times. At 390px the times were
+  laid out in 44px ("8:02 AM – 5:02 PM · lunc…" one word a line). No
+  overflow, no error; the matrix's `narrowText` measured it on the first
+  shot. The button now sits on its own line under the day
+  (`.pay-stmt-confirm-row`), where the adjustment lines already are.
 
 <a id="g73-the-hidden-attribute-loses-to-any-class"></a>
 
@@ -2486,6 +3108,18 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `null` on failure rather than throwing — corrupted blobs should
   never break a read.
 
+  **AMENDED (cycle 26 DQ2, operator 2026-11-19): a key that changes what a
+  note counts as.** The intake count is "notes whose SubformData has an
+  `intakeType`". An amended send logs a note too, so correcting a form was
+  counted as a second intake call. The amended send's note now carries
+  `intakeAmend: true`, and `cnIntakeNoteCounts_` — the one test the counter
+  asks — leaves it out (not counted, not timed). Because the key changes a
+  metric, the whitelist is narrow: only the boolean `true`, and only when the
+  same payload has a valid `intakeType`. Notes saved before DQ2 have no mark
+  and count as they did; nothing is back-filled. The chip on the note reads
+  "PMD amended", which is where a rep or a manager can see why a note is not
+  in the count.
+
 <a id="g81-late-google-script-run-successhandlers-in-call"></a>
 
 - **Late `google.script.run` successHandlers in Call Notes loaders
@@ -2532,6 +3166,61 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `always` now runs on every settle path — and clears only History's own pill, since
   another view's shares the id. Verify: the F36, F37 + F38 and F39 (cycle 25) DOM
   drives.
+
+  **AMENDED (cycle 26 F55): the answer that routes.** The handbook's boot
+  asks for the chapters and, when they arrive, `hbReady_` opened Home (or the
+  link's section). On a first visit the whole handbook is one answer and takes
+  seconds — and the bar's search, the avatar and the phone's tabs work from
+  the first paint. A reader who had opened Profile, typed a search or started
+  a quiz was put back on Home when the chapters landed: the search in flight
+  dropped, the sitting discarded. Only the boot placeholder (`#hb-boot`) is
+  routed away from now; with any other view on screen the chapters are taken
+  (the contents, the versions) and the view repaints only what needed their
+  names — Profile's department list, Saved, My training, the quiz list, Forms,
+  Home's tiles (`hbChaptersLanded_`). A failure with the reader elsewhere is a
+  sticky toast, not a message in place of their view. Verify: the F55 "the
+  chapters" DOM drive (a slow `getManualParts`, each view opened meanwhile).
+
+  **AMENDED (cycle 26 FO2): a view that branched on an answer not yet here.**
+  The handbook's Training and Profile pages decide what a MANAGER sees — Team
+  training, the Mine / My team switch, quiz lock-outs — from the profile
+  (`HB_ME`). A manager who opened either before `hbGetMe` answered got a
+  reader's page, and the answer's arrival repainted only the profile's own
+  sections; the team surfaces stayed empty until the view was left and
+  re-entered. A profile that FAILED to load looked the same. The page now
+  holds four states (`hbLeadState_`: wait, error, yes, no), each surface
+  records the state it was drawn for, and `hbApplyMe_` redraws one only when
+  that changed — so an ordinary profile answer rebuilds nothing under the
+  reader. "Could not tell whether you manage a team" is said, with Try again.
+  Verify: the FO2 pin and DOM drive (the profile held on a gate).
+
+  **AMENDED (cycle 26 F58 + F60): an answer older than the screen, and a
+  wait that guesses.** The Scratchpad paints from its session copy and
+  refreshes behind it. A refresh asked for before the rep typed and saved
+  could answer AFTER that save, with the text as it was before — and it was
+  painted over the newer text, so the next keystroke saved the old text plus
+  one character. Each page has a `touched` count (a keystroke, a save
+  landing); a load compares it with the count when it was asked for, and an
+  answer the screen has moved past is neither painted nor kept as the
+  session copy. A page that will not open now offers "Try again" instead of
+  an empty, disabled pad.
+
+  The tour had the opposite mistake: it did not wait for an answer at all,
+  only for ~1.9 seconds. A view that took longer — any cold read — lost its
+  step, and the run then stamped the tour seen. The ~1.9 s now counts only
+  while the view is NOT showing its loader; a view still loading at 20 s is
+  given up on, and that run is not stamped.
+
+  **AMENDED (cycle 26 FT3): which loader.** F60's "is the view still
+  loading" read one thing — `renderLoading`'s full-view
+  `.state-center[role=status]`. The app has a second shared loader: My
+  Stats, Team Metrics and Training draw their frame at once and put the
+  inline `.m-loading` inside it. The tour's Stats step targets something
+  inside that frame, so the cold read F60 was written about was still given
+  the plain ~1.9 s and skipped. `TOUR_VIEW_LOADERS` names both, each scoped
+  to `#view-area` — a reader or quiz overlay's own loader is not the view's.
+  Skeleton blocks are deliberately not a signal: a Dashboard widget may keep
+  one for as long as its data is absent, and a step would wait out the cap.
 
 <a id="g82-cnrendersubforms-is-shape-keyed-via-host-dataset"></a>
 
@@ -2602,6 +3291,27 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   deletes and edits are not optimistic, and an in-flight toggle keeps its local
   object (INV-56) — a mutant without that half was measured equivalent. Verify: the F22 (cycle 25) DOM drive.
 
+  **AMENDED (cycle 26 F41): a read asked for before the change.** The
+  Spanish inbox paints its session cache and re-reads behind it, and each
+  re-read is two Gmail scans that take seconds. A resolve, claim, release or
+  auto-assign made in that window was applied to the page — and then the
+  read landed, computed before it, and replaced the list and the cache: the
+  resolved card came back (and could be resolved, and replied to, a second
+  time) and the claim pill vanished. Changes made here are now NUMBERED
+  (`spanishNoteLocal_`); a read notes the number when it is asked for, and
+  the changes made since are re-applied to its answer before it is used.
+  Dept Requests had the same shape in a narrower window, and its stale
+  answer also stamped the round fresh for 45 seconds; there the answer is
+  simply dropped (`drLocalChange_` / `drAnswerPredatesChange_`) — the local
+  patch is exact for a rep, and a manager's reconcile is already on its way.
+
+  The resolve dialog had the mirror problem: it closes BEFORE the server
+  answers, so a "Resolve failed: Lock timeout" left the member with a toast
+  and up to 500 typed characters gone. The outcome and note are kept until
+  the answer is a success, and given back when the dialog is opened again
+  for the same request(s) — keyed, so a note written about one request is
+  never offered on another.
+
 <a id="g85-form-completion-timer-is-persisted-to-localstorage"></a>
 
 - **Form-completion timer is persisted to localStorage.**
@@ -2657,6 +3367,47 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   draft, or one from before a reload (the two cannot be told apart), is offered
   (Restore / Not now), and a Restore into a form already typed into opens the copy
   dialog instead. Verify: the F40(e) (cycle 25) DOM drive.
+
+  **AMENDED (cycle 26 F59 + F58): one slot, and what gets written over.**
+  F40(e) made another window's draft something this window OFFERS. But the
+  slot still held one draft: after "Not now", the rep's next keystroke in
+  this window persisted this window's form into the slot, over the declined
+  one — and with it gone, it was never offered again. Before this window
+  writes the slot it now PARKS a draft that is another window's
+  (`umsCallNotesParkedDrafts` — one per originating window, its newest, the
+  three newest, the slot's own 24 hours). "Not now" parks at once and says
+  the note is kept; a parked draft is offered on the next Log enter that has
+  nothing foreign in the slot; Restore unparks; a window's own entry leaves
+  the list when its note is saved or cleared.
+
+  The Scratchpad had the same shape in memory: ONE `latest` / `latestPage`
+  pair for the text not yet saved. Type on page A while a save is in flight,
+  switch to B, and the save that drained re-read the editor — by then
+  showing B — and stored B's text; A's last typing was never sent. Typing on
+  B replaced A's waiting text outright. Unsaved text is now `pending`, by
+  page id, kept until a save of exactly that text lands; the editor is read
+  only as the page it shows; a save sends an off-screen page first.
+
+  **AMENDED (cycle 26 FT1): recovered text with nowhere to go.** F58 sends
+  unsaved text whose page changed elsewhere (or was deleted) to a NEW page,
+  "Recovered text", rather than over what is there. A scratchpad holds ten
+  pages. With ten already, the add was refused, the refusal reached only the
+  status line, and the text stayed pending under the page it could not go
+  back onto — so the next save wrote it there: the overwrite the recovery
+  exists to prevent. (For a DELETED page it was every later save finding the
+  page gone and asking for another new page.) A narrower race had the same
+  end without a full pad: the text became sendable the moment the conflict
+  was seen, and a keystroke in the second the add took armed a save.
+
+  The text is now HELD: moved in `pending` to a key no page has (`held~…` —
+  page ids are `main` and `p…`), which the browser mirror keeps across a
+  reload and no save ever picks (`cnScratchNextPage_` skips it by its key).
+  The pad goes back to showing the page as the server has it, and a row
+  above the toolbar says what is kept, with Move to a new page, Copy and
+  Discard. It is given its page without being asked as soon as there is room
+  — after a page is deleted, or at the next open — and never asks the server
+  for a page the pad is known not to have room for. While the new page is
+  being made the text is not sendable, and one add runs per text.
 
 <a id="g87-voice-dictation-routes-audio-outside-the-baa"></a>
 
@@ -2748,6 +3499,21 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   which would otherwise drop a per-element listener; `cnBeginEdit_` only
   focuses the field.
 
+  **AMENDED (cycle 26 F64): a pointer action needs a keyboard path.** Three
+  things could only be done with a mouse. In the Scratchpad, a checklist
+  item is ticked by clicking its box — hit-tested by the click's x-offset
+  inside the list item — and a link opens on Ctrl/⌘+click; a keyboard user
+  could do neither, and a screen reader heard no state on the box. Ctrl/⌘+
+  Enter now does what the click does for whatever the cursor is in
+  (`cnScratchEditorKeydown_`, sharing `cnScratchOpenLink_` and
+  `cnScratchToggleItem_` with the click), and the box carries its state as
+  CSS alternative text ("Not done: " / "Done: ") — the sanitizer strips ARIA
+  attributes from stored HTML, so the state cannot ride one. In Issue Docs,
+  a field box could only be DRAWN on the PDF by dragging: "Add box" beside
+  the box type places one of that type in the middle of the page typed next
+  to it and selects it, and the arrow keys ED2 already gave a selected box
+  take it from there. Verify: the F64 pure pin and the two F64 DOM drives.
+
 <a id="g92-training-questions-email-managers-immediately"></a>
 
 - **Training questions email managers immediately.**
@@ -2799,6 +3565,21 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   an auth check so unregistered domain users can't read internal
   department email addresses. The CN client calls this after employee
   state loads, so the auth is always present.
+
+  **AMENDED (cycle 26 F22): a gate narrower than the people its link is sent
+  to.** The intake email carries a "Send feedback on this recommendation"
+  button for every recipient at an org address (`isOrgEmail_(recipient)`).
+  The page it opens collects text; `submitIntakeFeedback` then required a
+  roster employee. That held while recipients were resolved from the roster —
+  and stopped holding with 25post B6, which reads the Sales and PAP teams
+  from the CDR roster: the button's usual readers are not on this app's
+  Employees sheet, and each got "Not authorized." after typing their
+  feedback. The endpoint now takes a roster employee or anyone signed in to
+  an org account (`intakeFeedbackCaller_`), records the address, and marks
+  the audit line "sender not on the roster". An account it cannot identify
+  is told so — a different answer from an outside account's refusal (g128).
+  The forged-id rule is unchanged: the submission must exist. Verify: the
+  `F22` pin (driven, with the refusals before the lock).
 
 <a id="g97-call-notes-ambient-polling-stops-on-tool"></a>
 
@@ -2854,6 +3635,15 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   and is written to every nav form (`mAlertBadgeLinks_`). The Spanish assignee
   count (Batch C) was built the same way from the start. Verify: the Batch E DOM
   drive.
+
+  **AMENDED (cycle 26 F61): what a re-render of the shell takes with it.**
+  View-as calls `renderShell`, which rebuilds the sidebar and the header.
+  Everything ADDED to them since boot went with the old nodes: the
+  What's-new star (rendered once, at boot) for the rest of the session, and
+  each poller's badge until that poller's next round. The switch now carries
+  across every child of a nav button the shell's own template does not write
+  — keyed by nav form and tool, so a badge whose tool the previewed role
+  cannot see goes nowhere — and re-renders the star.
 
 <a id="g100-modals-close-on-escape-through-their-close"></a>
 
@@ -2969,6 +3759,28 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   rebuilt; never while another dialog is open, nor when focus already sits somewhere
   real. Verify: the F40 (cycle 25) composer-focus DOM drive.
 
+  **AMENDED (cycle 26 F62): the layer above the overlay layer.** Two
+  non-modal panels sit above the overlays on purpose — the Reference drawer
+  (55) and the floating Scratchpad (56) — so a rep can read or type while a
+  modal is open. A confirm or prompt is not that kind of modal: it is the one
+  thing that must be answered, and the Scratchpad's own "New page" and
+  "Delete page" dialogs opened UNDER the pad (in the pop-out the pad covers
+  most of the window). `.overlay.ui-dialog` is 57. The same finding: the
+  delete confirm passed `danger: true`, which the dialog does not read — the
+  option is `tone: 'danger'` — and a pin now refuses the wrong spelling.
+
+  **AMENDED (cycle 26 FX4): the blocked-copy dialog and the drawer.** The
+  two non-modal panels sit above the overlay layer on purpose (the Reference
+  drawer at 55, the floating Scratchpad at 56, an overlay at 50). F62 gave
+  confirms and prompts a layer above both; FT1 gave it to the manual-copy
+  dialog too, but only when the caller asked (`opts.above`), and only the
+  Scratchpad asked. The Reference drawer's "Copy link" and the reader's
+  snippet copy did not — so a blocked copy there opened "nothing was copied"
+  UNDER the panel the rep had open. The dialog now takes that layer for
+  every caller; the option is gone. A dialog that says a copy failed is never
+  the thing to hide. Verify: `FX4 DOM` and the `FX4 + FX6` pin, which reads
+  the four z-indexes from the rules.
+
 <a id="g101-public-form-endpoints-have-no-employee-auth"></a>
 
 - **Public form endpoints have no employee auth — token is the
@@ -3031,6 +3843,56 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   (PT/OT Rx, seating evals) submitted to payers — those need a certified e-sign
   vendor or a DMEPOS platform (CMS signature-validity + the supplier-can't-author
   rule + corroborating-record requirements are out of this tool's reach).
+
+  **AMENDED (cycle 26 F44): a hash vouches only for the bytes it covers
+  (Employee Docs).** Four places where the signed record said more than it
+  could prove. (1) A written document's body could embed an image by web
+  address: the content hash covered the ADDRESS, so what a signed document
+  shows could change after signing with every hash still matching. A body
+  image must be a stored one (`kbimg:`) — `empDocBodyLinkedImage_` refuses
+  anything else at issue, and a converted Google Doc's `kbdoc:` placeholders
+  (which nothing resolves for a document, so they were frozen into the body
+  as text) are taken out by the converter's Employee Docs path and said. (2)
+  A signature was accepted if it BEGAN `data:image/png;base64,` — a
+  hand-made call could sign with the prefix alone; the row said signed,
+  hashed it, and every reader drew nothing. `empDocDrawnPng_` checks the
+  whole shape. (3) The certificate printed the CURRENT acknowledgement text
+  under any signature; it prints the text of the version on the signature
+  row (`EMPDOC_ACK_TEXTS`), or says that version's text is not on file. (4)
+  Answers were capped per field but stored together in one cell, so several
+  long answers failed in the spreadsheet with its raw error —
+  `EMPDOC_RESPONSES_TOTAL_MAX` refuses first, naming the longest. Also: a
+  review-only document (no signature, no fields) showed a Submit that could
+  only fail — `canComplete` withholds it; and a written document signed
+  without a `[signature]` block never drew its signature in the copy — the
+  signature image now rides every signed document. Verify: the F44 "sign
+  path" pin and the F14 + F44 DOM drive.
+
+  **AMENDED (cycle 26 F49): a record of what was read must be of what was
+  SHOWN (the handbook's sign-offs).** "I've read this" appends a mark with
+  the section's version — the stamp of its text — so the record says WHAT was
+  read. Two holes. (1) The version was the SERVER's at the moment of the
+  click. A reader's page holds the chapters it loaded (kept in the browser,
+  checked against a stamp the server caches for five minutes): a reader who
+  pressed the button on text opened before an import was recorded as having
+  read the import. (2) What asks a reader to sign again is a changelog entry
+  flagged for retraining — judged by "dated after the day it was signed".
+  The date is AUTHORED in the repo; the import comes later. Anyone who signed
+  the old text between the two — or the same day, the compare being strict,
+  or across midnight in India, where the day was taken — was never asked.
+  Now the chapters answer carries each item's `versions`, the page hands back
+  the one for the text it shows, and `hbMarkRead` refuses a sign-off whose
+  version is not the handbook's (reading the sheet, not the cache, where the
+  changelog flags the item — and refreshing the cache, so a reload gets the
+  new text). The mark also records the RETRAINING STATE the handbook was in
+  (`hbRetrainStamp_`: the latest flagged date and how many are flagged, read
+  from the sheet at that moment), and a mark is asked again exactly when the
+  changelog flags something it has not seen (`hbRetrainNewer_`) — no dates.
+  A mark from before this cannot be exact, so it fails toward asking (g159):
+  other text than now's, and the item has a flagged change at all — asked
+  once. A changelog that cannot be read refuses the sign-off rather than
+  record "nothing flagged". Verify: the two F49 pure pins and the F49 DOM
+  drive.
 
 <a id="g103-leave-deduction-client-mirrors-the-server-s"></a>
 
@@ -3354,6 +4216,52 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the dashboard-feedback batch: the toggle button lived inside the column it
   hid, so once collapsed there was no way back, and the `?compact=1` pop-out
   already covers compact.)
+  **AMENDED (cycle 26 F72, 2026-11-13): what a key keeps at rest is a choice,
+  and "24 hours" is not a clock.** The intake drafts (`umsIntakeDrafts`,
+  `umsIntakeSaved`) stored every field in plain text, the SSN included, and
+  the UI said "24 hours from the last save" — but the expiry ran only at boot
+  and when an intake view opened, so on a loaner or a shared profile that
+  never opened Team Tools again the draft stayed for good. The SSN is now
+  never written to either store (`intakeDraftSplit_`: held in memory for the
+  session, so a tool switch keeps it and a reload or a parked draft does not,
+  and says so); drafts stored before the rule are scrubbed by the sweep, which
+  also runs on a timer while the app is open; and the Drafts note says a draft
+  is removed the next time Team Tools is open in that browser. RULE: before a
+  field goes into a stored draft, ask what it costs if the draft is never
+  swept. Verify: the F72 pure pins + DOM drive.
+
+  **AMENDED (cycle 26 F55): a per-browser switch is not the account's.**
+  "Keep my notes in my account" was `umsHbNotesSync` in each browser. Turning
+  it off on one computer deleted the account's copies and said so; the other
+  computer's own flag was still on, so its next visit sent every note back
+  into the spreadsheet the admin can open. Off is the ACCOUNT's now: a row in
+  the `Notes` tab whose SectionId is `sync-off` (never a section's id).
+  `hbSyncNotes(local, turnOn)` refuses with `off` while it is there, unless
+  `turnOn` is exactly `true` — the reader's own choice on the Saved page,
+  which removes the marker. A browser that is refused turns its own switch
+  off, says so once in a toast that stays, and keeps its notes. (The keys are
+  still per deployment origin, not per signed-in account — a second person on
+  the same browser profile sees the first's notes; a follow-on.) Verify: the
+  F55 "note sync" pin and DOM drive.
+
+  **AMENDED (cycle 26 FO6): per site is not per person.** localStorage is
+  keyed by the page's origin, so the handbook's `umsHbNotes`,
+  `umsHbBookmarks` and `umsHbNotesSync` belonged to whoever used that browser
+  profile: a second person saw the first's notes on Saved, and with the
+  first's sync switch still on their own first visit uploaded those notes
+  into their account. `doGet` now hands the page a short key for the
+  signed-in account (`hbAccountKey_`: twelve hex digits from two hashes of
+  the address — never the address, which would sit in the storage keys) and
+  the three are `umsHbNotes:<key>` and so on (`hbKey_`). What a browser held
+  before is ADOPTED once, by the first account to open the handbook there,
+  and the shared copy removed (`hbAdoptLegacy_`) — the operator's answer was
+  one person per browser profile; on a shared profile the first person would
+  take them. Notes are merged into any the account already has (the later
+  note wins), because a tab still on the old page can write the shared key
+  after the adoption. With no key the page uses the shared keys, as before.
+  The department, the resume point, the visit day and the display settings
+  stay the browser's. Verify: the FO6 pin (the key; the net that no read or
+  write of the three bypasses `hbKey_`) and the FO6 DOM drive.
 
 <a id="g114-a-zero-that-could-mean-three-different"></a>
 - **A computed ZERO that could mean three different things must say WHICH —
@@ -3431,6 +4339,22 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   again); and **a ledger that is the record itself** rather than a second
   store that can disagree with it. Verify: the R pin's four verdicts, the
   round-trip mirror, and the editor suite's replay of the 2026-08 sequence.
+
+  **AMENDED (cycle 26 F44): a recurring job's window starts where its last
+  run ended.** The weekly coaching recap mailed each rep the non-critical
+  items "logged in the last 7 days" — `now − 7×24h`. A trigger does not fire
+  at the same second each week: a run an hour later than the week before
+  dropped the items logged in that hour, for ever (they were older than the
+  window when it finally ran, and the previous run was before them); a run
+  made up a day late dropped a day. `coachRecapCutoff_` starts the window at
+  the previous recap's heartbeat (`AUTOMATION_DIGEST_LAST_RUNS.coachingRecap`)
+  minus `CONFIG.COACHING_RECAP_OVERLAP_MIN`, when that heartbeat is between a
+  day and four windows old; otherwise the fixed window stands (a first run, a
+  manual re-run minutes later, a job dormant for months). The overlap means
+  an item logged in the minutes around a run can appear in two recaps — at
+  least once, chosen over at most once. The email says "since your last
+  recap" when that is the window. Verify: the F44 "heavy checks" pin (the
+  cutoff grid and the digest's wiring).
 
 <a id="g116-your-test-tooling-lies-in-both"></a>
 - **Your test TOOLING lies in both directions, and a green pin is not the same
@@ -3670,6 +4594,109 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   states a COUNT of dependencies must compute it; and a batch is not green until
   the workflow run on its pushed commit is — read it after the push.
 
+  **A TWENTY-THIRD direction (cycle 26 F2): a fixture typed by hand in a
+  shape production never emits.** Every pin of the monthly liveness check fed
+  it a last-run record written out in the test — `{ ms, timestampMgr:
+  '2026-08-01 06:00:00' }` — and the code tested `timestampMgr` for a
+  `2026-08` prefix. The fixture satisfied the code; production's value
+  ("Aug 1, 6:00 AM") never could. Five pins across three cycles were green
+  over a check that was false for every real run. A fixture of a server-built
+  record is now BUILT: `autoRunRec_(stamp)` runs the real
+  `automationRunRecord_` over a timezone-aware stand-in for the two
+  `Utilities` calls it makes (`gasUtilities_`), so a pin sees what the Admin
+  panel and the digest see. The visual fixture carries the real shape too.
+  When a pin needs a value some other function produces, produce it with that
+  function.
+
+  **AMENDED (cycle 26 Batch 8): a TWENTY-FOURTH direction — the clock in a
+  drive.** Several of Batch 8's DOM drives had to assert what the page shows
+  WHILE an answer is on its way ("still loading", "Profile before the chapters
+  arrive", "the list is not drawn yet"). They were written with the harness's
+  `__delay` — the fake server answers after 90 ms — and an assertion made
+  after the boot's own awaits. On this machine those awaits take about 50 ms.
+  CI's run 1785 passed the DOM step and then FAILED the same harness inside
+  `counts.mjs --check` a minute later: on a busier runner the awaits took
+  longer than the delay, the answer arrived first, and "still loading" was
+  false. The fix was correct; the drive was a race. `hbBoot_` now takes
+  `{ __hold: gate, value }` — the answer waits until the test calls
+  `gate.release()` (every answer held on that gate, oldest first) — and no
+  Batch 8 drive uses a clock to order two things. The one wait left is a
+  lower bound (the search's 300 ms debounce, waited 340): a timer scheduled
+  earlier with a shorter delay fires first whatever the load. Verified by six
+  concurrent runs of the DOM harness on four cores — the load that produced
+  it. A green run on an idle machine says nothing about a test that orders
+  events by time.
+
+  **AMENDED (cycle 26 FO9 + FO10): the subset, and one more clock.** Batch 8
+  bit its DOM drives through a filter patched into the runner in each
+  worktree — tooling in a state the repo does not have. It is the tool's now:
+  `DOM_ONLY=<regex>` runs the DOM tests whose name matches, and
+  `scripts/bite.sh --dom --only <regex>` uses it. Three guards keep a subset
+  from lying: a pattern that matches nothing (or is not a regex) is refused
+  rather than run as "0 failed"; the summary line says SUBSET and how many of
+  how many; `counts.mjs` clears the variable for its own run; and bite.sh
+  refuses a subset that did not RUN a test the needle names (it could only
+  ever say NO BITE), restoring the file first, and clears an inherited
+  `DOM_ONLY` when `--only` is not given. One older drive (the form viewer's
+  two answers) asserted between a 30 ms and a 120 ms answer; it is released by
+  the test now. The other clock delays in the handbook drives were re-read:
+  each only waits LONGER than a delay scheduled earlier, which holds under
+  any load.
+
+  **A TWENTY-FIFTH (cycle 26 FP3): a local `--axe` PASS was not CI's.** axe's
+  colour-contrast rule marks a pair it cannot resolve "incomplete", which is
+  not a violation, and which pairs it can resolve differs between Chromium
+  builds. Run on the old tokens, this container's axe reports ONE low pair on
+  the dark handbook section (the CRITICAL kicker); CI's reported the kicker,
+  then an HCPCS chip, then the "Updated" badge — one per red run, three runs.
+  `test/visual/contrast.cjs` does not ask axe: for every text element it reads
+  the colour and every ancestor's background and opacity, composites them as
+  the browser does (through a canvas, so `color-mix()` and `oklab()` values are
+  read rather than parsed) and computes the WCAG ratio. On the same old tokens
+  it lists all three pairs at once. `shoot.mjs` reports it for every scenario
+  and `--axe` fails on it; `contrast-check.mjs` runs the sweep over a page of
+  pairs whose answers are known (CI), because a sweep that sees nothing passes
+  everything. What it cannot judge — text over an image — is COUNTED, not
+  passed (g128). Its first version stopped walking at the first opaque
+  ancestor and so missed a see-through GROUP above it; the known-pairs page is
+  what caught that, before any screen was trusted to it.
+
+  **AMENDED (cycle 26 F41): a twenty-sixth — the fixture production never
+  writes, again.** `drEmailClickVia_` had a rule "an address the email was
+  sent TO is the department", read from the row's ToEmail cell — which
+  stores only the recipient DOMAINS (`ums.com`). A full address can never
+  equal one, so the rule never fired; its pin fed a row with full addresses
+  there and asserted the opposite of what production did. The pin now builds
+  the cell through the real writer (`drRecipientDomains_`), and the rule
+  reads the department map's addresses instead.
+
+  **AMENDED (cycle 26 F69): the gate that checked the wrong screen.** The
+  handbook's axe run evaluates each scenario's navigation hook inside a
+  `try`, logs "post hook threw" and carries on. So when a hook names a page
+  function that has since been renamed, the page stays on Home, axe audits
+  Home, finds nothing, and the scenario — "the quiz screen" — is reported
+  clean. The run kept the console lines in its report and never read them.
+  Its pin asserted "fails on a violation or on nothing checked"; the defect
+  satisfied both. The verdict is now one function in the gate module
+  (`axeFailures`): a scenario whose page broke fails, and the log says
+  "NOT CHECKED — the page broke".
+
+  Two smaller holes in the layout gate, same file. A KNOWN waiver matched a
+  finding by scenario and kind, so the one there has been — a masthead index
+  squeezed at 390px — excused any squeezed column on that screen, including
+  the next. A waiver must now carry `match`, a piece of the finding's own
+  detail line; one without it excuses nothing and is reported. And the
+  report kept the first eight console lines, so eight `console.error`s ahead
+  of an uncaught error cut the one line the gate reads; the broken-page
+  lines are kept first, and never cut. (The waived squeeze itself, the scan's
+  F68, had already been fixed by this cycle's FP1 — the list is empty.)
+
+  The eighth direction again, F73: `assert.ok(!/opts\.signal/.test(<the body
+  of kbGetFacetGuidance>))` — a function with no `opts`. It could not fail
+  whatever the AI path did. It now asserts what must hold: the path
+  searches, never asks for the search signal, and searches `publishedOnly`.
+  Verify: the two `F69` pins.
+
 <a id="g117-a-recovery-is-not-a-prevention"></a>
 - **A recovery is not a prevention, and shipping one can make the other feel
   done (operator 2026-09-15).** The reconcile pass (g115) makes late punch data
@@ -3766,6 +4793,40 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   wrong — and the wrong one was in the pin written to guard against pins that
   cannot see what they claim to (g116). **Anchor an ordering compare on the
   executable line, never on a mention of it.**
+
+  **AMENDED (cycle 26 F67): a syntax the browser cannot parse.** A
+  ReferenceError at least waits for its line to run. A regex LITERAL the
+  engine cannot parse is an early error: the whole `<script>` is rejected and
+  none of its functions exist. The card reader's seven label patterns began
+  `(?<![a-z])` — "not after a letter" — and Safari and iOS before 16.4 have no
+  lookbehind, so on those browsers `script_intake.html` defined nothing: PPD,
+  PMD, PAP, Sent and Catalog were all gone, for a feature that is optional.
+  Node and Chromium parse it, so every harness and every screenshot was green.
+
+  The patterns are now SOURCE strings compiled with `new RegExp` inside a try
+  (`intakeCardRx_`); where that fails the card reader says it cannot read in
+  this browser — before it downloads anything, and without "Try again" — and
+  the rest of Intake works. A pin tokenizes every script block of every client
+  partial in both apps (the served pages' scriptlets read as values) and
+  refuses a lookbehind in a regex literal. It checks that one construct, not
+  browser support in general: the same class exists for any syntax newer than
+  the oldest browser the team uses. Verify: the two `F67` pins + `F67 DOM`.
+
+  **AMENDED (cycle 26 FV3): the level, not the construct.** The F67 pin
+  looks for one thing, a lookbehind in a regex literal. The class is wider:
+  any syntax newer than the oldest browser someone opens the app in is the
+  same early error — optional chaining, `??`, an object spread, `async`, a
+  `catch` with no binding. Measured after F67, every script block in every
+  client partial of both apps parses as ES2015 and several do not parse as
+  ES5, so ES2015 is the floor the code already keeps. A pin now parses each
+  block at that level (acorn checks regex syntax by level too, so it covers
+  F67's case) and fails on anything newer; it first shows that the parser
+  refuses seven newer constructs at the floor, and that the level is not a
+  stale number. This is SYNTAX only — an API a browser lacks (`fetch`,
+  `crypto.subtle`, `Array.prototype.includes`) parses fine and is not seen.
+  Which browsers the app must support is still written nowhere; raising the
+  level in the pin is where that decision now has to be made. Verify: the
+  `FV3` pin.
 
 <a id="g119-a-store-override-that-is-read"></a>
 - **A store override that is READ but never ASSIGNED is not isolation — it is a
@@ -3883,6 +4944,17 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `InsurancePayors` precedent asserted alongside so all three stay in step) plus
   `test_oop_pricingTab_isNAMEDnotTheFirstSheet`, which renames the tab aside on
   a real spreadsheet and requires the error rather than a fall-through.
+
+  **AMENDED (cycle 26 Batch PD): a named tab is not a known shape.** The
+  Partial Days tab is owned by call-data-reporting and named, so the rule
+  above is met — but its columns are a contract between two repos: A–C are
+  Date, Agent and Credit, and D is a Reason this app must never read. If the
+  other repo ever moves a column, a positional read would silently take the
+  Reason for the Credit (or worse, ship it). `getCdrPartialDays_` therefore
+  checks row 1 for `Date | Agent | Credit` by name and, when it is anything
+  else, reads NOTHING further (`source: 'bad-header'`, said on Storage
+  Health) — the fail direction is "no day is partial", which leaves every
+  number as it was. The header read itself is three columns wide.
 
 <a id="g122-a-config-seed-that-is-a"></a>
 - **A CONFIG seed that is a PLAUSIBLE substitute for real config is worse than
@@ -4152,6 +5224,23 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   caches an error. Verify: the M10 pin.
 
 
+  **AMENDED (cycle 26 F24): a reader keyed by who asked.** M1's outbound
+  reader shipped two days after PF1 and beside it, and took none of it: its
+  key was `cdr_outbound_v1:<roster hash>:<from>:<to>`, My Stats passed
+  `[emp.name]` as the roster, and the entry lived `CDR_CACHE_TTL` (five
+  minutes). So the key was per rep, nothing was shared, and every rep with a
+  Dashboard open (the coverage strip and Needs-you both call
+  `getMyMetrics(today)`) re-read the Outbound Calls tab's whole Call Date
+  column about every five minutes — for a `today` the export never holds. The
+  span rule above was followed; what was missing was everything around it.
+  The reader is now keyed through `cdrWindowCacheSpec_('ob', …)` by the data
+  stamp, the stamp probes the Outbound Calls tab (every column — the tab is
+  read by header, so no fixed width is ours to name), all three endpoints ask
+  with `cdrCohortNames_` and take the rep's row out of the answer, and the
+  tab's newest day is kept against the stamp so a window that starts after it
+  opens no sheet. **The check when adding a CDR reader:** who is in the key?
+  If it is the caller, the cache is a per-person memo, not a cache.
+
 <a id="g126-two-readers-of-one-operator-sheet"></a>
 
 - **Two readers of ONE operator sheet share ONE column resolver (Batch 1 of the
@@ -4230,6 +5319,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   also names a capacity below any patient weight ("1.000", "1 000"). Verify: the
   F46 (cycle 25) drive.
 
+
+  **AMENDED (cycle 26 F8): a second renderer of the payor rule dropped most
+  of it.** A price row cross-references the payors on screen: "what does this
+  payor say about this item's code". The payor card draws the column's own
+  label ("K0827 (451- 600) No In HI"), the plan's state and its table; the
+  cross-reference kept only the payor's name and the value — so a column
+  whose qualifier says "No In HI" showed as a bare green X. The rule now
+  carries where it came from (`oopPayorRulesFor_`: the column label, the
+  state, the table's label, an excluded state) and the row draws all of it,
+  escaped. Verify: the F8 pure pin and DOM drive.
 
 <a id="g127-calchours-wraps-out-in-as-overnight"></a>
 
@@ -4345,6 +5444,61 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   imported" on purpose — the next import rewrites it. Verify: the Seams F20
   drive.
 
+  **AMENDED (cycle 26 F13 + F14): "could not check" is not "checked".**
+  Employee Docs' Verify recomputes three things: the content hash, the PDF's
+  SHA-256 (Batch H) and the signature hash. Each can come back true, false
+  or NULL — null meaning the check could not be made (no hash on record; the
+  stored PDF could not be read). The verdict was `tampered`, built from the
+  falses alone, and the client toasted green whenever it was not tampered: a
+  signed PDF document whose file could not be read at all said "Integrity
+  verified — signature, content and PDF hashes match". And only Verify ran
+  the recompute. The certificate was produced straight from the stored row
+  (an altered response printed beside the ORIGINAL signature hash, under a
+  title that reads as proof), and the finished copy was built from a document
+  the reader already knew was altered, then stamped "from the signed
+  original". Now there is ONE verdict, `empDocVerdict_(d, sigRow, opts)`:
+  `verified` is true only with a signature row, nothing mismatched AND
+  nothing left unchecked, and `unchecked` names each check that could not be
+  made. Verify, the certificate (`empDocVerdictLine_`, printed on it and
+  returned beside it) and the reader's `record` state all read it; the copy
+  refuses an altered record and labels one that is short of verified; an
+  UNSIGNED document's PDF mismatch is reported too (it was computed and
+  dropped). Verify: the F13 and F14 pure pins and the two F14 DOM drives.
+
+  **AMENDED (cycle 26 F47): an unreadable changelog is not an empty one.**
+  Every read of where a handbook sign-off stands — the bar, My training, Team
+  progress, the reminder run — took the changelog as
+  `meta && !meta.error && Array.isArray(meta.changelog) ? meta.changelog : []`.
+  With the list unreadable nothing is flagged for retraining, so every "read
+  it again" read as "signed", a plan waiting on a re-read as done, and the
+  reminder run found nobody overdue and said ok. (Batch 7's F49 had closed the
+  WRITE side: a sign-off is refused when the list cannot be read.) All four go
+  through `hbChangelogRead_` now, which throws; each caller's answer is then an
+  error its page shows, and the reminder run records `failed`. A handbook with
+  no meta at all has flagged nothing — that is an answer, not a failure.
+  Verify: the F47 changelog pin (the control: a flagged change asks again).
+
+  **AMENDED (cycle 26 F29): "could not read the stamps" is not "no stamps".**
+  The idle alert measures a clocked-in rep from the later of their last punch
+  and their last gesture (a six-hour cache stamp). `presenceLastTimes_` caught
+  a failed `getAll` and returned `{}`, and its own comment said the rule would
+  then "measure from the last punch" — for EVERY rep. At 3 pm the manager's
+  card read "N reps have been idle 30+ min", each "idle 2 h 30 min", because
+  the cache had a bad moment. Its sibling `presenceMap_` fails toward no
+  flags; this failed toward flagging everyone. It returns `null` now, the live
+  view gives no idle verdict at all, and the card says "Idle time could not be
+  checked just now" — an empty line would read "nobody is idle" (g53). A rep
+  with no stamp in a read that WORKED is still measured from the last punch:
+  that is the documented rule, and after six hours it is true.
+  The other half was precision. The stamp was written only by the presence
+  ping, at most once per ten minutes per window, so a rep active 10:00–10:09
+  was "idle 30 min" at 10:30 after 21. The pause flush now carries the time of
+  the last gesture counted (`last`, on the client's clock beside its `at`, so
+  only the difference is used and a wrong clock cancels out) and moves the
+  stamp forward — only that stamp, never the 30-minute presence one, and never
+  backwards. A window that closes before its flush still leaves the stamp up
+  to ten minutes old, so the chip says "about" and says why.
+
 <a id="g129-never-cache-a-failure-as-a-value"></a>
 
 - **Never cache a FAILURE as a value (Batch 2 of the 2026-09-17 /broad-scan,
@@ -4398,6 +5552,36 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the team only from a read that succeeded, so the next preview asks again; the
   server caches the parsed roster only after a read that parsed. Verify: the B6
   DOM drive (a failed read is said, nothing cached, the next preview re-asks).
+
+  **AMENDED (cycle 26 F56): a failed library load, kept — and a loaded one,
+  unchecked.** Both apps draw PDFs with pdf.js, loaded on first use by a
+  `<script src>` from cdnjs. Two defects in one loader. (1) A failed load set
+  the loader's state to `failed` and every later call answered from it: one
+  blocked request and no PDF employee document could be read — or signed —
+  and no handbook form opened, until the page was reloaded. The state is now
+  `ready` or nothing; the next open tries again, and Team Tools' reader
+  offers "Try again" (and "Download the PDF" once the bytes are in hand).
+  (2) The script ran whatever the CDN served, in the page that holds an HR
+  signature pad. The loader now FETCHES each file, checks its SHA-256
+  against the hash pinned in the source (`ED_PDFJS_FILES` / `HB_PDFJS_FILES`
+  — the installed `pdfjs-dist` files', which a pure pin recomputes), and
+  runs only bytes that match; a source that fails, times out or serves
+  something else is passed over for the next (cdnjs, then jsDelivr). An
+  `integrity` attribute was not used: a script tag gives one source and no
+  second try. Upgrading pdf.js means changing the version AND both hashes;
+  the F56 pin fails until they agree with `node_modules`. Verify: the F56
+  pure pin and DOM drive, and the rewritten HB4.1 failed-load drive.
+
+  **AMENDED (cycle 26 Batch PD): a read that could not see the marks.** A
+  Partial Days read that throws returns no marks — for nearly every rep that
+  is the right answer, and for a marked rep it is last week's pace. So the
+  failure is carried, not just logged: `cdrPartialDaysDegraded_()` is true
+  for the rest of the execution, and `getCdrAgentMetrics_`,
+  `getCdrDailyBreakdown_`, `getDashboardMetrics`, `getMyMetrics` and the
+  marks' own cache all decline to keep what they computed. The hourly
+  read-ahead reports `partial` ("the windows read ahead were not kept")
+  rather than `ok`. A MISSING tab is not this — it is the steady state
+  before anyone marks a day, and it is cached like any other answer.
 
 <a id="g130-a-registered-onclose-hook-owns-the-close"></a>
 
@@ -4464,6 +5648,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   figure now names its window from its own payload's `days`, and an older
   payload with none shows none. Verify: the Batch 6b follow-on drive.
 
+  **AMENDED (cycle 26 FQ1): the idle line's "30+ min".** Batch 9 moved the
+  idle chip onto the server's `IDLE_ALERT_MIN` and left the summary line under
+  Live Status with the number typed into its sentence. The two agree today
+  because the constant is 30. `getManagerDashboard` now ships `idleAlertMin`
+  and the line names it; a payload without it names no number ("have been
+  idle while clocked in") rather than a guess.
+
 <a id="g132-a-test-that-appends-to-a-gate"></a>
 
 - **A test that APPENDS to a gate property or a LIVE tab owes
@@ -4499,6 +5690,45 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   plus the F1 pins (the helper driven; a ratchet naming the only other
   deletes, all over TEST-only fixture stores).
 
+  **AMENDED (cycle 26 F73): a replaced value has no key to strip by.** The
+  by-key backstop works for a list a test APPENDS to: `cleanupTestData` can
+  find the test address in `MANAGER_EMAILS` and take it out. It cannot work
+  for a value a test REPLACES. `test_adminEmails_subsetOfManagersEnforced`
+  set `ADMIN_EMAILS` to one test address; `_withFeatureFlags_` (eleven
+  callers) rewrote the whole flags blob; others set the archive window to 30
+  days and the What's-new article to a fixture id. Each kept the real value
+  in a local variable and put it back in a `finally` — which a killed
+  execution never reaches. After that the real value was nowhere: every admin
+  toggle at its default, the admin tier reduced to nobody, and nothing to
+  restore from.
+
+  The original is now written to a second property before the first change
+  (`_stashProp_`, which returns the value like the `getProperty` it
+  replaces) and removed only after it has been put back (`_unstashProp_`,
+  value first, stash second). `setupTestEnvironment` and `cleanupTestData`
+  begin with `_restoreStashedProps_`. A stash that is already there is the
+  original — a re-run after a kill must not stash the test's value over it.
+  The value is stored as it is, with no wrapper, so a property at the size
+  cap still fits. What it does not cover: a test that changes a property
+  only THROUGH an endpoint and never names it, and real requests reading the
+  overridden value while the test runs. Verify: the `F73` stash pin (driven,
+  with a derived net over every literal property write in `Tests.js`) and the
+  editor test `suite_stashRestoresAnOverwrittenProperty`.
+
+  **AMENDED (cycle 26 FX1): what a restore replaces.** F73's stash has one
+  hazard of its own. After a killed run, the backstop puts back the value
+  from BEFORE the run — and if a person changed that setting by hand in the
+  hours between, their change is what gets replaced. The stash cannot tell
+  their edit from a test's (a test can change a property through an endpoint,
+  so "the last value the suite wrote" is not knowable). What it can do is say
+  so. A stash is dated (`TEST_STASH_AT_<key>`); the backstop reads the value
+  it is about to replace and logs one line per property — how long ago the
+  stash was taken, and, when the replaced value was not the original, that
+  value. Past `TEST_STASH_OLD_MS` it adds, in capitals, that a hand-made
+  change may be what was lost. Nothing is refused: leaving a test's value in
+  `ADMIN_EMAILS` would be worse than replacing an edit that can be read back
+  from the log. Verify: the `FX1` pin (driven on a moved clock).
+
 <a id="g133-an-onclick-literal-cannot-carry-a-name"></a>
 
 - **An `onclick` LITERAL cannot carry a name — `esc()` has already encoded the
@@ -4522,6 +5752,17 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   forms carry `data-qa-exempt` + `data-qa-exempt-on`, ONE document listener
   dispatches on `closest('[data-qa-exempt]')`, and the `esc()` round trip is
   asserted on a name carrying both quote kinds.
+
+  **AMENDED (cycle 26 FX8): the reminders list.** Its Mark done and Cancel
+  buttons were built the same way: `onclick="cnSchedStatus_(this, '` +
+  `esc(it.id)` + `', 'done')"`. `esc()` turns an apostrophe into an entity,
+  the attribute turns it back, and the handler's string ends early. The ids
+  are generated by the server and hold no apostrophe today, so it had not
+  fired — it was the shape waiting for a different id. The buttons carry
+  `data-sched-id` and `data-sched-status`, and the list has one click
+  listener (`cnSchedListClick_`) that reads them and ignores a button that
+  is waiting on the server. Verify: `FX8 DOM`, driven with an id that holds
+  an apostrophe, a quote and an angle bracket.
 
 <a id="g134-ensureoverlay-rewrites-classname-so-a-second"></a>
 
@@ -4625,6 +5866,26 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   every consumer already skipped. The visual fixture carries one null day.
   Verify: the M9 sweep (no `: 0` default across the three endpoints, all eleven
   null fields found) and the sparkline gap, driven.
+
+  **AMENDED (cycle 26 F35): a total is a series of one.** Team Metrics opens
+  on Today, and the call report is imported the next morning, so
+  `teamTotals` was the zero it was initialised to. The rail drew "Rung 0 ·
+  Answered 0 · Missed 0 · Total talk 0:00:00" with Answered and Missed in
+  green — a team that missed nothing — and the manager's table gave every
+  rep listed through their notes a row of zeros. M1 (cycle 22) had already
+  made the RATE null; the counts beside it stayed. The server now says
+  whether any listed rep has a call-data row (`teamTotals.hasCallData`) and,
+  when none has, whether the window ends on the previous workday or later
+  (`callDataPending`, `teamCallDataState_`); the rail draws one "Calls —"
+  row with the reason, a rep with `hasCdrData: false` draws "—" in Rung,
+  Answered, Missed and ATT, and Copy table exports those blank.
+
+  **AMENDED (cycle 26 FQ3): the Transfers row was the same zero.** F35 took
+  the call rows off a window with no call data and left "Transfers 0" under
+  them — a second source with the same lag. The server says whether any
+  listed rep has a transfer row (`teamTotals.hasTransferData`); with none,
+  the row is absent beside "Calls —" and a dash with its reason when the
+  calls are in and the transfers are not.
 
 <a id="g137-a-static-net-that-pre-declares-names"></a>
 
@@ -4900,6 +6161,25 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   re-opened on every re-render. A collapsed group is now remembered for the visit
   (`CN_STATE.histCollapsed`). Verify: the F37 + F38 and F40 (cycle 25) DOM drives.
 
+  **AMENDED (cycle 26 F66): the toolbar is a view too.** The handbook's bar
+  above a section (`#hb-quizbar`: the sign-off, the note, Listen, a quiz, a
+  form) was `bar.innerHTML = …` on every call — and it is called by every load
+  answer at boot, by the scroll-spy at every section boundary, and at the end
+  of every action its own buttons start. A keyboard reader who pressed Listen
+  was on a button that no longer existed: the focus fell to `<body>`, and Stop
+  was a Tab from the top of the page away. `hbPaintQuizBar_` now keeps what it
+  last drew (`HB_BAR.html`) and rewrites only when that changed; when it does,
+  the control the focus was on gets it back BY WHAT IT DOES (`data-hb-bar`:
+  sign, note, listen, stop, quiz:<id>, form:<key>) — Stop gives way to Listen,
+  a control the new section has not to the bar's first. A press whose button
+  was disabled meanwhile (browsers drop the focus from a disabled button) is
+  remembered for that one answer (`HB_BAR.pressed`) and never pulls the focus
+  back from somewhere the reader has since gone. Opening a quiz was the one
+  view that moved no focus at all; it goes to the quiz's heading. Verify: the
+  F66 DOM drive, and the pure pin that every button the bar draws carries
+  `data-hb-bar`. (jsdom will not blur a disabled button — the drive moves the
+  focus to `<body>` through another element; g116's fifteenth direction.)
+
 <a id="g142-a-diagnostic-that-names-the-wrong-source"></a>
 ### g142 — A diagnostic that names the WRONG source is worse than a vague one, because it is actionable and the action is destructive
 
@@ -5036,6 +6316,59 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   a run this month with no row reads "ran on … but wrote no row this month, so
   its trigger is running", with the remedy (column R, `previewPtoAccruals`).
   Verify: the six 25post pins.
+  **AMENDED (cycle 26 F75, 2026-11-13): the intake card reader.** Its files
+  come from a CDN and each is checked against a SHA-256, but the rejection
+  reason was discarded: a firewall blocking the CDN, a file that failed its
+  checksum and a browser that cannot run the reader all read "The card could
+  not be read in this browser". Two of the three name the wrong source, and
+  the checksum failure — the one event the pinning exists to catch — reached
+  nobody. The fetch now tags each failure (`download` / `checksum` / `start`),
+  the message follows the kind, and a checksum failure is beaconed with the
+  file KEY only (an allowlisted name — never an image, a value or a URL).
+  Verify: the F75 pure pin + DOM drive.
+
+  **AMENDED (cycle 26 FR2): a bulk decide's failure named the wrong reason,
+  or none.** Approving several requests at once can partly fail — another
+  manager decided one, a date fell out of the edit window. The time-off bar
+  answered "1 succeeded, 1 failed" and refreshed; the punch-adjustment bar
+  answered "1 approved, 1 failed — " followed by the BATCH's `res.error`,
+  which is not any one request's reason (and is empty when the batch itself
+  succeeded). The per-request reason was in each result all along. Both bars
+  now open a notice (`mgrBulkFailDialog_`: one button, stays until read)
+  listing each undecided request — who, the date, its own reason — and the
+  landed ones still leave the list.
+
+  **AMENDED (cycle 26 FS2): a button that says it is still working.** The
+  follow-on was to check the two manager panels FR2 had not reached — Recent
+  Activity and the PTO drift card — for a bulk action that answers a partial
+  failure with a count. Neither has one: Recent Activity is a read-only list,
+  Recent Punches deletes one row and restores its button, and "Credit &
+  reconcile" acts on one rep and toasts the server's own reason. What the
+  check did find is the same family one step down. The press set the button
+  to "Reconciling…" and, on a refusal ("PTO tracking is off…") or a failed
+  call, re-enabled it WITHOUT putting its label back — so the card kept a
+  live button that said the reconcile was under way. The label and icon are
+  restored on both paths.
+
+  **AMENDED (cycle 26 F61): the wrong cause on a failed save.** The dialog
+  that shows text "to copy by hand" was written for a blocked clipboard, and
+  says so: "This browser blocked the clipboard, so nothing was copied." It
+  is also where a call note that did not SAVE is put when it cannot go back
+  into the form — and that rep was told about a clipboard. The dialog takes
+  the reason from its caller now; the failed save says the note was not
+  saved and to log it again.
+
+  **AMENDED (cycle 26 F23): a label that names a setting nobody has.**
+  Storage Health's Intake row and CLAUDE.md's storage map both read
+  "Optional purge". There is no purge of the Intake spreadsheet — every PPD,
+  PMD and PAP submission, and every feedback row written about one, is kept
+  until someone deletes it by hand. An operator weighing PHI at rest reads
+  "optional" as a switch that is off by choice. Neither place named the
+  `IntakeFeedback` tab, whose text may name a patient. The row now reads
+  "Kept — no purge exists" and names the tab; the pin holds the label true by
+  deriving that no function which opens the store removes a row, so building
+  a purge turns it red until the label is changed with it. Verify: the `F23`
+  pin.
 
 <a id="g143-a-leading-underscore-is-not-private"></a>
 
@@ -5093,6 +6426,20 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   owner-first by `_assertSuiteCaller_`, and the PUBLIC-GATE pin holds
   DevTools.js to the Tests.js rule (the owner check is the first statement).
 
+  **AMENDED (cycle 26 F73): the second project.** The PUBLIC-GATE net reads
+  `web-app/`'s directory. `handbook-app/` is a second deployed project whose
+  audience is the whole domain, and its public functions were held only by
+  pins that each named a handful. A helper added to `People.js` without a
+  trailing underscore would have been callable by every domain user with
+  lint, the syntax check and every pin green. The same derived net now runs
+  over every pushed file of `handbook-app/`: a public function gates with
+  `getEmployeeInfo_` or one of the four helpers that begin with it
+  (`hbAdminCall_`, `hbAuthorCall_`, `hbSavedCall_`, and the owner check
+  `hbOwnerCall_`), or is a named delegate whose callee in the generated
+  `kb_shared.js` gates, or is one of four named exceptions — the two page
+  entries and two stubs that return a constant refusal and may read no
+  store. The lists only shrink. Verify: the `F73` PUBLIC-GATE pin.
+
 <a id="g144-a-string-written-to-a-cell-is-parsed"></a>
 
 - **A string written to a cell is parsed AS IF TYPED: `=…`, and `+`/`-`/`@`
@@ -5139,6 +6486,31 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   takes `opts.textIdx`). The intake account backup row's typed DOB was stored
   the same way ("3/4/28" → 2028-03-04) and is now a '@' cell
   (`INTAKE_ACCT_TEXT_IDX`). Verify: the F6 and F49 (cycle 25) pins.
+
+  **AMENDED (cycle 26 F44): three more free-text cells.** A document
+  template's Name and Body and a quiz's Title went through `sheetSafe_` into
+  plain cells — safe from formulas, but a template named "3/4" or a quiz
+  titled "10-12" was stored as a date and read back as one. They are '@'
+  cells now (`EMPDOC_TPL_TEXT_IDX`, `TRAIN_QUIZ_TEXT_IDX`), written by
+  `appendRowsTextSafe_` / a re-asserted format on edit, and S2's named list
+  of raw-text writers gained `saveEmpDocTemplate` and `saveQuiz`.
+
+  **AMENDED (cycle 26 F43): the apostrophe `sheetSafe_` cannot fix.** Text
+  that itself begins with an apostrophe (`'Bud' Smith called`, `'til
+  Friday`) written to a non-'@' cell reads back without it: Sheets takes a
+  leading apostrophe as its literal-text marker. The scan's sketch was one
+  line — prefix another apostrophe. It was written, and reverted: a pin and
+  two callers showed why it is wrong. `sheetSafe_` is applied MORE THAN ONCE
+  to some values (a row helper over cells already made safe), and it must
+  leave `'=already literal` alone — with the extra rule, a second pass turns
+  `'=x` into `''=x` and a literal apostrophe is stored in front of every
+  neutralised formula. And the handbook app prefixes an apostrophe by hand
+  to force a search term to text, then passes the row through
+  `sheetSafeRow_`. A string cannot say whether its apostrophe is a marker or
+  the author's. The loss (one leading character, in the few free-text
+  columns that are not '@' cells) is LEFT; the fix, if wanted, is to make
+  the column an '@' cell, as the note, document and coaching text already
+  are.
 
 <a id="g145-a-positional-write-at-getlastrow-1"></a>
 
@@ -5189,6 +6561,25 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   descending CONTIGUOUS runs with one `deleteRows` each (`contiguousRowRunsDesc_`)
   instead of one call per row under the global lock. Verify: the QA-3 and 4a-FU2
   drives + C5's fake grid, which now refuses per `deleteRows` call.
+
+  **AMENDED (cycle 26 F40 + F37): clear-then-write with nothing to put back,
+  and a failure reported about the wrong step.** The manual import's three
+  tabs — `ManualImages`, `ManualQuizzes`, `ManualFiles` — were each rewritten
+  by `clearContent()` on the old rows and then a write. ADM-05 gave the
+  data-table import a restore for exactly this; these had none, so a write
+  that failed left the handbook with no images, quizzes or forms until the
+  next successful import. `sheetReplaceBody_` (10_core.js) replaces a tab's
+  data rows in ONE `setValues` that covers the old extent — the new rows,
+  and blanks over whatever the tab held past them — so the tab goes from the
+  old table to the new one in a single step or stays the old one. The header
+  is written after the rows. The other half is `kbImportDataTable`: once the
+  table write had succeeded, the standing-note write and the audit row ran
+  inside the same `try`, so a throw in either answered "Import failed" over
+  a live table that had just been replaced. Each is its own step now,
+  reported on the answer (`noteWarning` / `noteSaved: false`,
+  `auditWarning`), and the answer says `imported`. Verify: the two F40 pins
+  (the helper driven, and an import whose image write fails over an existing
+  tab) and the F37 pin.
 
 <a id="g146-a-failure-message-that-echoes-typed-input"></a>
 
@@ -5247,6 +6638,35 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   captures the editor (`KB_EDIT`) it was dropped into, and the read's handlers
   and the RPC's both drop a result for any other. Verify: the KB2-9 DOM drive (a
   late read and a late conversion).
+  **AMENDED (cycle 26 F20, 2026-11-13): a sequence counter kept ON the host
+  dies with it too.** The intake card reader guarded a read in flight with
+  `host._seq` — a property of `#intk-card-read`. Clear, a saved draft, a send
+  and a language switch all re-render the form, which replaces that node; the
+  read went on checking the detached node, whose counter never moved again, and
+  then painted through a lookup by id. So the read finished over the PREVIOUS
+  patient's images and offered their payer and member ID, with a working "Use
+  as primary insurance", on the next patient's blank form. PMD and PAP also
+  share the ids `intk-card-read` and `intk-gallery`, so a PMD read finishing
+  after a switch to PAP painted there. RULES: the sequence is state
+  (`INTAKE_CARD_SEQ[form]`), bumped by a new read, a change to the images and
+  every subject change; every paint looks the host up AGAIN through
+  `intakeCardHost_(form)`, which answers only while that form's drop zone is on
+  screen. Verify: the F20 DOM drive (Clear mid-read; PMD → PAP mid-read; an
+  undisturbed read still lands).
+
+  **AMENDED (cycle 26 F45): two "current sections".** The handbook reader has
+  the section OPENED (`HB.currentId` — set by an open, kept while the reader
+  scrolls) and the section IN VIEW (the scroll-spy's). The bar above the
+  reader is painted for the one in view; twelve other callers repainted it
+  with `hbPaintQuizBar_(HB.currentId)`. Open 3.1, scroll to 3.4, press "I've
+  read this": 3.4 is signed, and the answer repaints the bar for 3.1 — an
+  unsigned "I've read this" under the reader's hand, reading as "it didn't
+  take". A second press signs 3.1, a versioned attestation a manager's table
+  counts. Listen read 3.1 from the top; a note saved on 3.4 left "Add a note"
+  showing; every boot answer flipped the bar back. The bar's section has ONE
+  writer now (`hbMarkCurrent_` sets `HB_BAR.id`) and one reader
+  (`hbBarId_()`; `hbRepaintBar_()` for "repaint where it is"). Verify: the F45
+  net (the painter is called with nothing else) and the F45 DOM drive.
 
 <a id="g148-a-lagged-source-s-windows-count-days"></a>
 
@@ -5292,6 +6712,59 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   now ends on last month's same-numbered workday (`dashWorkdayCount_` over the one
   company calendar), and the run-rate projects over workdays shipped by the server.
   Verify: the rewritten dashboardPrevRange_ pin and the F12 (cycle 25) pin.
+
+  **AMENDED (cycle 26 F35): the lag notice rode the wrong branch.** The
+  outbound row's "data through MM-DD" was appended inside the branch that
+  draws a placed call. In exactly the lagged case — the day's inbound calls
+  imported, its outbound export not yet — nothing was placed as far as the
+  tab knew, so no row was drawn: the same page as a rep who placed none, and
+  the design decision said the window "says data through …". `mOutboundLag_`
+  is now the one rule for the rail row, the Team column and the export: a
+  window that starts after the export's newest day has no figure ("—, not in
+  yet"), one that only reaches past it keeps its count and names the day,
+  and a covered window with no call still draws nothing.
+
+  **AMENDED (cycle 26 Batch PD): a day is not always a whole day.** Three
+  figures here divide or compare call COUNTS by days: the Dashboard's "on
+  pace" line, its month-to-date deltas on Answered and Missed, and My Stats'
+  daily Answered / Missed trend against the team. A rep who worked half a
+  day counted as a full one in each. call-data-reporting's handoff gave its
+  own rule (days with calls, a marked day as its credit); this app's divisor
+  is WORKDAYS — a day off already counts as a zero day — so adopting theirs
+  would have moved every rep's pace. The rule here: a marked day the rep
+  took a call on comes out of the workday divisor by its uncredited share,
+  and nothing else changes. The two repos agree on a marked rep's credited
+  days and may differ on an unmarked rep's divisor, as they did before.
+  **The check:** before copying another system's formula, find what its
+  divisor already is here.
+
+  **AMENDED (cycle 26 DS2, operator 2026-11-19): the Team table's one
+  day-based figure.** Batch PD left Team Metrics unadjusted because nothing
+  on it was day-based: every column is a count, a rate or a total, and those
+  never move for a partial day. The operator asked for the manager's per-rep
+  figures to be adjusted too, and the honest form of that is to ADD the
+  figure a partial day belongs in rather than bend one that it does not:
+  `Ans / day` — answered over the rep's CREDITED days. Here the basis is the
+  Department Dashboard's own (the days the rep took a call, a marked day as
+  its share), not this app's workday divisor: a table that compares reps
+  should not lower a rep's rate for a day of PTO. Under one credited day
+  there is no figure — a lone half day would read as double its calls. The
+  column exists on a range only; its title gives the divisor.
+
+  **AMENDED (cycle 26 DT1, operator 2026-11-19): the twin for Handled
+  (adj.).** Asked whether the adjusted figures should have a per-day form
+  too, the operator said "maybe just for Handled (adj.) for now". So a range
+  gains `Handled / day`, directly after `Handled (adj.)`: the handled count
+  (answered plus connected outbound) over the SAME credited days as
+  `Ans / day`. The divisor is deliberately not widened to "days with any
+  call": the Outbound Calls read keeps totals per rep, not days, and carrying
+  each rep's dates in a cached window is what the 100 KB cap (g157) argues
+  against. The cost is stated rather than hidden — a day a rep spent ONLY on
+  outbound calls adds its calls and no day, so that rep's figure reads high;
+  a rep with outbound calls and no inbound day at all has no figure. A rep
+  with nothing adjusted reads their answered figure, as the Handled column
+  itself does, and the hover says "no outbound call". Not on the Team rail,
+  and the Department card is still not adjusted (the operator, the same day).
 
 <a id="g149-a-stamp-parser-documented-as-differences-only"></a>
 
@@ -5345,6 +6818,17 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   client RPCs were photographed as "no fixture" with nothing failing. The
   walker now sees all three shapes (a bracketed ternary yields its branches,
   never its condition). Verify: the Seams F9 pin.
+
+  **AMENDED (cycle 26 FW6): the list of reads owed a fixture is a list of
+  views never drawn.** X1's ratchet names the client RPCs that have no
+  fixture "because no scenario photographs them yet". Three of them —
+  `getTrainingDashboard`, `getQuizzes`, `getQuizAnalytics` — are every read
+  the manager's Team Training view makes. With none answered, the view drew
+  its error state in the matrix and in the tour walk, and the tab sat on the
+  visual-gap list as "the manager half of Training". It has its fixtures
+  now, in the server's shape: a pin drives the three real endpoints and
+  compares their keys with what the mock answers. The scenario is in CI's
+  subset. Verify: the `FW6` pin + `training-team-light-wide`.
 
 <a id="g151-a-health-surface-that-derives-its-own-subset"></a>
 
@@ -5484,6 +6968,33 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   "No fillable forms sent yet" over a cut list), and the timeline names sent
   forms among its truncated sources. Verify: the F33 (cycle 25) drive.
 
+  **AMENDED (cycle 26 F38 + F5): a bounded CHECK's silence is evidence only
+  for what it checked.** The lookup compares each matched plan with the same
+  plan in the other payor tables, at most `INS_PAYOR_ALSO_MAX` (12) reads per
+  search. The loop's condition was the bound itself, so past 12 it simply
+  stopped — and a card with no "answer differs" note read as "the tables
+  agree". A card the bound stopped short of now carries `alsoUnchecked` and
+  says it was not compared; a plan no other table lists is not flagged. The
+  row cap is the same shape: rows past `INS_PAYOR_MAX_ROWS` are counted as
+  `unread` on the table's coverage, never dropped in silence. Verify: the
+  F5 + F38 pin (the bound set to 1, three cards flagged, the one with no twin
+  not).
+
+  **AMENDED (cycle 26 F48): cut, then filtered.** The handbook app searches
+  with Team Tools' own search, copied, and serves handbook sections only. It
+  did that by FILTERING the answer: the search scored every row of the KB tab
+  — Team Tools' ordinary Reference articles included — cut the list to its
+  twenty best, and the handbook's wrapper then dropped whatever was not a
+  handbook section. A query where twenty article hits (an article gives up to
+  three) outscored the handbook left the reader nothing, under "Didn't find
+  it?", though sections matched; and "nothing found" was computed before the
+  filter, so the search signal never counted those searches as zero-result.
+  The search now takes `manualOnly` (true only — narrowing, like
+  `publishedOnly`) and skips every other row BEFORE it scores, makes a row
+  visible to the call router, or cuts; the handbook's wrapper always passes
+  it and keeps its filter as a second check. Verify: the F48 pin, driven
+  through the handbook's copy with twenty-five better-scoring articles.
+
 <a id="g153-clearing-the-roster-email-does-not-reach-the-gate-lists"></a>
 
 - **Clearing the roster email revokes every IN-APP gate, but not the Script
@@ -5525,6 +7036,35 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   live roster; otherwise the rep's current manager, or MANAGER_EMAILS, never the
   departed address, with a line saying why the notice came to them. An unreadable
   roster sends where it always did. Verify: the F41 (cycle 25) drive.
+
+  **AMENDED (cycle 26 F32): the ADMIN_EMAILS half was handed an empty
+  roster.** `managerSourceDrift_` clears an offboarded address once it is
+  "back on the roster". The MANAGER_EMAILS call passed the roster; the
+  ADMIN_EMAILS call passed `[]` (its demotion half does not apply — an admin
+  without the manager bit simply has no power), so nobody was ever "back on
+  the roster" and a re-onboarded admin was named in the health digest every
+  day, with nothing they could do short of editing `OFFBOARDED_EMAILS`. The
+  roster now rides along, every row as a manager (`adminDriftRoster_`).
+  Verify: the F32 pin.
+
+  **AMENDED (cycle 26 F15): an address stored on a record, in a copy
+  email.** A finished document's copy can be emailed "to the managers": the
+  document's issuer and the employee's roster manager. The issuer is an
+  address stored on the EmpDocs row when the document was issued — F41 had
+  rerouted the NOTICES for a departed or demoted issuer, but this path read
+  the cell raw, so a signed HR document went to someone who had since left
+  the manager role (or the company, where the mailbox still delivers).
+  `empDocCopyManagers_` admits an address only if it is a manager on the
+  roster TODAY (`rosterManagerEmails_`, the list F41's routing reads); one
+  that is not is left out and NAMED on the preview with the reason — never
+  rerouted to somebody else, because who receives an HR document is the
+  sender's decision. An unreadable roster confirms nobody, and says that.
+  The same endpoint took any bytes from any employee with no limit: it now
+  caps one person at `EMPDOC_COPY_WINDOW_MAX` copies while the count's
+  `EMPDOC_COPY_WINDOW_SECS` lasts (ScriptCache; an unreadable cache does not
+  block a send), and the message says the attachment was put together on the
+  sender's computer and that the certificate held in the app is the record.
+  Verify: the F15 pure pin.
 
 <a id="g154-a-half-day-has-no-fixed-start"></a>
 
@@ -5609,6 +7149,29 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   and the voicemail rule place each at its own time (`spanishManualStamps_`).
   Verify: the F13 drive (fold → episodes, and the voicemail rule).
 
+  **AMENDED (cycle 26 F9 + F11): the first message is not the REQUEST'S email,
+  and a resolve asks the walk the list asks.** Two instances on the reply
+  side of the same class. (F9) A Dept Request's resolved reply went to the
+  thread's first message — "the request email itself". But two requests can
+  share one Gmail thread (DR-1: same subject), and then the first message is
+  the OTHER request's email: that request's department was told "this request
+  was marked resolved". The reply now answers the request's own email —
+  `drReplyTargetIdx_`: the newest message the app sent whose body carries the
+  request id (its resolve link; a re-send carries the same id). None found is
+  `unmatched`: nothing is sent, and the person is told. (F11) The Spanish
+  resolve endpoints asked only "is there a manual resolve at least as new as
+  the newest message". A card left on screen after a MEMBER answered by email
+  has no manual resolve at all, and a thank-you is "newer mail" — so the stale
+  click wrote a resolve row and sent a second "this request was resolved"
+  reply on a thread with nothing open. Both endpoints now also ask the walk
+  the pending list asks (`spanishWalksOpen_` over `spanishThreadWalks_`, read
+  before the lock, judged inside it): no open request is "already". A
+  voicemail thread is judged under BOTH walks the list can show it by, and
+  open under either is open — the rule refuses a resolve, so it errs toward
+  allowing one (a card the list shows must stay clearable).
+  Verify: the DR1 reply pin + the F9 grid; the F11 drive through both
+  endpoints.
+
 <a id="g156-read-a-word-or-a-number-by-token"></a>
 
 - **Read an operator's word or a rep's number by TOKEN, never by character
@@ -5644,6 +7207,28 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   20–1000 lbs") on the explain row and the recommendation screen; it never
   reaches the capacity filter. Verify: the Batch 11 weight drive.
 
+  **AMENDED (cycle 26 F7): a word found inside a value is not the value.**
+  The payor tone map (K11, cycle 22) reads words, not substrings — and still
+  toned on a word's PRESENCE. "Cannot be accepted" carries "accepted" and no
+  negation the list knew, so it was green; "Accepted except HI" was green;
+  "No auth required" opens with "No", so it was red. A colour on a compliance
+  field is read as the answer. Now: green only when the WHOLE value is an
+  accept (`INS_IS.acceptedExact` — X, Yes, Accepted, In-Network, INN, alone
+  or together); an accept with anything beside it is amber and explained as
+  "Accepted, with a condition"; the refusals gained cannot / can't / unable
+  to / will not / does not, "be accepted" and "acceptable"; and a leading
+  "No" that only says something is not required (`INS_IS.noRequirement`) is
+  no verdict — neutral, verbatim. Verify: the F7 pin (a sweep: no value is
+  green unless all of it is an accept) and the DOM drive.
+
+  **AMENDED (cycle 26 F41 + F43): two more words read as numbers.** The TRX
+  fold took whatever followed "TRX" as the key, so "Maria Lopez TRX pending"
+  and "John Smith trx pending" both keyed `pending` and were folded into "2
+  open requests for this TRX" — one patient's card hidden behind the
+  other's. A key must hold a digit. And the agent's self-BCC was skipped
+  when their address was a SUBSTRING of the list (`ann@x.com` inside
+  `maryann@x.com`); the test is by whole address (`mailListHasAddress_`).
+
 <a id="g157-scriptcache-is-shared-by-every-deployment"></a>
 
 - **A ScriptCache entry is shared by HEAD and every versioned deployment, so
@@ -5673,6 +7258,19 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   changing only the slug served old anchors from the shared cache. The key now
   hashes `kbSlug_`, and a pin derives the builder's call closure and requires
   the key to hash exactly that set. Verify: the Seams F18 pin.
+
+  **AMENDED (cycle 26 F25): a `put` over 100 KB throws.** CacheService caps a
+  value at 100 KB. The transfer reader cached its whole answer — the per-day
+  map for every rep — and for the Dashboard's year-to-date window that is
+  several hundred KB: the `put` threw into `catch (_) {}`, the window was
+  never cached, every Dashboard open re-read the year, and the hourly
+  read-ahead reported `ok`. The Dashboard reads only the per-agent totals, so
+  the reader takes `aggregatesOnly` and keeps that small shape under its own
+  key (and returns no `perRepDaily` key at all, never an empty one). Every
+  CDR window reader now checks the payload against one headroom constant
+  (`CDR_CACHE_VALUE_MAX`), skips an oversize one ON PURPOSE and notes it
+  (`cdrCacheOversizeNote_`), and the read-ahead reports what it could not
+  keep. Verify: the F25 pin.
 
 <a id="g158-a-threshold-changes-meaning-with-its-basis"></a>
 
@@ -5746,6 +7344,26 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   a request. "Gracias Ana" reopens — one click — rather than "gracias, ya
   está?" hiding. Verify: the courtesy grid (`spanishIsCourtesyOnly_`).
 
+  **A THIRD and FOURTH instance (cycle 26 F3 + F10): two rules that HIDE a
+  message on a Spanish thread.** (F3) The app's own resolved reply must not
+  read as a requester's follow-up, so a body carrying the reply's marker line
+  was neutral. A requester who replies to that reply QUOTES it — marker and
+  all — so "no me llamaron, por favor intenten otra vez" was read as the app
+  talking and never became a request. The reply is now known by how it OPENS
+  (`SPANISH_APP_REPLY_LEAD`, the constant the reply is built from) plus the
+  marker; a message that quotes it opens with the person's words or a quote
+  header, whatever the reply's note holds. (F10) The opposite error: the
+  requester's out-of-office answers the app's reply-all on the same thread,
+  from the requester's address, and reopened the request it was resolved on,
+  unclaimed, every time. An automatic message (`spanishIsAutomatic_`: the
+  Auto-Submitted / X-Autoreply headers, an auto-reply subject in English or
+  Spanish) is neutral — built to fail toward a look: the Precedence header is
+  NOT read (mail delivered through the group inbox carries `Precedence:
+  list`, so it would call every follow-up automatic), the sender's address is
+  not read, a header that cannot be read is a request, and a sender whose
+  FIRST message is itself automatic (a phone system, a form mailer) keeps the
+  old rule for its later mail. Verify: the F3 and F10 drives.
+
 <a id="g160-an-escape-first-renderer-must-match-escaped-markers"></a>
 
 - **An escape-first renderer must match the ESCAPED marker (22post M1,
@@ -5761,6 +7379,16 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   `kbMd_`, the note-marker formatter (g38) or any other escape-then-format
   pass. Verify: M1-R1 (a callout holding a paragraph, a table and a
   list; each label's tone; HTML inside a callout still inert).
+
+  **AMENDED (cycle 26 FO7): a stash inside a stash.** `kbMd_` stashes each
+  finished link or image as a sentinel and restores them in ONE pass at the
+  end — one pass is also what stops a sentinel smuggled into a URL from being
+  expanded. But a link's TEXT can hold an image: `[![logo](…)](…)`. The image
+  was stashed first, the link stashed with the image's sentinel inside it, and
+  the single pass restored only the outer one: the page drew the sentinel.
+  The text of a link — never its URL — is expanded when the link is stashed
+  (`linkText`), and an image inside a link is the `<img>` alone (its own
+  anchor would nest). Verify: the FO7 pin, driven, with hostile quotes.
 
 <a id="g161-inline-svg-is-not-encapsulated"></a>
 
@@ -5850,6 +7478,13 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   pinned, otherwise the note is found again by its id (`findCallNoteRow_`).
   Verify: the F32 (cycle 25) drive.
 
+  **AMENDED (cycle 26 F43): What's new.** `getWhatsNew` scans the KB id
+  column, then fetches the matching row by its index — unlocked, on every
+  Dashboard load. An article deleted between the two reads moves every row
+  up one, and the row under that index is another article: its title and
+  body would open for every rep as "What's new". The fetched row is checked
+  against the id it was found by; a mismatch shows nothing.
+
 <a id="g165-a-grant-earned-by-a-covered-period-applies-forward"></a>
 
 - **A grant EARNED by a period that is already covered must apply FORWARD
@@ -5912,6 +7547,45 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   the result view, the lock view and a retake start clean. Verify: the F44
   (cycle 25) DOM drive.
 
+  **AMENDED (cycle 26 F55): a view switch is a close.** A handbook quiz is a
+  view, not an overlay, so `closeOverlay`'s guard never saw it. Its own "Leave
+  quiz" asked; nothing else did — two characters typed in the bar's search
+  (the results replace the view 300 ms later), Back, a rail item, a phone tab,
+  the brand, Profile each ran `HB_QZ.taking = null` on question 9 of 12. One
+  guard, `hbHoldSitting_(again, stay)`, opens EVERY view switch (the F55 net
+  derives them: every function that calls `hbLeaveQuiz_()`); it asks once
+  however many ways out are tried, re-runs the switch if the reader leaves,
+  and on "Keep going" undoes what the attempt left behind — the search box is
+  emptied, a quiz popped off the history by Back is pushed again. Answers
+  already SENT are not asked about (the attempt is the server's); if the
+  reader has left when the result arrives it is said in a sticky toast and the
+  quiz list refreshed — it used to be dropped without a word. Verify: the F55
+  net (pure) and the F55 "a quiz in progress" DOM drive.
+
+  **AMENDED (cycle 26 F63): the three static modals.** The punch-adjustment
+  batch, Day Edit and the manager's time-off form are nodes in `modals.html`,
+  not overlays `ensureOverlay` creates — and the "typed into since this
+  open" listener is attached only in the creation branch, so none of the
+  three could ever be dirty, and one Escape lost a filled Day Edit. Each now
+  opens with `unsaved`. Their dirt is chosen per modal rather than "any
+  input": the Adjust modal opens with today's date, a punch type and the
+  time NOW, so its rule is a queued entry, a changed time or a typed reason;
+  Day Edit's date picker is how a manager moves between days, so it never
+  marks the modal dirty and a date change clears it (the form is replaced);
+  a slot filled by a BUTTON (Apply, + Add break, Confirm as is) fires no
+  input event and is marked through `deMarkTouched_`. A hook-less modal
+  closing after its own save passes `{ saved: true }` — it has nothing to
+  discard.
+
+  **AMENDED (cycle 26 FT2): the way out F63 left.** F63 made Escape, Cancel
+  and the backdrop ask before Day Edit's unsaved edits are lost, and noted
+  that the date picker "loads another day and clears the mark". That was the
+  one way left to lose them without a word: a manager fixing a clock-out who
+  then picks another date. The picker's change now asks the same question
+  (naming the day whose edits would go) when the modal is dirty; "Keep
+  editing" puts the picker back on the day being edited and loads nothing.
+  A clean modal, and a pick of the day already shown, ask nothing.
+
 <a id="g167-a-vocabulary-built-from-user-text-is-user-text"></a>
 
 - **A VOCABULARY built from user text is user text — "enum-only" holds only if
@@ -5926,6 +7600,63 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   of any allowlist: who wrote the list? Fires when you whitelist input against
   a list, or call a payload safe because it is validated. Verify: the KB-2
   drive (`kbGetFacetGuidance` end to end).
+
+  **AMENDED (cycle 26 F27): a count a page sends about its own user.** AC1's
+  activity levels are clicks and keystrokes per 10-minute block, counted in
+  the browser and sent with the next ping or after a pause. The server
+  validated the SHAPE — integers, a per-send cap, blocks within the last six
+  hours (a laptop asleep sends late) — and that validation read as safety.
+  But any block of six hours was accepted whether or not the rep had been
+  there, and the cap was per send: a rep back from two hours away could call
+  `recordActivityCounts` from the console with counts for the whole gap, as
+  many times as they liked, and the manager's bars showed steady work across
+  it. A rep cannot back-date a PING (its time is the server's, and it is what
+  first/last and the suggested punches use). So the counts are now believed
+  only beside one: a block's counts are drawn when a ping sits in that block
+  or the one either side, and a block's total is capped over every row. A
+  window that counts a gesture has always pinged within the ten minutes
+  before it, so real counts lose nothing; the ±1 allows for a client clock a
+  few minutes off the server's block boundaries. It is judged where the pings
+  are already in hand — the two readers and the nightly condense — not on the
+  write, which is the hot path and reads nothing; so it also holds for rows
+  and summaries stored before the rule. Blocks that were not drawn are
+  counted and said on Day Edit, never silently dropped.
+
+  **AMENDED (cycle 26 FS3): how often a page reports is a claim too.** F27
+  made the COUNTS a page sends about its user trustworthy only beside a
+  server-timed ping, capped per block at read time. The rows themselves had
+  no limit: `recordPresence` and `recordActivityCounts` each append one
+  ActivityLog row per call, lock-free, for any enrolled caller — so a stuck
+  page or a console loop grew a tab that Day Edit, Team Punches, the idle
+  card and the nightly condense all walk. The follow-on had been parked as
+  "measure first", for want of the legitimate rate. That rate is in the
+  client: a window sends at most one ping per ten-minute gap and one counts
+  row per two-minute pause — six rows a block at the very most. The limit is
+  forty rows a person per block (five windows at that ceiling, plus margin;
+  the pin derives the floor from the client's own constants). It is a
+  ScriptCache counter keyed by person and block: no lock, no property (g7),
+  and an unreadable cache ALLOWS — the limit must never be why a working
+  rep's day reads empty. Past it the presence and idle stamps still land, no
+  row is written, and the answer is `logged: false`, which the window already
+  treats as "keep these counts for the next send" (F30). The first refusal of
+  a block writes one `ActivityRowsLimited` audit row naming the person, which
+  Recent Activity reads as its note. It is deliberately NOT counted as a lost
+  row (`ACTIVITY_LOG_FAILS`): that record puts a caution on every rep's day,
+  and this is one person's page.
+
+  **AMENDED (cycle 26 FV2): the feedback endpoint's callers.** F22 opened
+  `submitIntakeFeedback` to any org sign-in, which is everyone in the domain,
+  and nothing bounded what one caller could do with it: add rows to the
+  Intake PHI store without end, or try submission ids (the endpoint answers
+  "Submission not found" for one that does not exist). It takes the activity
+  log's guard (FS3) — a cache counter per sender per hour, lock-free, a guard
+  and not an accounting. Every IDENTIFIED call counts, refused ones too, so
+  guessing ids spends the same allowance as writing rows. Past
+  `INTAKE_FEEDBACK_MAX_PER_HOUR` the call is refused before the lock; the
+  first refusal of an hour writes one AuditLog row (`IntakeFeedbackLimited`:
+  the sender and the limit, nothing typed). A cache that cannot be read
+  allows the call — the limit must never be why a recipient's feedback is
+  lost. Verify: the `FV2` pin (driven).
 
 <a id="g168-an-important-on-root-loses-to-a-declaration-on-body"></a>
 
@@ -5994,6 +7725,16 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   8.02:1 under the ink) and `--warn` itself in dark mode. MRD-5 now requires
   every `--on-warn` rule to sit on `--warn-fill`. Verify: MRD-5.
 
+  **AMENDED (cycle 26 FP2): a `-deep` fill is light in dark mode.** Since the
+  dark `-deep` tones mix toward the ink (g56), a rule that FILLS with one —
+  the hover of Clock Out, Approve, a destructive confirm, the Call Notes Clear
+  button — paints a light colour in dark mode. Three of the four already took
+  their text from `--paper-card`; `.cn-form-clear-btn:hover` said `color:
+  white`, which would have been about 2:1. It takes `--paper-card`. MEASURED on
+  hover, dark mode, before → after: Clock Out 3.99 → 8.49:1, Approve 7.29 →
+  13.64:1, Clear 4.62 → 8.49:1. The FP2 sweep fails on any rule in either app
+  that fills with a `-deep` tone and sets a literal white.
+
 <a id="g171-a-visually-hidden-absolute-element-escapes-its-scroller"></a>
 
 - **A visually hidden element is still POSITIONED — `position: absolute` with no
@@ -6037,3 +7778,74 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   it with. Fires when you build a "for how long" check on a cache entry, a
   heartbeat or any expiring stamp. Verify: the B8 pins (the driven
   `liveIdleMin_` grid, and `recordPresence` writing both stamps).
+
+<a id="g173-what-belongs-to-the-patient-on-a-form"></a>
+
+- **What belongs to the PATIENT on a form but lives outside its fields is
+  reset in ONE helper, on every path that replaces the form's subject (cycle 26
+  F1 + F19, 2026-11-13).** An intake form's fields are only part of what it
+  holds. Beside them, in memory, sit the attached insurance-card images, the
+  card reader's open suggestion, the id of the saved draft the form was opened
+  from, and the sent submission it is amending. Four paths replace a form's
+  patient — Clear, a send, opening a saved draft, amending a sent submission —
+  and each reset its own subset by hand. The amend path reset NONE of it: it
+  parked the sent submission's answers and navigated. So a rep who was mid-PMD
+  for patient A with A's card photos attached, and pressed Amend & re-send on
+  patient S, sent S's AMENDED email to Sales with A's insurance cards inline;
+  the stale saved-draft id then made that send delete A's parked draft (or a
+  Save draft overwrite it with S's answers); and after a send that answered
+  while the rep was on another view, the amendment flag stayed on a blank form.
+  The preview did say "N insurance card images will be sent" — on an
+  amendment the rep expects images there, since the original's are not stored.
+  RULES: (1) `intakeResetFormSubject_(form)` drops all of it, and it is the
+  ONLY code that empties a form's images; every subject change calls it,
+  including `intakeConsumeAmendPrefill_` itself, so a prefill parked by any
+  path lands on a clean form. (2) The amend flow clears the working autosave
+  and resets BEFORE it parks the prefill, and asks first (`intakeFormHolds_`)
+  when that form — on screen, or its autosave — holds answers or images. (3)
+  The autosave carries the saved-draft id, so a reload does not orphan the
+  draft a send should remove. (4) Re-opening the draft already on the form
+  skips the question only while nothing was typed or attached since
+  (`intakeSameAnswers_`). Fires when you add state beside a form's fields, or
+  a path that fills a form from somewhere else. Verify: the F1 derived net (the
+  callers, the order in the amend flow, ONE place that empties images) + the
+  F1 and F19 DOM drives.
+
+  **AMENDED (cycle 26 F21): the card reader merged every image as one card.**
+  The same shape one step along: not state that outlived its patient, but
+  values that belong to DIFFERENT cards read as one. `intakeCardRead_` folded
+  every attached image through `intakeCardMerge_`, whose rule — the first
+  value found for a field wins — is right for a front and its back and wrong
+  for anything else. A Humana card and an Aetna card gave "Humana · ID H123 ·
+  Group 555": Humana's ID beside Aetna's group, a line that names no card
+  anyone holds, offered to Sales as the patient's insurance. And because an
+  Advantage read voids the MBI, attaching the plan card beside the red, white
+  and blue card took the Medicare ID away. The design notes only ever
+  described "front and back".
+
+  Images are now grouped first (`intakeCardGroup_`, on `intakeCardRel_`): a
+  read joins a card it shares an ID, group or payer with; one with nothing to
+  tell it by goes with the image before it; a different ID, group or payer —
+  or a plan card against a Medicare card — starts another. Each card is its
+  own suggestion with its own line and buttons, and using one leaves the
+  others offered. One doubt is resolved the old way on purpose: an Advantage
+  read with no value of its own is taken as the back of the card before it,
+  and that card's MBI is withheld. Verify: the two `F21` pins (one over the
+  sixteen real reads in the fixture — every pair) and `F21 DOM`.
+
+  **AMENDED (cycle 26 FV1): putting a split card back.** Grouping has the
+  opposite failure to merging: a second photo of the same card whose ID is
+  misread by one character, or a payer the reader's list does not know
+  printed differently on front and back, is a `conflict`, and one card comes
+  out as two near-identical suggestions. That was recorded against F21 as its
+  new failure mode, with no way for the rep to say "these are one". Every
+  card after the first now carries "Same card as Card N" (the one above it).
+  `intakeCardJoinFields_` keeps the upper card's value for each field, fills
+  a blank from the lower, and marks every field the two DISAGREED on "Check
+  this one" — which read was right is the rep's call, and the box is where
+  they make it. The joined card keeps both cards' image numbers; nothing
+  reaches the form. The button is not offered where the join would drop a
+  Medicare ID one of the two holds (`intakeCardCanJoin_`, derived from the
+  merge itself): a Medicare card and a plan card are two cards, and one press
+  must not lose the number F21 was written to keep. Verify: the `FV1` pin
+  (over a real read with one character changed) and `FV1 DOM`.

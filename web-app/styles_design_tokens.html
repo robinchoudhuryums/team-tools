@@ -259,11 +259,20 @@
          mix toward a near-neutral dark barely moves the hue arc), but the
          light block was catastrophically wrong — so the same token rendered a
          DIFFERENT hue family per theme. Using oklab in both makes the pair
-         consistent and removes the trap for the next alias added here. */
-      --success-deep: color-mix(in oklab, var(--good),        var(--paper-card) 25%);
-      --warning-deep: color-mix(in oklab, var(--warn),        var(--paper-card) 25%);
-      --danger-deep:  color-mix(in oklab, var(--destructive), var(--paper-card) 25%);
-      --info-deep:    color-mix(in oklab, var(--info),        var(--paper-card) 25%);
+         consistent and removes the trap for the next alias added here.
+         Cycle 26: the mix is toward the INK, not the paper. A `-deep` tone is
+         the one text takes — on its own `-soft` tint, and on a card — and in
+         dark mode "deep" means FURTHER FROM THE CANVAS, which is lighter (the
+         fallback hexes above always were). Mixed 25% toward the paper they
+         came out DARKER than the base colour: MEASURED, --danger-deep 3.34:1
+         on --danger-soft and 3.99:1 on a plain card, --info-deep 4.34:1 on
+         --info-soft — under 4.5:1 on every pill, badge and "overdue" label
+         that wears one. The reader had its own override for this (FO1); the
+         fix belongs here, so every consumer has it and there is one definition. */
+      --success-deep: color-mix(in oklab, var(--good),        var(--ink) 30%);
+      --warning-deep: color-mix(in oklab, var(--warn),        var(--ink) 30%);
+      --danger-deep:  color-mix(in oklab, var(--destructive), var(--ink) 30%);
+      --info-deep:    color-mix(in oklab, var(--info),        var(--ink) 35%);
       --border-strong: color-mix(in oklch, var(--line), var(--ink) 25%);
     }
   }

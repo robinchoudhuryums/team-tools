@@ -60,6 +60,14 @@ function serveIntakeFeedbackPage_(submissionId, formType) {
  *  Same outcome contract as cnCountNotesResult_: {count, unavailable,
  *  unenrolled} — a failed read is never a confident 0. 2-column bounded read
  *  (the taxonomy pattern) + a substring pre-filter before any JSON.parse. */
+/** PURE (Node-pinned) — does this note's SubformData count as an INTAKE
+ *  CALL? It carries an intakeType, and it is not the note of an amended send
+ *  (cycle 26 DQ2): correcting a form already sent is not a new call, so it is
+ *  neither counted nor timed. A note saved before DQ2 has no mark and counts
+ *  as it always did. */
+function cnIntakeNoteCounts_(sd) {
+  return !!(sd && sd.intakeType && sd.intakeAmend !== true);
+}
 function cnCountIntakeNotesResult_(emp, from, to) {
   if (!emp || !emp.callNotesSheetId) return { count: 0, unavailable: false, unenrolled: true };
   try {
@@ -76,7 +84,7 @@ function cnCountIntakeNotesResult_(emp, from, to) {
       if (raw.indexOf('"intakeType"') < 0) continue;
       try {
         const sd = JSON.parse(raw);
-        if (sd && sd.intakeType) {
+        if (cnIntakeNoteCounts_(sd)) {
           n++;
           // M1: the intake form's time, when the send recorded it — a time no
           // call takes is not counted (METRICS_INTAKE_TIMED_*).
@@ -510,14 +518,59 @@ function intakeFeedbackResult_(formType, submissionId) {
     ? { items: r, unavailable: false }
     : { items: [], unavailable: true, error: String((r && r.error) || '') };
 }
-/** Rep-callable (the recipient IS an employee — intake recipients resolve from
- *  the roster). Locked (INV-01); the row is appended only when the submission
- *  actually EXISTS, so a mistyped/forged id can't seed junk rows. The audit
- *  row is PHI-free (id + type only — the feedback TEXT may reference the
- *  patient and stays in the Intake store). */
+/** PURE (Node-pinned) — F22 (cycle 26): who a feedback row is from. A roster
+ *  employee as before; otherwise anyone signed in to an org account, known by
+ *  that address alone. null = refuse. The button is put in every copy sent to
+ *  an org address (`isOrgEmail_(recipient)`), and since 25post B6 the usual
+ *  recipients are the Sales and PAP teams — read from the CDR roster, not on
+ *  this app's Employees sheet — so the roster-only gate answered the people
+ *  the button is for with "Not authorized." */
+function intakeFeedbackCaller_(emp, activeEmail) {
+  if (emp) return { id: emp.id, name: emp.name, email: emp.email, onRoster: true };
+  const e = String(activeEmail || '').trim().toLowerCase();
+  if (e && isOrgEmail_(e)) return { id: '', name: '', email: e, onRoster: false };
+  return null;
+}
+/** FV2 (cycle 26) — may this sender make another feedback call this hour?
+ *  The activity log's guard, for the same reason (FS3): cache only and
+ *  lock-free — a guard, not an accounting. EVERY identified call counts,
+ *  refused ones too, so trying submission ids is limited with the rows. A
+ *  cache that cannot be read ALLOWS the call: the limit must never be why a
+ *  recipient's feedback is lost. The first refusal of an hour writes ONE
+ *  AuditLog row (IntakeFeedbackLimited — the sender and the limit, nothing
+ *  typed). Never throws. */
+function intakeFeedbackAllowed_(who, nowMs) {
+  try {
+    const cache = CacheService.getScriptCache();
+    const key = INTAKE_FEEDBACK_RATE_PREFIX + who.email + ':' + Math.floor(nowMs / 3600000);
+    const d = activityRowDecision_(cache.get(key), INTAKE_FEEDBACK_MAX_PER_HOUR);
+    cache.put(key, String(d.next), INTAKE_FEEDBACK_RATE_TTL_SEC);
+    if (d.note) {
+      const at = new Date(nowMs);
+      writeAuditLog_(who, 'IntakeFeedbackLimited', fmtDate_(at), fmtTime_(at), false, 0,
+        'More than ' + INTAKE_FEEDBACK_MAX_PER_HOUR + ' intake feedback calls in an hour — the calls past the limit were refused', who.email);
+    }
+    return d.allow;
+  } catch (e) { return true; }
+}
+/** Callable by a roster employee or anyone signed in to an org account (F22 —
+ *  the recipient of the email is one or the other). Locked (INV-01); the row
+ *  is appended only when the submission actually EXISTS, so a mistyped/forged
+ *  id can't seed junk rows. The audit row is PHI-free (id + type only — the
+ *  feedback TEXT may reference the patient and stays in the Intake store). */
 function submitIntakeFeedback(submissionId, formType, text) {
-  const emp = getEmployeeInfo_();
-  if (!emp) return { success: false, error: 'Not authorized.' };
+  // The caller before the lock (F58). An address we cannot read is a different
+  // answer from one that is not ours (g128).
+  const active = getActiveUserEmail_();
+  const who = intakeFeedbackCaller_(getEmployeeInfo_(), active);
+  if (!who) {
+    return { success: false, error: active ? 'Not authorized.'
+      : 'Could not tell who is signed in \u2014 sign in with your work account, then open the link from the email again.' };
+  }
+  // FV2: one sender, a few an hour — refused before the lock, like the caller (F58).
+  if (!intakeFeedbackAllowed_(who, Date.now())) {
+    return { success: false, error: 'That is a lot of feedback in one hour \u2014 nothing more was sent. Try again later.' };
+  }
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
@@ -542,10 +595,10 @@ function submitIntakeFeedback(submissionId, formType, text) {
     }
     if (!found) return { success: false, error: 'Submission not found — the link may be stale.' };
     getIntakeFeedbackSheet_().appendRow(sheetSafeRow_([
-      fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), id, ft, emp.email, emp.name, body,
+      fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), id, ft, who.email, who.name, body,
     ]));
-    writeAuditLog_(emp, 'IntakeFeedback', fmtDate_(new Date()), '', false, 0,
-      'type=' + ft + '; submissionId=' + id, emp.email);
+    writeAuditLog_(who, 'IntakeFeedback', fmtDate_(new Date()), '', false, 0,
+      'type=' + ft + '; submissionId=' + id + (who.onRoster ? '' : '; sender not on the roster'), who.email);
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }

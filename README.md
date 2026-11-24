@@ -1,7 +1,9 @@
 # Team Tools
 
-Internal tooling for the UMS CSR team. Each tool is a separate Apps
-Script project synced via [clasp](https://github.com/google/clasp).
+Internal tooling for the UMS CSR team: two Apps Script projects synced via
+[clasp](https://github.com/google/clasp). Every Team Tools module is part of
+ONE project (`web-app/`); the second project is the handbook app
+(`handbook-app/`).
 
 ## Projects
 
@@ -38,7 +40,11 @@ Script project synced via [clasp](https://github.com/google/clasp).
     Me / Team switch, from the CDR Report's DQE Historical Data: the
     previous workday's KPIs, a 30-day workday % Answered trend and
     note-to-call coverage (CDR data is never same-day); the team aggregate
-    is for everyone, the per-rep table and diagnostics manager-only. The
+    is for everyone, the per-rep table and diagnostics manager-only. Adjusted
+    figures sit beside the actual ones (outbound calls from the CDR Report,
+    intake calls by their timed form; % Answered is never adjusted), and a
+    day the Department Dashboard marks as partly worked counts as its share
+    in the day-based figures — no count, total or rate changes. The
     **Spanish Inbox** tracks bilingual-assistance requests with a
     per-member resolution-share chart, a manager auto-assign of unclaimed
     requests (the assignee is emailed, sees a count on the tab and a toast
@@ -49,17 +55,19 @@ Script project synced via [clasp](https://github.com/google/clasp).
     `SPANISH_VM_MIN_SECONDS` is a hang-up and is suppressed, with the hidden
     count reported so the filter can never fail silently. App activity is
     kept as one summary row per rep per day (raw pings 14 days), which Day
-    Edit draws as the day's activity strip.
+    Edit draws as the day's activity strip. A punch time inferred from app
+    activity is marked as inferred; a rep can ask to have it confirmed as
+    is, and a manager approves.
   - **Call Notes** — rolling-note panel for CSR call logging. Each
     rep writes to their own per-rep Google Sheet; Ctrl/⌘+Shift+C saves
     and auto-copies a CRM-friendly serialization. Department emails
     are a separate two-stage flow with preview gate. Three flag
     types (action / training / review) with EOD reminders for
     unresolved action flags and weekly manager digests. A department
-    email's send tags its note (a Close Order by reason). A manager
-    Admin tab adds tag taxonomy + a weekly tag-trend panel (which
-    issue types are spiking), department/tax config, and compliance
-    audit. The **Dept Requests** tab tracks inter-department requests
+    email's send tags its note (a Close Order by reason). The
+    admin-only Admin tab (under Manage) adds tag taxonomy + a weekly
+    tag-trend panel (which issue types are spiking), department/tax
+    config, and compliance audit. The **Dept Requests** tab tracks inter-department requests
     with SLA status, a sort and a date range; a department's reply
     resolves a request unless it asks a question, any request can be
     reopened, and open requests for one TRX # to one department fold into
@@ -79,7 +87,11 @@ Script project synced via [clasp](https://github.com/google/clasp).
     the previewed and emailed form is always English, and each
     renders a branded email (two-stage, bodyHash-guarded) and persists a
     PHI backup row to the Intake spreadsheet; the shared AuditLog row
-    stays PHI-free.
+    stays PHI-free. A form can be parked as a named draft in the browser
+    for 24 hours (never with the SSN), and the insurance cards attached to
+    a PMD or PAP form can be read in the browser — one suggestion per
+    card, offered for the rep to confirm. A recipient's feedback on a
+    recommendation is accepted from any company sign-in.
   - **Reference** — in-app knowledge base: a per-department tree +
     section-aware full-text search + reader for training/policy docs.
     Markdown articles (rendered with HTML-escape-first) and embedded
@@ -216,9 +228,11 @@ the form-generator port shipped. Both live in git history.
 | [`docs/test-harness-log.md`](docs/test-harness-log.md) | What each batch added to each harness; the editor-test hazards; the fixture rules |
 
 `CLAUDE.md` opens with a Doc map that says which of these a given update
-belongs in. Numbers live in exactly one place — the generated block — so no
-file above should restate one; `node scripts/counts.mjs --check` enforces that
-in CI.
+belongs in. The derived counts live in exactly one place — the generated block
+— so no file above should restate one. Two checks hold that in CI:
+`node scripts/counts.mjs --check` compares the block with the tree, and a pin
+in the pure harness refuses a restated count in the live docs. A number that
+is not one of the block's rows is not covered by either.
 
 ## Development
 
@@ -227,9 +241,16 @@ deploy changes. After `clasp push`, cut a new deployment version in
 the Apps Script editor (Deploy → Manage deployments → Edit → Version:
 New version) so users see the change on next load.
 
+The handbook app is pushed from the repo root with `npm run handbook:push`
+(it checks that the copies are current first), then gets a New version in
+its own editor. Its page shell, reader and server readers are copies of
+Team Tools' (`npm run handbook:sync`), so a change to one of those is two
+deploys.
+
 A first-load onboarding tour (hand-rolled coach-marks in
 `script_tour.html`) walks new reps through the shell and the core tools;
-it auto-starts once and is replayable from the Call Notes **?** menu.
+it auto-starts once and is replayable from Settings (the gear) and the
+Call Notes **?** menu.
 
 The Apps Script test suite (`web-app/Tests.js`) runs from the editor
 (`runSmokeTests()` / `runAllTests()`; `runAllTestsPartA()` + `PartB()` split a
@@ -250,15 +271,21 @@ matrix is manual / on-demand, and since cycle 25 E5 a fixed subset runs in CI
 page past its content, squeezed text, a missing fixture, an uncaught error. (For how many scenarios — and for every other
 figure these docs used to carry in prose — run `node scripts/counts.mjs`, or
 read the **Running totals** block in `CLAUDE.md`. A hand-carried number here
-had drifted before; CI now fails on drift.) Four small companion harnesses live beside it and
+had drifted before; CI now fails on drift.) Small companion harnesses live beside it and
 answer questions a screenshot cannot: `print-check.mjs`, `a11y-names.mjs`,
-`a13-measure.mjs` and `fold-measure.mjs`. A GitHub Action
+`a13-measure.mjs`, `fold-measure.mjs`, `map-check.mjs` and
+`settings-check.mjs` are run by hand; `tour-check.mjs` and
+`contrast-check.mjs` run in CI. A GitHub Action
 (`.github/workflows/client-tests.yml`) runs a `node --check` of every server file /
 `Tests.js` / `DevTools.js` and the dependency-free pure harness FIRST, then
-`npm ci` + the DOM harness, the server identifier lint, the browser-free
+`npm ci`, the server identifier lint, the pure harness AGAIN with
+`REQUIRE_DEPS=1` (a pin that needed a package was a visible skip the first
+time), the check that the handbook app's copies are current
+(`scripts/handbook-sync.mjs --check`), the DOM harness, the browser-free
 handbook build, the counts block and the cycle close-out check
 (`scripts/cycle-closeout.mjs --check`), on every push and PR; a second job runs
-the visual subset above. These are the project's only automated checks — a
+the visual subset above, walks the onboarding tour and checks every handbook
+screen with axe and the contrast sweep. These are the project's only automated checks — a
 batch is green when the run on its pushed commit is. (The zero-install steps
 deliberately run before `npm ci`: a registry or jsdom-resolution failure must
 not stop the only checks that need no dependencies from running at all.)

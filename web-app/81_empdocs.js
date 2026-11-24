@@ -170,14 +170,24 @@ function getMyDoc(docId) {
     // The owner gets the completion affordance while the doc is still issued
     // (signature ack text when it requires a signature, regardless for fields).
     if (isOwner && d.status === 'issued') {
-      out.canComplete = true;
+      // Cycle 26 F44: only a document with something to DO offers it. A
+      // review-only document (no signature, no fields) showed a Submit that
+      // acknowledgeDoc always refused.
+      out.canComplete = !!(d.requiresSignature || (d.fields || []).length);
       if (d.requiresSignature) { out.ackText = EMPDOC_ACK_TEXT; out.ackVersion = EMPDOC_ACK_VERSION; }
     }
-    // ED1: a signed document's signature and initials boxes show what was
-    // drawn — read from its signature row, for exactly who may read the doc.
-    if (d.status === 'signed' && ((d.fields || []).some(function (f) { return EMPDOC_SIGN_FIELD_TYPES.indexOf(f.type) >= 0; }) || empDocHasSigBlock_(d.bodyMd))) {
+    // A finished document's signature row: what was drawn (ED1 — for exactly
+    // who may read the document) and, since cycle 26 F14, whether the RECORD
+    // still verifies. F44: the drawing goes with EVERY signed document — a
+    // written one with no [signature] line used to get none, so its finished
+    // copy never drew the signature.
+    if (d.status === 'signed' || d.status === 'completed') {
       const sr = empDocLatestSigRow_(d.docId);
-      if (sr) { out.signatureImage = String(sr[EDS.SIGNATURE] || ''); out.initialsImage = String(sr[EDS.INITIALS] || ''); }
+      if (sr && d.status === 'signed') { out.signatureImage = String(sr[EDS.SIGNATURE] || ''); out.initialsImage = String(sr[EDS.INITIALS] || ''); }
+      // The signature hash covers the responses, the signature and the
+      // initials — `integrity` above covers only the text and the fields. The
+      // PDF's bytes are checked where they are read (getEmpDocPdf).
+      out.record = empDocRecordState_(empDocVerdict_(d, sr, { pdf: false }));
     }
     return out;
   } catch (err) { return { error: err.message }; }
@@ -189,9 +199,19 @@ function empDocInitialsCheck_(fields, initialsDataUrl) {
   const wants = (Array.isArray(fields) ? fields : []).some(function (f) { return f && f.type === 'initials'; });
   if (!wants) return { initials: '' };
   const v = String(initialsDataUrl || '');
-  if (!/^data:image\/png;base64,[A-Za-z0-9+\/=]+$/.test(v)) return { error: 'Draw your initials before signing.' };
+  if (!empDocDrawnPng_(v)) return { error: 'Draw your initials before signing.' };
   if (v.length > EMPDOC_INITIALS_MAX_CHARS) return { error: 'The initials image is too large — clear it and draw them again.' };
   return { initials: v };
+}
+/** PURE (Node-pinned) — cycle 26 F44: is this a drawn PNG as the pad exports
+ *  it — a PNG data URL, base64 throughout, opening with the PNG signature and
+ *  long enough to hold a drawing? The signature was checked by its PREFIX
+ *  only, so a hand-made call could "sign" with `data:image/png;base64,` or
+ *  garbage: the record said signed and hashed it, and every reader then drew
+ *  nothing (their own check refused it). */
+function empDocDrawnPng_(v) {
+  const s = String(v || '');
+  return /^data:image\/png;base64,iVBORw0KGgo[A-Za-z0-9+\/]*={0,2}$/.test(s) && s.length >= EMPDOC_SIG_MIN_CHARS;
 }
 /** Rep-callable, locked (INV-01), OWNER-only — managers cannot sign on an
  *  employee's behalf (the signature's value is that the employee made it).
@@ -221,8 +241,8 @@ function acknowledgeDoc(docId, signatureDataUrl, responses, initialsDataUrl) {
     let sig = '';
     if (d.requiresSignature) {
       sig = String(signatureDataUrl || '');
-      if (sig.indexOf('data:image/png;base64,') !== 0) return { success: false, error: 'Draw your signature before submitting.' };
       if (sig.length > EMPDOC_SIG_MAX_CHARS) return { success: false, error: 'Signature image is too large — clear the pad and sign again.' };
+      if (!empDocDrawnPng_(sig)) return { success: false, error: 'Draw your signature before submitting.' };   // F44: the whole shape, not its prefix
     }
     // ED1: a document with an initials box takes the employee's drawn initials
     // (once — they fill every initials box). Any other document stores none.
@@ -309,22 +329,27 @@ function acknowledgeDoc(docId, signatureDataUrl, responses, initialsDataUrl) {
 function issueDoc(payload) {
   const callerEmp = getEmployeeInfo_();
   if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
-  const lock = LockService.getScriptLock();
-  lock.waitLock(15000);
-  let notifyAfter = null;
+  // Batch H: a PDF is checked and hashed first; its SHA-256 goes into the
+  // frozen body (empDocValidateIssue_), and the bytes are stored BEFORE the
+  // row that names them — a PDF that cannot be stored issues nothing.
+  // Cycle 26 F44: all of it — the decode, the SHA-256, the page count and the
+  // validation — runs BEFORE the project lock. It changes nothing, and a 4 MB
+  // PDF made every punch and note save wait on it (g17).
+  let pdf = null, v, lhPick;
   try {
-    // Batch H: a PDF is checked and hashed first; its SHA-256 goes into the
-    // frozen body (empDocValidateIssue_), and the bytes are stored BEFORE the
-    // row that names them — a PDF that cannot be stored issues nothing.
-    let pdf = null;
     if (payload && payload.pdf) {
       pdf = empDocPdfItem_(payload.pdf, payload.pdfName);
       if (pdf.error) return { success: false, error: pdf.error };
     }
-    const v = empDocValidateIssue_(payload, pdf ? { sha: pdf.sha, name: pdf.name, pages: pdf.pages } : null);
-    const lhPick = empDocLetterheadPick_(payload && payload.letterheadId, empDocLetterheads_());   // ED4
+    v = empDocValidateIssue_(payload, pdf ? { sha: pdf.sha, name: pdf.name, pages: pdf.pages } : null);
+    lhPick = empDocLetterheadPick_(payload && payload.letterheadId, empDocLetterheads_());   // ED4
     if (lhPick.error) return { success: false, error: lhPick.error };
     if (!v.ok) return { success: false, error: v.error };
+  } catch (err) { return { success: false, error: err.message }; }
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  let notifyAfter = null;
+  try {
     const target = lookupEmployeeById_(v.doc.empId);
     if (!target) return { success: false, error: 'Unknown employee.' };
     if (pdf) empDocPdfStoreCallerLocked_(pdf);
@@ -451,79 +476,129 @@ function verifyDocSignature(docId) {
     const found = findEmpDocRow_(docId);
     if (!found || !empDocCanManagerSee_(callerEmp, found.doc)) return { error: 'Document not found.' };
     const d = found.doc;
-    const expectContent = empDocContentHash_(d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw);
-    // C13 dual-verify — legacy space-form hashes stay valid (never tampered).
-    const contentMatch = !d.contentHash ? null
-      : empDocContentHashMatches_(d.contentHash, d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw);
-    // Newest signature row for the doc (bottom-up id-column scan).
-    const sigSheet = getOrCreateEmpDocSheet_(EMPDOC_SIG_TAB, EMPDOC_SIG_HEADERS);
-    const sigLast = sigSheet.getLastRow();
-    let sigRow = null;
-    if (sigLast >= 2) {
-      const ids = sigSheet.getRange(2, EDS.DOC_ID + 1, sigLast - 1, 1).getValues();
-      for (let i = ids.length - 1; i >= 0; i--) {
-        if (String(ids[i][0]).trim() === d.docId) {
-          sigRow = sigSheet.getRange(i + 2, 1, 1, EMPDOC_SIG_HEADERS.length).getValues()[0];
-          break;
-        }
-      }
-    }
-    // F-24: a null contentMatch is "cannot verify", not "verified" — say so.
-    const hashWarning = (contentMatch === null) ? 'No content hash on record — integrity cannot be verified (legacy or hand-entered row).' : '';
-    // Batch H: a PDF document's file is re-hashed too. A file that no longer
-    // matches is tampering; one that cannot be READ is unknown (null), never
-    // a verdict either way (g128).
-    let pdfMatch = null, pdfNote = '';
-    if (d.pdfKey) {
-      const pc = empDocPdfCheck_(d);
-      pdfMatch = pc.ok ? true : (pc.why === 'altered' || pc.why === 'missing' ? false : null);
-      if (!pc.ok) pdfNote = pc.error;
-    }
-    if (!sigRow) return { signed: false, contentMatch: contentMatch, pdfMatch: pdfMatch, pdfNote: pdfNote, tampered: (contentMatch === false || pdfMatch === false), warning: hashWarning };
-    const rowSig = String(sigRow[EDS.SIGNATURE] || '');
-    // Cycle-9 M-8: an EMPTY signature cell marks a fields-only COMPLETION row
-    // (acknowledgeDoc's else-branch) — same hash machinery, no signature
-    // segment. Report it as completed (not signed) so consumers don't render
-    // a signature that doesn't exist; match/tampered semantics identical.
-    const isCompletion = !rowSig.trim();
-    const storedHash = String(sigRow[EDS.SIG_HASH] || '').trim();
-    // F(cycle-8): mirror acknowledgeDoc's blank-stored-hash fallback — the
-    // sign path hashes with `d.contentHash || <freshly computed>`, so a
-    // legitimately-signed hand-entered/legacy row (blank ContentHash cell)
-    // used to recompute against '' here and report a FALSE tampered:true.
-    // C13 dual-verify — try the NUL form, then the legacy space form. For the
-    // blank-stored-ContentHash fallback each attempt uses ITS OWN era's
-    // content-hash recompute (a pre-change sign hashed a space-form expect;
-    // a post-change sign hashes the NUL form).
-    const ackVer = String(sigRow[EDS.ACK_VERSION] || '');
-    const rowInitials = String(sigRow[EDS.INITIALS] || '');   // ED1 — blank on every row signed before initials existed
-    const recomputed = empDocSignatureHash_(
-      d.contentHash || expectContent, d.empId, d.docId, rowSig, ackVer, d.responsesRaw, undefined, rowInitials);
-    const expectContentLegacy = empDocContentHash_(
-      d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw, EMPDOC_HASH_DELIM_LEGACY);
-    const recomputedLegacy = empDocSignatureHash_(
-      d.contentHash || expectContentLegacy, d.empId, d.docId, rowSig, ackVer,
-      d.responsesRaw, EMPDOC_HASH_DELIM_LEGACY);
-    const match = storedHash ? (storedHash === recomputed || storedHash === recomputedLegacy) : null;
-    // L-4 — a body-only rewrite trips `contentMatch` (body↔stored hash); a
-    // consistent body+contentHash rewrite trips `match` (the signature hash
-    // bound the sign-time contentHash). EITHER being false means tamper, so
-    // expose a single definitive flag — a consumer checking `match` alone
-    // would miss the body-only case. The append-only `EmpDocSigned` audit row
-    // remains the deeper independent witness. (legacy/unsigned → null, not
-    // tampered.)
-    return {
-      signed: !isCompletion,
-      completed: isCompletion,
-      contentMatch: contentMatch,
-      match: match,
-      pdfMatch: pdfMatch, pdfNote: pdfNote,   // Batch H
-      tampered: (contentMatch === false || match === false || pdfMatch === false),
-      warning: hashWarning,   // F-24
-      signedAt: trainCellTs_(sigRow[EDS.SIGNED_AT], getHrDocsSS_().getSpreadsheetTimeZone()),
-      ackVersion: String(sigRow[EDS.ACK_VERSION] || ''),
-    };
+    // Cycle 26 F14: the recompute is empDocVerdict_ — the ONE rule Verify, the
+    // certificate and the reader share.
+    return empDocVerdict_(d, empDocLatestSigRow_(d.docId));
   } catch (err) { return { error: err.message }; }
+}
+/** Cycle 26 F14 — whether a document's RECORD still matches what was issued
+ *  and signed: the content hash recomputed from the stored row, the signature
+ *  hash from its newest DocSignatures row (`sigRow`, or null when there is
+ *  none), and — unless `opts.pdf === false` — the stored PDF re-hashed.
+ *  Legacy and unsigned rows report explicitly, never as failures.
+ *
+ *  `verified` is the one answer to "may this say verified?" (F13): TRUE only
+ *  when there is a signature or completion row, nothing mismatched, and
+ *  NOTHING was left unchecked. A check that could not be made is listed in
+ *  `unchecked` — a PDF that could not be read used to leave `tampered` false,
+ *  and Verify said "Integrity verified" about bytes nobody had hashed. */
+function empDocVerdict_(d, sigRow, opts) {
+  const o = opts || {};
+  const expectContent = empDocContentHash_(d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw);
+  // C13 dual-verify — legacy space-form hashes stay valid (never tampered).
+  const contentMatch = !d.contentHash ? null
+    : empDocContentHashMatches_(d.contentHash, d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw);
+  // F-24: a null contentMatch is "cannot verify", not "verified" — say so.
+  const hashWarning = (contentMatch === null) ? 'No content hash on record — integrity cannot be verified (legacy or hand-entered row).' : '';
+  // Batch H: a PDF document's file is re-hashed too. A file that no longer
+  // matches is tampering; one that cannot be READ is unknown (null), never
+  // a verdict either way (g128).
+  let pdfMatch = null, pdfNote = '';
+  const checkPdf = !!d.pdfKey && o.pdf !== false;
+  if (checkPdf) {
+    const pc = empDocPdfCheck_(d);
+    pdfMatch = pc.ok ? true : (pc.why === 'altered' || pc.why === 'missing' ? false : null);
+    if (!pc.ok) pdfNote = pc.error;
+  }
+  const unchecked = [];
+  if (contentMatch === null) unchecked.push('no content hash is on record');
+  if (checkPdf && pdfMatch === null) unchecked.push('the PDF could not be read');
+  if (!sigRow) {
+    return { signed: false, contentMatch: contentMatch, pdfMatch: pdfMatch, pdfNote: pdfNote, tampered: (contentMatch === false || pdfMatch === false), warning: hashWarning,
+      verified: false, unchecked: unchecked, hasPdf: !!d.pdfKey };
+  }
+  const rowSig = String(sigRow[EDS.SIGNATURE] || '');
+  // Cycle-9 M-8: an EMPTY signature cell marks a fields-only COMPLETION row
+  // (acknowledgeDoc's else-branch) — same hash machinery, no signature
+  // segment. Report it as completed (not signed) so consumers don't render
+  // a signature that doesn't exist; match/tampered semantics identical.
+  const isCompletion = !rowSig.trim();
+  const storedHash = String(sigRow[EDS.SIG_HASH] || '').trim();
+  // F(cycle-8): mirror acknowledgeDoc's blank-stored-hash fallback — the
+  // sign path hashes with `d.contentHash || <freshly computed>`, so a
+  // legitimately-signed hand-entered/legacy row (blank ContentHash cell)
+  // used to recompute against '' here and report a FALSE tampered:true.
+  // C13 dual-verify — try the NUL form, then the legacy space form. For the
+  // blank-stored-ContentHash fallback each attempt uses ITS OWN era's
+  // content-hash recompute (a pre-change sign hashed a space-form expect;
+  // a post-change sign hashes the NUL form).
+  const ackVer = String(sigRow[EDS.ACK_VERSION] || '');
+  const rowInitials = String(sigRow[EDS.INITIALS] || '');   // ED1 — blank on every row signed before initials existed
+  const recomputed = empDocSignatureHash_(
+    d.contentHash || expectContent, d.empId, d.docId, rowSig, ackVer, d.responsesRaw, undefined, rowInitials);
+  const expectContentLegacy = empDocContentHash_(
+    d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw, EMPDOC_HASH_DELIM_LEGACY);
+  const recomputedLegacy = empDocSignatureHash_(
+    d.contentHash || expectContentLegacy, d.empId, d.docId, rowSig, ackVer,
+    d.responsesRaw, EMPDOC_HASH_DELIM_LEGACY);
+  const match = storedHash ? (storedHash === recomputed || storedHash === recomputedLegacy) : null;
+  if (match === null) unchecked.push('no signature hash is on record');
+  // L-4 — a body-only rewrite trips `contentMatch` (body↔stored hash); a
+  // consistent body+contentHash rewrite trips `match` (the signature hash
+  // bound the sign-time contentHash). EITHER being false means tamper, so
+  // expose a single definitive flag — a consumer checking `match` alone
+  // would miss the body-only case. The append-only `EmpDocSigned` audit row
+  // remains the deeper independent witness. (legacy/unsigned → null, not
+  // tampered.)
+  const tampered = (contentMatch === false || match === false || pdfMatch === false);
+  return {
+    signed: !isCompletion,
+    completed: isCompletion,
+    contentMatch: contentMatch,
+    match: match,
+    pdfMatch: pdfMatch, pdfNote: pdfNote,   // Batch H
+    tampered: tampered,
+    warning: hashWarning,   // F-24
+    signedAt: trainCellTs_(sigRow[EDS.SIGNED_AT], getHrDocsSS_().getSpreadsheetTimeZone()),
+    ackVersion: String(sigRow[EDS.ACK_VERSION] || ''),
+    verified: !tampered && !unchecked.length,   // F13
+    unchecked: unchecked,
+    hasPdf: !!d.pdfKey,
+  };
+}
+/** PURE (Node-pinned) — F14: a verdict as the reader's one word: 'altered'
+ *  (something mismatched), 'ok' (everything asked for was checked and
+ *  matches) or 'unverifiable' (a hash is not on record — a legacy row). */
+function empDocRecordState_(v) {
+  if (!v) return 'unverifiable';
+  if (v.tampered) return 'altered';
+  return v.verified ? 'ok' : 'unverifiable';
+}
+/** PURE (Node-pinned) — F14: the sentence a certificate (and the copy made
+ *  with it) carries about its own record, from the verdict; `when` is the
+ *  moment it was checked. Never a bare "verified": it says WHAT was checked,
+ *  or what was not and why. */
+function empDocVerdictLine_(v, when) {
+  if (!v) return 'NOT VERIFIED — the record could not be checked.';
+  const what = v.completed ? 'completed' : 'signed';
+  if (v.tampered) {
+    const why = [];
+    if (v.contentMatch === false) why.push('the document\'s text or fields were changed after it was issued');
+    if (v.match === false) why.push('the ' + (v.completed ? 'responses' : 'signature, the responses or the initials') + ' were changed after it was ' + what);
+    if (v.pdfMatch === false) why.push(String(v.pdfNote || 'the PDF on file is not the one that was issued').replace(/\.$/, '').replace(/^T/, 't'));
+    return 'NOT VERIFIED — the HR record no longer matches what was ' + what + ': ' + why.join('; ') + '. Do not rely on this certificate.';
+  }
+  if (!v.verified) return 'NOT VERIFIED — ' + (v.unchecked || []).join('; ') + ', so this record could not be checked.';
+  return 'Verified ' + when + ': the content hash' + (v.hasPdf ? ', the PDF\'s SHA-256' : '') + ' and the ' + (v.completed ? 'completion' : 'signature') +
+    ' hash were recomputed from the HR record when this certificate was made, and match.';
+}
+/** PURE (Node-pinned) — F44: the acknowledgement as it read at `version` (the
+ *  version on the signature row), or a line saying that version's text is not
+ *  on file — never the CURRENT text under an older signature. */
+function empDocAckTextFor_(version) {
+  const v = String(version == null ? '' : version).trim();
+  if (v && Object.prototype.hasOwnProperty.call(EMPDOC_ACK_TEXTS, v)) return 'v' + v + ' — ' + EMPDOC_ACK_TEXTS[v];
+  return v ? 'v' + v + ' — the text of this version is not on file.' : 'No acknowledgement version is on record.';
 }
 // ── Batch H (operator 2026-11-02): a document issued AS A PDF ───────────────
 /** A chosen PDF as an EmpDocFiles item — {key, sha, contentType, kind, base64,
@@ -633,9 +708,14 @@ function empDocCertificateHtml_(c) {
     '<td style="padding:0 0 10px;vertical-align:middle"><div style="font-size:16px;font-weight:700;color:#1b3a5c">' + esc_(lh.name) + '</div>' +
     (lh.address ? '<div style="color:#555;font-size:11px">' + String(lh.address).split('\n').map(esc_).join('<br>') + '</div>' : '') + '</td></tr></table>' : '';
   const foot = lh && lh.footer ? '<p style="margin:22px 0 0;padding-top:8px;border-top:1px solid #ccc;color:#777;font-size:10px;text-align:center">' + esc_(lh.footer) + '</p>' : '';
+  // Cycle 26 F14: the certificate says whether its own record verified when it
+  // was made. NOT verified is a box under the title nobody can miss; verified
+  // is a row of the table. A caller that passes no verdict draws neither.
+  const vBad = c.verdict && !c.verified
+    ? '<table style="border-collapse:collapse;width:100%;margin:0 0 14px"><tr><td style="border:2px solid #b3261e;background:#fdecea;color:#7a1410;padding:8px 10px;font-weight:700">' + esc_(c.verdict) + '</td></tr></table>' : '';
   return '<html><body style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#111;margin:28px">' + head +
     '<h1 style="font-size:18px;margin:0 0 4px">Certificate of ' + (c.signed ? 'signature' : 'completion') + '</h1>' +
-    '<p style="margin:0 0 14px;color:#555">UMS Team Tools · Employee documents</p>' +
+    '<p style="margin:0 0 14px;color:#555">UMS Team Tools · Employee documents</p>' + vBad +
     '<table style="border-collapse:collapse">' +
       row('Document', c.title) + row('Type', c.docType) + row('Employee', c.empName + ' (' + c.empId + ')') +
       row('Issued', c.issuedAt + (c.issuedBy ? ' by ' + c.issuedBy : '')) +
@@ -643,6 +723,7 @@ function empDocCertificateHtml_(c) {
       (c.pdf ? row('PDF file', c.pdf.name) + row('PDF SHA-256', c.pdf.sha) : '') +
       row('Content hash', c.contentHash) + row('Signature hash', c.sigHash) +
       row('Acknowledgement', c.ackText) +
+      (c.verdict && c.verified ? row('Verification', c.verdict) : '') +
     '</table>' +
     (fields ? '<p style="margin:14px 0 4px;color:#555;font-weight:600">Responses</p><table style="border-collapse:collapse">' + fields + '</table>' : '') +
     sig +
@@ -666,19 +747,27 @@ function getEmpDocCertificate(docId) {
     const sigRow = empDocLatestSigRow_(d.docId);
     if (!sigRow) return { error: 'No signature record was found for this document.' };
     const target = lookupEmployeeById_(d.empId);
+    // Cycle 26 F14: the record is verified HERE, as Verify does it — the
+    // certificate was built straight from the stored cells, so an altered
+    // response printed beside the original signature hash.
+    const verdict = empDocVerdict_(d, sigRow);
+    const now = new Date();
+    const verdictLine = empDocVerdictLine_(verdict, fmtDate_(now) + ' ' + fmtTime_(now) + ' ' + tzAbbr_(CONFIG.TIMEZONE));
     const html = empDocCertificateHtml_({
+      verified: verdict.verified, verdict: verdictLine,
       title: d.title, docType: d.docType, empId: d.empId, empName: target ? target.name : 'former employee',
       issuedAt: d.issuedAt, issuedBy: d.issuedBy, signed: d.status === 'signed',
       signedAt: trainCellTs_(sigRow[EDS.SIGNED_AT], getHrDocsSS_().getSpreadsheetTimeZone()) || d.signedAt,
       pdf: d.pdfKey ? empDocPdfFromBody_(d.bodyMd) : null, contentHash: d.contentHash,
-      sigHash: String(sigRow[EDS.SIG_HASH] || ''), ackText: EMPDOC_ACK_TEXT,
+      sigHash: String(sigRow[EDS.SIG_HASH] || ''), ackText: empDocAckTextFor_(sigRow[EDS.ACK_VERSION]),   // F44: the version that was signed
       fields: d.fields || [], responses: d.responses || {}, signature: String(sigRow[EDS.SIGNATURE] || ''),
       initials: String(sigRow[EDS.INITIALS] || ''), letterhead: empDocLetterheadView_(d.letterheadId) });
     let pdf;
     try { pdf = Utilities.newBlob(html, 'text/html', 'certificate.html').getAs('application/pdf'); }
     catch (e) { return { error: 'The certificate could not be made into a PDF here: ' + ((e && e.message) || e) }; }
     const name = (String(d.title || 'document').replace(/[\\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'document') + ' - certificate.pdf';
-    return { success: true, dataUri: 'data:application/pdf;base64,' + Utilities.base64Encode(pdf.getBytes()), fileName: name };
+    return { success: true, dataUri: 'data:application/pdf;base64,' + Utilities.base64Encode(pdf.getBytes()), fileName: name,
+      verified: verdict.verified, tampered: verdict.tampered, verdict: verdictLine };   // F14: the viewer and the copy read it
   } catch (err) { return { error: err.message }; }
 }
 // ── ED4 (operator 2026-11-09): letterheads ───────────────────────────────────
@@ -876,11 +965,6 @@ function empDocLetterheadPick_(id, list) {
   if (!v) return { id: '' };
   return (list || []).some(function (l) { return l.id === v; }) ? { id: v } : { error: 'That letterhead no longer exists — pick another.' };
 }
-/** PURE (Node-pinned) — ED4: does a written document's body carry a
- *  signature block (a `[signature]` line)? */
-function empDocHasSigBlock_(bodyMd) {
-  return /(^|\n)[ \t]*\[signature\][ \t]*(\n|$)/i.test(String(bodyMd || ''));
-}
 // ── ED3 (operator 2026-11-06): a finished document's copy, emailed ──────────
 /** PURE (Node-pinned) — ED3: who a finished document's copy goes to. The
  *  employee is To; the managers (when chosen) and any other addresses are Cc;
@@ -919,14 +1003,20 @@ function empDocCopyEmailParts_(c) {
   const note = String(c.note || '').trim().slice(0, 1000);
   const when = String(c.signedAt || '').slice(0, 10);
   const subject = 'Copy: ' + String(c.title || 'Document') + ' (' + what + (when ? ' ' + when : '') + ')';
+  // Cycle 26 F15: the attachment is put together in the SENDER's browser — the
+  // server cannot vouch for its bytes — so the message says so, and where the
+  // record is.
+  const made = 'This copy was put together on ' + c.senderName + '\'s computer; Team Tools did not produce the attachment. The record is the certificate held in Team Tools (Training & Employee Docs).';
   const lines = [
     c.senderName + ' sent you a copy of "' + c.title + '", ' + what + ' by ' + c.empName + (when ? ' on ' + when : '') + '.',
     note ? '\n' + c.senderName + ' wrote: ' + note : '',
     '\nThe attached PDF (' + c.fileName + ') is a copy made from the ' + what + ' original. The certificate on its last pages is the record; the HR record holds the original.',
+    '\n' + made,
   ];
   const inner = '<p style="margin:0 0 12px;">' + esc_(c.senderName) + ' sent you a copy of <b>' + esc_(c.title) + '</b>, ' + what + ' by ' + esc_(c.empName) + (when ? ' on ' + esc_(when) : '') + '.</p>' +
     (note ? '<p style="margin:0 0 12px;white-space:pre-wrap;"><i>' + esc_(c.senderName) + ' wrote:</i> ' + esc_(note) + '</p>' : '') +
-    '<p style="margin:0 0 4px;">Attached: <b>' + esc_(c.fileName) + '</b> — a copy made from the ' + what + ' original. The certificate on its last pages is the record; the HR record holds the original.</p>';
+    '<p style="margin:0 0 8px;">Attached: <b>' + esc_(c.fileName) + '</b> — a copy made from the ' + what + ' original. The certificate on its last pages is the record; the HR record holds the original.</p>' +
+    '<p style="margin:0 0 4px;color:#555;font-size:12px;">' + esc_(made) + '</p>';
   return { subject: subject, body: lines.join('\n'), inner: inner };
 }
 /** PURE (Node-pinned) — ED3: the audit row's note: the document, the copy's
@@ -937,6 +1027,31 @@ function empDocCopyAuditNote_(docId, sha, bytes, r, isOrg) {
   const org = all.filter(function (a) { return isOrg(a); });
   const out = all.filter(function (a) { return !isOrg(a); }).map(function (a) { return a.split('@')[1]; });
   return 'docId=' + docId + '; sha256=' + sha + '; bytes=' + bytes + '; to=' + org.join(',') + (out.length ? '; outside=' + out.join(',') : '');
+}
+/** PURE (Node-pinned) — cycle 26 F15: which of a document's two manager
+ *  addresses — its stored issuer and the employee's roster manager — a COPY
+ *  may go to. Only one that is a manager on the roster NOW: the stored issuer
+ *  outlives the role (g153), and this is the whole signed document, not a
+ *  notice, so it is never rerouted to anyone else either. `rosterManagers` is
+ *  the lower-cased addresses of the roster's managers, or null when the roster
+ *  could not be read — then neither is included. → { list, dropped, why }. */
+function empDocCopyManagers_(issuedBy, repManagerEmail, rosterManagers) {
+  const out = { list: [], dropped: [], why: '' };
+  const seen = {};
+  [issuedBy, repManagerEmail].forEach(function (a) {
+    const s = String(a || '').trim().toLowerCase();
+    if (!s || seen[s]) return;
+    seen[s] = true;
+    if (rosterManagers && rosterManagers.indexOf(s) >= 0) out.list.push(s); else out.dropped.push(s);
+  });
+  if (out.dropped.length) out.why = rosterManagers ? 'no longer a manager on the team roster' : 'the team roster could not be read, so nobody could be confirmed as a manager';
+  return out;
+}
+/** F15 — how many copies this person has emailed inside the window (0 when the
+ *  cache cannot be read: the cap is a guard, and an unreadable cache must not
+ *  stop an HR document being sent). */
+function empDocCopySentCount_(empId) {
+  try { return Number(CacheService.getScriptCache().get('edcopy:' + empId)) || 0; } catch (e) { return 0; }
 }
 /** Employee-callable — ED3: email a finished document's filled copy (built in
  *  the browser) to the employee, the managers if chosen (its issuer and the
@@ -961,8 +1076,16 @@ function emailEmpDocCopy(docId, opts) {
     const extra = Array.isArray(opts.extra) ? opts.extra : [];
     if (extra.length > EMPDOC_COPY_EXTRA_MAX) return { error: 'At most ' + EMPDOC_COPY_EXTRA_MAX + ' other addresses.' };
     const target = lookupEmployeeById_(d.empId);
-    const managers = opts.managers ? [d.issuedBy, target && target.managerEmail] : [];
-    const r = empDocCopyRecipients_(target && target.email, managers, extra, isOrgEmail_);
+    // F15: "the managers" are the issuer and the roster manager only while
+    // each is a manager on the roster today; one who is not is left out and
+    // named in the preview.
+    let mgr = { list: [], dropped: [], why: '' };
+    if (opts.managers) {
+      let rosterMgrs = null;
+      try { rosterMgrs = rosterManagerEmails_(); } catch (eR) { rosterMgrs = null; }
+      mgr = empDocCopyManagers_(d.issuedBy, target && target.managerEmail, rosterMgrs);
+    }
+    const r = empDocCopyRecipients_(target && target.email, mgr.list, extra, isOrgEmail_);
     if (r.bad.length) return { error: 'Not an email address: ' + r.bad.join(', ') + '.' };
     if (!r.to.length) return { error: 'There is no one to send it to — the employee has no email on the roster.' };
     const fileName = empDocCopyFileName_(d.title);
@@ -970,7 +1093,13 @@ function emailEmpDocCopy(docId, opts) {
       signedAt: d.signedAt, senderName: emp.name, note: opts.note, fileName: fileName });
     if (opts.preview) {
       return { success: true, preview: true, to: r.to, cc: r.cc, outside: r.outside, subject: parts.subject, html: parts.inner, fileName: fileName,
-        maxBytes: EMPDOC_COPY_MAX_BYTES };
+        maxBytes: EMPDOC_COPY_MAX_BYTES, notIncluded: mgr.dropped, notIncludedWhy: mgr.why };
+    }
+    // F15: a cap per person. Nothing limited repeats, and every send spends
+    // the one daily mail allowance the alerts and digests share.
+    const sentSoFar = empDocCopySentCount_(emp.id);
+    if (sentSoFar >= EMPDOC_COPY_WINDOW_MAX) {
+      return { error: 'You have emailed ' + sentSoFar + ' copies in the last few hours, which is the limit. Download the copy and attach it to your own email, or try again later.', capped: true };
     }
     if (r.outside.length && opts.outsideOk !== true) {
       return { error: 'Sending outside the company (' + r.outside.join(', ') + ') needs a confirm.', needsConfirm: true, outside: r.outside };
@@ -985,6 +1114,7 @@ function emailEmpDocCopy(docId, opts) {
     sendRepEmail_(emp, { to: r.to.join(','), cc: r.cc.join(','), subject: parts.subject, body: parts.body,
       htmlBody: buildBrandedEmailHtml_('A copy of ' + d.title, parts.inner, { subLabel: 'Employee documents', statusLabel: 'Copy' }),
       attachments: [Utilities.newBlob(raw, 'application/pdf', fileName)] });
+    try { CacheService.getScriptCache().put('edcopy:' + emp.id, String(sentSoFar + 1), EMPDOC_COPY_WINDOW_SECS); } catch (eC) { /* the cap is best-effort */ }
     writeAuditLog_(emp, 'EmpDocCopyEmailed', fmtDate_(new Date()), '', false, 0, empDocCopyAuditNote_(d.docId, sha, raw.length, r, isOrgEmail_));
     return { success: true, sent: r.to.length + r.cc.length, to: r.to, cc: r.cc };
   } catch (err) { return { error: 'The copy was not sent: ' + ((err && err.message) || err) }; }
@@ -1039,16 +1169,18 @@ function saveEmpDocTemplate(payload) {
     if (existing) {
       templateId = existing.tpl.templateId;
       const r = existing.rowIdx;
-      sheet.getRange(r, EDT.NAME + 1).setValue(sheetSafe_(v.tpl.name));
+      // F44 (cycle 26): the name and body are '@' cells (EMPDOC_TPL_TEXT_IDX) —
+      // "3/4" stays a name, and a body that opens with an apostrophe keeps it.
+      sheet.getRange(r, EDT.NAME + 1).setNumberFormat('@').setValue(sheetText_(v.tpl.name));
       sheet.getRange(r, EDT.DOC_TYPE + 1).setValue(sheetSafe_(v.tpl.docType));
-      sheet.getRange(r, EDT.BODY_MD + 1).setValue(sheetSafe_(v.tpl.bodyMd));
+      sheet.getRange(r, EDT.BODY_MD + 1).setNumberFormat('@').setValue(sheetText_(v.tpl.bodyMd));
       sheet.getRange(r, EDT.FIELDS + 1).setValue(sheetSafe_(fieldsRaw));
       sheet.getRange(r, EDT.REQUIRES_SIG + 1).setValue(sheetSafe_(v.tpl.requiresSignature ? 'TRUE' : 'FALSE'));
     } else {
       templateId = Utilities.getUuid();
       const now = new Date();
-      sheet.appendRow(sheetSafeRow_([templateId, v.tpl.name, v.tpl.docType, v.tpl.bodyMd, fieldsRaw,
-        v.tpl.requiresSignature ? 'TRUE' : 'FALSE', callerEmp.email, fmtDate_(now) + ' ' + fmtTime_(now)]));
+      appendRowsTextSafe_(sheet, [[templateId, v.tpl.name, v.tpl.docType, v.tpl.bodyMd, fieldsRaw,
+        v.tpl.requiresSignature ? 'TRUE' : 'FALSE', callerEmp.email, fmtDate_(now) + ' ' + fmtTime_(now)]], EMPDOC_TPL_TEXT_IDX);
     }
     writeAuditLog_(callerEmp, 'EmpDocTemplateSave', '', '', false, 0,
       'templateId=' + templateId + '; name=' + v.tpl.name, callerEmp.email);
@@ -1111,16 +1243,22 @@ function hrNoticeRoute_(stored, repManagerEmail, rosterManagers, gateManagers) {
 }
 /** F41 — hrNoticeRoute_ over the live roster's managers and MANAGER_EMAILS. */
 function hrNoticeTargets_(stored, repManagerEmail) {
-  let rows;
+  let mgrs;
   // An unreadable roster cannot say who left — the notice goes where it was
   // always sent rather than nowhere (a best-effort mail never blocks the sign).
-  try { rows = getEmployeeRosterRows_(); } catch (e) { return { to: stored ? [String(stored).trim()] : [], rerouted: false }; }
+  try { mgrs = rosterManagerEmails_(); } catch (e) { return { to: stored ? [String(stored).trim()] : [], rerouted: false }; }
+  return hrNoticeRoute_(stored, repManagerEmail, mgrs, getManagerEmails_());
+}
+/** The lower-cased addresses of the roster rows that are managers today.
+ *  THROWS when the roster cannot be read — each caller chooses what that means. */
+function rosterManagerEmails_() {
+  const rows = getEmployeeRosterRows_();
   const mgrs = [];
   for (let i = 1; i < rows.length; i++) {
     const e = empRosterEmail_(rows[i]).toLowerCase();
     if (e && /^(true|yes|y|1)$/i.test(String(rows[i][EMP.IS_MANAGER] || '').trim())) mgrs.push(e);
   }
-  return hrNoticeRoute_(stored, repManagerEmail, mgrs, getManagerEmails_());
+  return mgrs;
 }
 /** F41 — the line a rerouted HR notice opens with. */
 function hrDepartedIssuerLine_(who, what) {

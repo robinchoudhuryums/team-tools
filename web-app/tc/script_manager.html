@@ -328,9 +328,43 @@ function payCloseSummary_(res) {
   const ended = periods.filter(function (p) { return p.which === 'previous' && (left(p) > 0 || p.error); });
   const cur = periods.filter(function (p) { return p.which === 'current' && (left(p) > 0 || p.error); });
   const n = periods.reduce(function (t, p) { return t + left(p); }, 0) + (res.orphans || []).length;
-  if (!n && !ended.length && !cur.length) return { text: 'ready', tone: 'ok' };
-  if (ended.length) return { text: n + ' item' + (n === 1 ? '' : 's') + ' · a period that has ended', tone: 'crit' };
-  return { text: n + ' item' + (n === 1 ? '' : 's') + ' in the current period', tone: 'warn' };
+  // FR1 (cycle 26): inferred times nobody has confirmed are named beside the
+  // state, never counted into it — they do not stand between a period and its export.
+  const inf = periods.reduce(function (t, p) { return t + ((p.counts && p.counts.inferred) || 0); }, 0);
+  const tail = inf ? ' · ' + inf + ' inferred to check' : '';
+  if (!n && !ended.length && !cur.length) return { text: 'ready' + tail, tone: 'ok' };
+  if (ended.length) return { text: n + ' item' + (n === 1 ? '' : 's') + ' · a period that has ended' + tail, tone: 'crit' };
+  return { text: n + ' item' + (n === 1 ? '' : 's') + ' in the current period' + tail, tone: 'warn' };
+}
+/** PURE (Node + DOM pinned) — FR1: one period's clock times set from app
+ *  activity that nobody has confirmed. Each inside the Day Edit window is a
+ *  button that opens that rep's day (where Confirm as is lives); an older one
+ *  is text. '' for a period with none. `adjustWindowDays` is the payload's. */
+function payCloseInferredHtml_(p, adjustWindowDays) {
+  const total = (p && p.counts && p.counts.inferred) || 0;
+  const list = (p && p.inferred) || [];
+  if (!total || !list.length) return '';
+  const label = { ClockIn: 'Clock In', ClockOut: 'Clock Out' };
+  const items = list.map(function (x) {
+    // FS1: the rep has already asked for this time to be confirmed.
+    const text = esc(x.name) + ' · ' + esc(x.date) + ' · ' + esc(label[x.type] || x.type) + ' ' + esc(dispTime(x.time)) +
+      (x.requested === true ? ' · rep asked to confirm' : '');
+    if (x.editable) {
+      return '<button type="button" class="refresh-btn" style="margin:2px 4px 2px 0" data-emp-id="' + esc(x.id) + '" data-emp-name="' + esc(x.name) +
+        '" data-date="' + esc(x.date) + '" data-tz="' + esc(x.timezone || '') + '" onclick="mgrPayCloseEdit_(this)">' + icon('adjust', 12) + text + '</button>';
+    }
+    return '<span style="display:inline-block;margin:2px 6px 2px 0;font-size:12px;color:var(--muted)">' + text +
+      ' — past the ' + esc(String(adjustWindowDays)) + '-day edit window</span>';
+  }).join('');
+  const askedN = (p.counts && p.counts.inferredRequested) || 0;
+  const askedLine = askedN > 0
+    ? '<div class="payclose-inf-asked">' + esc(askedN === total ? (total === 1 ? 'The rep has' : 'The reps have') + ' asked to confirm ' + (total === 1 ? 'it' : 'all of them')
+        : askedN + ' of them ' + (askedN === 1 ? 'has' : 'have') + ' a rep’s request to confirm waiting') +
+      ' — approving it under Pending Punch Adjustments confirms the time.</div>'
+    : '';
+  const more = total > list.length ? ' <span style="font-size:12px;color:var(--muted)">and ' + esc(String(total - list.length)) + ' more</span>' : '';
+  return '<div class="payclose-inf"><div class="payclose-inf-head">' + esc(total + ' time' + (total === 1 ? '' : 's')) +
+    ' set from app activity, not yet confirmed — open the day to confirm or correct. These do not hold up the export.</div>' + askedLine + items + more + '</div>';
 }
 /** PURE (Node + DOM pinned): the checklist card. Every server string escaped;
  *  each open day inside the Day Edit window is a button (data-* only — g133),
@@ -348,7 +382,8 @@ function renderPayCloseCard_(res) {
       (p.start ? ' · ' + esc(p.start) + ' → ' + esc(p.end) : '') + ' ' +
       muted(p.which === 'previous' ? '(just ended)' : '(current' + (p.checkedThrough && p.checkedThrough < p.end ? ', checked through ' + esc(p.checkedThrough) : '') + ')') + '</div>';
     if (p.error) return title + '<div style="font-size:12px;color:var(--warning-deep)">' + esc(p.error) + '</div>';
-    if (p.ready) return title + '<div style="font-size:12px;color:var(--success-deep)">' + icon('check', 12) + ' Ready to close — no open days, no pending requests.</div>';
+    if (p.ready) return title + '<div style="font-size:12px;color:var(--success-deep)">' + icon('check', 12) + ' Ready to close — no open days, no pending requests.</div>' +
+      payCloseInferredHtml_(p, res.adjustWindowDays);   // FR1
     const reps = (p.reps || []).map(function (r) {
       const days = r.openDays.map(function (d) {
         if (d.editable) {
@@ -373,7 +408,7 @@ function renderPayCloseCard_(res) {
     return title + '<div style="font-size:12px;color:var(--warning-deep);margin-bottom:4px">' +
       [c.openDays ? plural(c.openDays, 'open day') : '', c.pendingTimeOff ? plural(c.pendingTimeOff, 'pending time-off request') : '',
        c.pendingAdjust ? plural(c.pendingAdjust, 'pending adjustment') : ''].filter(Boolean).join(' · ') +
-      ' before this period exports cleanly</div>' + reps;
+      ' before this period exports cleanly</div>' + reps + payCloseInferredHtml_(p, res.adjustWindowDays);
   }).join('');
   const orphans = (res.orphans || []).length
     ? '<div style="font-size:12px;color:var(--warning-deep);margin-top:10px">Pending request(s) for an employee id the roster does not carry, so no pay period can be placed: ' +
@@ -381,7 +416,9 @@ function renderPayCloseCard_(res) {
     : '';
   return '<div class="card">' + head +
     '<div class="mgr-card-sub">Everything that would change the export, per pay period — open or incomplete days and requests still pending, offboarded reps included. ' +
-      'The last ' + esc(String(res.graceDays)) + ' days are not counted as open (a shift may still be in progress). Dates in ' + esc(res.tzAbbr || '') + '.</div>' +
+      'The last ' + esc(String(res.graceDays)) + ' days are not counted as open (a shift may still be in progress). ' +
+      // F31: the dates are each person's Timesheet dates — their roster timezone, named when the roster has one.
+      (res.tzMixed ? 'Each date is in that person\'s own timezone.' : (res.tzAbbr ? 'Dates in ' + esc(res.tzAbbr) + '.' : '')) + '</div>' +
     blocks + orphans + '</div>';
 }
 function mgrPayCloseEdit_(btn) {
@@ -430,12 +467,16 @@ function fixPtoReconRep_(btn) {
     tone: 'danger', confirmLabel: 'Credit & reconcile',
   }).then(function (ok) {
     if (!ok) return;
+    // FS2 (cycle 26): a refused or failed reconcile gives the button back as
+    // it was — it used to stay reading "Reconciling…", enabled, for good.
+    const original = btn.innerHTML;
+    const restore = function () { btn.disabled = false; btn.innerHTML = original; };
     btn.disabled = true; btn.textContent = 'Reconciling…';
     google.script.run
       .withSuccessHandler(function (res) {
         if (!res || !res.success) {
           showToast((res && res.error) || 'Reconcile failed', 'toast-error');
-          btn.disabled = false; return;
+          restore(); return;
         }
         showToast(res.fixed
           ? ('Credited ' + (res.creditedAnnual || 0) + ' annual / ' + (res.creditedSick || 0) + ' sick back')
@@ -444,7 +485,7 @@ function fixPtoReconRep_(btn) {
       })
       .withFailureHandler(function (err) {
         showToast((err && err.message) || 'Reconcile failed', 'toast-error');
-        btn.disabled = false;
+        restore();
       })
       .fixPtoReconciliation(empId);
   });
@@ -649,9 +690,13 @@ function renderAdjustQueueCard_(requests) {
       ? 'Resume shift · ' + r.date + ' · back at ' + r.time +
         (r.endTime ? ' · finished ' + r.endTime : ' · no finish filed yet') +
         ' (clock-out becomes a break — the gap is unpaid)'
+      // DS1 (cycle 26): the rep vouches for a time set from app activity. Say
+      // what approving does — it writes no time.
+      : r.action === 'confirm'
+      ? 'Confirm ' + r.punchType + ' · ' + r.date + ' · ' + r.time + ' (set from app activity — approving keeps the time and clears the Inferred mark)'
       : r.punchType + ' · ' + r.date + ' · ' + r.time + mgrAdjIntentText_(r);
     return '<div class="mgr-adj-row" data-req-row="' + esc(r.reqId) + '">' +
-      (multi ? '<input type="checkbox" class="mgr-adj-chk" data-req-id="' + esc(r.reqId) + '" data-emp-name="' + esc(r.empName) + '" aria-label="Select the request from ' + esc(r.empName) + '" onchange="adjBulkSync_()">' : '') +
+      (multi ? '<input type="checkbox" class="mgr-adj-chk" data-req-id="' + esc(r.reqId) + '" data-emp-name="' + esc(r.empName) + '" data-date="' + esc(r.date) + '" aria-label="Select the request from ' + esc(r.empName) + '" onchange="adjBulkSync_()">' : '') +
       '<div class="mgr-adj-text">' +
         '<div style="font-weight:600;font-size:13px;color:var(--ink)">' + esc(r.empName) +
           ' <span style="color:var(--muted);font-weight:400">— ' + esc(detail) + '</span></div>' +
@@ -746,6 +791,29 @@ function adjBulk_(status) {
     adjBulkConfirmed_(status, checked.map(function (c) { return c.getAttribute('data-req-id'); }));
   });
 }
+/** PURE (Node-pinned) — FR2 (cycle 26): the lines a bulk approve / deny shows
+ *  for the requests it could not decide — "Nina Patel · 2026-11-12 — <reason>",
+ *  at most `cap`, then how many more. `fails` is [{who, date, error}]. */
+function mgrBulkFailLines_(fails, cap) {
+  const list = fails || [];
+  const lines = list.slice(0, cap).map(function (f) {
+    return [f.who || 'A request', f.date].filter(Boolean).join(' · ') + ' — ' + (String(f.error || '').trim() || 'no reason given');
+  });
+  if (list.length > lines.length) lines.push('and ' + (list.length - lines.length) + ' more');
+  return lines;
+}
+/** FR2: a partly failed bulk decide SAYS which requests failed and why, in a
+ *  dialog that stays until it is read — the toast gave a count ("2 failed")
+ *  and was gone in seconds, and the reason is what tells a manager whether to
+ *  retry, or that another manager already decided it. */
+function mgrBulkFailDialog_(status, done, fails) {
+  const verb = String(status || '').toLowerCase();
+  return uiConfirm({
+    title: fails.length + ' request' + (fails.length === 1 ? '' : 's') + ' not ' + verb,
+    message: (done ? done + ' ' + verb + '. ' : '') + 'Not ' + verb + ':\n' + mgrBulkFailLines_(fails, 8).join('\n'),
+    confirmLabel: 'OK', hideCancel: true,
+  });
+}
 function adjBulkConfirmed_(status, ids) {
   const rows = ids.map(adjRowFor_);
   rows.forEach(function (r) { adjSetDeciding_(r, true); });
@@ -755,13 +823,18 @@ function adjBulkConfirmed_(status, ids) {
     .withSuccessHandler(function (res) {
       const results = (res && res.results) || [];
       if (!results.length) { showToast((res && res.error) || 'Action failed', 'toast-error'); restore(); return; }
-      let done = 0, failed = 0;
+      let done = 0;
+      const fails = [];
       results.forEach(function (r) {
         const row = adjRowFor_(r.reqId);
         if (r.success) { done++; adjRemoveRow_(row); }
-        else { failed++; adjSetDeciding_(row, false); }
+        else {
+          const chk = row && row.querySelector('.mgr-adj-chk');
+          fails.push({ who: chk ? chk.getAttribute('data-emp-name') : '', date: chk ? chk.getAttribute('data-date') : '', error: r.error });
+          adjSetDeciding_(row, false);
+        }
       });
-      if (failed) showToast(done + ' ' + status.toLowerCase() + ', ' + failed + ' failed — ' + ((res && res.error) || ''), 'toast-warn');
+      if (fails.length) mgrBulkFailDialog_(status, done, fails);   // FR2: each request's own reason
       else showToast(done + ' ' + status.toLowerCase(), 'toast-success');
       adjBulkSync_();
       loadPendingAdjustments_();
@@ -811,19 +884,31 @@ function mgrActiveNotInChip_(e, tzAbbr) {
  *  on a long call with the app untouched reads the same. */
 function mgrIdleChip_(e) {
   if (!e || typeof e.idleMin !== 'number') return '';
-  return ' <span class="emp-active-chip" title="No app activity and no punch for ' + e.idleMin +
-    ' minutes while clocked in (scheduled breaks not counted). A long call or work outside the app reads the same.">idle ' +
+  // F29 (cycle 26): "about" — the last gesture is known to the minute only
+  // when the window sent it after a pause; otherwise it is the last ping, up
+  // to ten minutes earlier. The chip stated the minutes as exact.
+  return ' <span class="emp-active-chip" title="No app activity and no punch for about ' + e.idleMin +
+    ' minutes while clocked in (scheduled breaks not counted; app activity is sampled, so this can be up to 10 minutes over). A long call or work outside the app reads the same.">idle ' +
     esc(mgrIdleText_(e.idleMin)) + '</span>';
 }
 function mgrIdleText_(min) {
   return min >= 60 ? Math.floor(min / 60) + ' h ' + (min % 60) + ' min' : min + ' min';
 }
 /** The Needs-you line under Live Status: who is idle, longest first. */
-function mgrIdleSummaryHtml_(liveStatus) {
+function mgrIdleSummaryHtml_(liveStatus, checkFailed, alertMin) {
+  // F29: the check could not run — said, never read as "nobody is idle" (g53).
+  if (checkFailed) {
+    return '<div class="mgr-card-sub" style="color:var(--muted)">' + icon('clock', 12) +
+      ' Idle time could not be checked just now (the activity stamps could not be read) — no idle chip here means "not checked", not "nobody idle". Refresh to try again.</div>';
+  }
   const idle = (liveStatus || []).filter(e => typeof e.idleMin === 'number').sort((a, b) => b.idleMin - a.idleMin);
   if (!idle.length) return '';
   return '<div class="mgr-card-sub" style="color:var(--warning-deep)">' + icon('clock', 12) + ' ' + idle.length +
-    (idle.length === 1 ? ' rep has' : ' reps have') + ' been idle 30+ min while clocked in: ' +
+    // FQ1 (cycle 26): the threshold is the server's (`idleAlertMin`), never a
+    // literal here — a changed IDLE_ALERT_MIN left this line saying "30+ min".
+    // A payload that does not carry it names no number at all (g131).
+    (idle.length === 1 ? ' rep has' : ' reps have') + ' been idle ' +
+    ((typeof alertMin === 'number' && alertMin > 0) ? alertMin + '+ min ' : '') + 'while clocked in: ' +
     idle.map(e => esc(e.name) + ' (' + esc(mgrIdleText_(e.idleMin)) + ')').join(', ') + '</div>';
 }
 function renderManagerView(area, data) {
@@ -1067,10 +1152,12 @@ function renderManagerView(area, data) {
           ? `Punch deleted: ${a.punchDate} ${dispTime(a.punchTime)}`
           : a.action === 'PunchSelfUndo'
           ? `${a.notes} (${a.punchDate} ${dispTime(a.punchTime)})`
-          : a.action === 'PunchEdit' || a.action === 'PunchAdd'
+          : a.action === 'PunchEdit' || a.action === 'PunchAdd' || a.action === 'PunchConfirm'
           ? `${a.notes} on ${a.punchDate}`
           : a.action === 'TimeOffCancel'
           ? `Time off cancelled for ${a.punchDate}`
+          : a.action === 'ActivityRowsLimited'   // FS3 — the note is the whole story
+          ? `${a.notes} (${a.punchDate} ${dispTime(a.punchTime)})`
           : `${a.action} ${a.punchDate}${a.punchTime ? ' ' + dispTime(a.punchTime) : ''}`;
         const reasonHtml = a.notes && a.isAdjustment
           ? `<div class="audit-reason">"${esc(a.notes)}"</div>` : '';
@@ -1144,7 +1231,7 @@ function renderManagerView(area, data) {
         <span>Live Status</span>
         <span class="count-pill">${counts.clocked_in}/${totalEmp} in</span>
       </h2>
-      ${mgrIdleSummaryHtml_(data.liveStatus)}
+      ${mgrIdleSummaryHtml_(data.liveStatus, data.idleCheckFailed === true, data.idleAlertMin)}
       ${liveHtml}
     </div>
 
@@ -1260,24 +1347,26 @@ function renderManagerView(area, data) {
   function handleBulkActionConfirmed_(status, checked) {
     if (bulkApprove) bulkApprove.disabled = true;
     if (bulkDeny) bulkDeny.disabled = true;
-    let done = 0, errors = 0;
+    let done = 0;
+    const fails = [];   // FR2: {who, date, error} per request that was not decided
+    const finish = () => {
+      if (done !== checked.length) return;
+      if (fails.length) mgrBulkFailDialog_(status, done - fails.length, fails);
+      else showToast(`${done} ${status.toLowerCase()}`, 'toast-success');
+      refreshViewIfCurrent('manage', 'Refreshing…', loadManagerDashboard);
+    };
     checked.forEach(c => {
+      const who = c.dataset.empName, date = c.dataset.date;
       google.script.run
         .withSuccessHandler(res => {
           done++;
-          if (!res.success) errors++;
-          if (done === checked.length) {
-            if (errors > 0) showToast(`${done - errors} succeeded, ${errors} failed`, 'toast-warn');
-            else showToast(`${done} ${status.toLowerCase()}`, 'toast-success');
-            refreshViewIfCurrent('manage', 'Refreshing…', loadManagerDashboard);
-          }
+          if (!res || !res.success) fails.push({ who: who, date: date, error: res && res.error });
+          finish();
         })
-        .withFailureHandler(() => {
-          done++; errors++;
-          if (done === checked.length) {
-            showToast(`${done - errors} succeeded, ${errors} failed`, 'toast-warn');
-            refreshViewIfCurrent('manage', 'Refreshing…', loadManagerDashboard);
-          }
+        .withFailureHandler(err => {
+          done++;
+          fails.push({ who: who, date: date, error: (err && err.message) || 'the request did not reach the server' });
+          finish();
         })
         .updateTimeOffStatus(c.dataset.empId, c.dataset.date, c.dataset.submittedAt, status);
     });
@@ -1468,7 +1557,9 @@ document.getElementById('exp-submit').addEventListener('click', () => {
                 }).join('')
               + (result.inferredCount > (result.inferred || []).length ? '<li>and ' + esc(String(result.inferredCount - (result.inferred || []).length)) + ' more</li>' : '')
               + '</ul></details>'
-            : '');
+            : '')
+          // DQ3 (cycle 26): inferred times a manager confirmed as is — counted, not listed.
+          + expConfirmedHtml_(result.inferredConfirmedCount);
       }
       let exWin = null;
       try { exWin = window.open(result.url, '_blank'); } catch (_) { exWin = null; }
@@ -1497,8 +1588,22 @@ function openMgrTimeOffModal(data) {
   document.getElementById('mto-type').value = 'Full Day';
   document.getElementById('mto-notes').value = '';
   document.getElementById('mto-auto').checked = true;
-  ensureOverlay('mgr-timeoff-overlay');   // F-40: the focus stash/restore lifecycle
+  ensureOverlay('mgr-timeoff-overlay', { labelledBy: 'mgr-timeoff-title', unsaved: { what: 'this time-off request' } });   // F-40: the focus stash/restore lifecycle; F63: asks before it discards
 }
+// F63 (cycle 26): the two manager modals are STATIC nodes, so the shared
+// "typed into since this open" listener (wired when ensureOverlay CREATES an
+// overlay) was never on them. Anything picked or typed marks the modal dirty;
+// Day Edit's date picker does not — it is how a manager moves between days.
+['mgr-timeoff-overlay', 'day-edit-overlay'].forEach(function (id) {
+  var ov = document.getElementById(id);
+  if (!ov) return;
+  ['input', 'change'].forEach(function (evName) {
+    ov.addEventListener(evName, function (e) {
+      if (e.target && e.target.id === 'de-date') return;
+      overlayMarkDirty_(ov);
+    });
+  });
+});
 
 document.getElementById('mto-cancel').addEventListener('click', () => {
   closeOverlay(document.getElementById('mgr-timeoff-overlay'));
@@ -1528,7 +1633,7 @@ document.getElementById('mto-submit').addEventListener('click', () => {
       btn.disabled = false;
       btn.textContent = 'File Request';
       if (!result.success) { showToast((result.error||'Error'),'toast-error'); return; }
-      closeOverlay(document.getElementById('mgr-timeoff-overlay'));
+      closeOverlay(document.getElementById('mgr-timeoff-overlay'), { saved: true });   // F63: filed, not discarded
       showToast(`Time off filed${result.status === 'Approved' ? ' & approved' : ''}`, 'toast-success');
       refreshViewIfCurrent('manage', 'Refreshing…', loadManagerDashboard);
     })
@@ -1796,7 +1901,18 @@ function tcalDayTableHtml_(data) {
  * failed read is never cached (INV-129) and is said under the table, never
  * drawn as "no activity". Every rep's bars share one hour range, so two rows
  * can be compared by eye. */
-var TEAMACT = { cache: {}, failed: {}, seq: 0 };
+var TEAMACT = { cache: {}, failed: {}, at: {}, seq: 0 };
+/** PURE (Node-pinned) — FR3 (cycle 26): today's bars are re-read on every
+ *  select, and a re-read that FAILED left the earlier read on screen with
+ *  nothing said — a manager read an hour-old strip as now. '' unless the day
+ *  has a kept read AND its latest read failed; then how old the bars are. */
+function tcalActStaleText_(hasData, failed, atMs, nowMs) {
+  if (!hasData || !failed) return '';
+  const mins = (atMs > 0 && nowMs >= atMs) ? Math.floor((nowMs - atMs) / 60000) : null;
+  return 'App activity could not be refreshed just now — these bars are from ' +
+    (mins === null ? 'an earlier read' : mins < 1 ? 'a read under a minute ago' : 'a read ' + (mins >= 60 ? Math.floor(mins / 60) + ' h ' : '') + (mins % 60) + ' min ago') +
+    '. Select the day again to retry. ';
+}
 function tcalActLoad_(dateIso) {
   var todayIso = isoDateTz(empTz());
   if (!dateIso || dateIso > todayIso) return;
@@ -1805,7 +1921,7 @@ function tcalActLoad_(dateIso) {
   delete TEAMACT.failed[dateIso];
   google.script.run
     .withSuccessHandler(function (res) {
-      if (res && !res.error && res.reps) TEAMACT.cache[dateIso] = res;
+      if (res && !res.error && res.reps) { TEAMACT.cache[dateIso] = res; TEAMACT.at[dateIso] = Date.now(); }
       else TEAMACT.failed[dateIso] = true;
       if (seq !== TEAMACT.seq || TEAMCAL.selDate !== dateIso || currentView !== 'manage') return;
       tcalActFill_(dateIso);
@@ -1858,7 +1974,13 @@ function tcalActNoteHtml_(dateIso) {
   var r = data && tcalActRange_(data.reps);
   var span = r ? ' Bars run ' + deHourLabel_(r.h0) + '–' + deHourLabel_(r.h1) + ' for every rep.' : '';
   var kept = data && data.keptFrom && dateIso < data.keptFrom ? ' Activity before ' + esc(String(data.keptFrom)) + ' was not kept.' : '';
-  return 'App activity is clicks and keystrokes in this app only, each rep on their own clock — a call or another program reads as idle. Context, not a score.' + span + kept;
+  // F30 (cycle 26): rows the log could not write around this day.
+  var lf = data && data.logFails && data.logFails.count > 0 ? data.logFails : null;
+  var fails = lf ? ' The activity log could not be written ' + esc(actNum_(lf.count)) + ' time' + (lf.count === 1 ? '' : 's') +
+    ' around this day, so some activity may be missing.' : '';
+  const stale = esc(tcalActStaleText_(!!data, !!TEAMACT.failed[dateIso], TEAMACT.at[dateIso] || 0, Date.now()));   // FR3
+  return (stale ? '<span class="tcal-act-stale">' + stale + '</span>' : '') +
+    'App activity is clicks and keystrokes in this app only, each rep on their own clock — a call or another program reads as idle. Context, not a score.' + span + kept + fails;
 }
 function tcalActFill_(dateIso) {
   var slot = document.getElementById('mgr-team-cal');
@@ -2018,7 +2140,12 @@ function deSyncRangeMode_() {
  * that never loaded would wipe the day. */
 var _deLoadSeq = 0;
 var _deTouched = {};
-function deMarkTouched_(key) { _deTouched[key] = true; }
+function deMarkTouched_(key) {
+  _deTouched[key] = true;
+  // F63 (cycle 26): a slot filled by a BUTTON (Apply, + Add break, a break's
+  // remove) fires no input event, so the modal's dirty listener never saw it.
+  if (typeof overlayMarkDirty_ === 'function') overlayMarkDirty_('day-edit-overlay');
+}
 
 /* Round 12 E2 (operator 2026-10-28) — the rep's APP ACTIVITY in Day Edit:
  * managerGetDayActivity's pings in 10-minute blocks, and the first / last
@@ -2029,31 +2156,107 @@ function deMarkTouched_(key) { _deTouched[key] = true; }
  * loaded with; typing another time makes it the manager's own entry. The read
  * is per open (its own sequence), never blocks Save, and a failure is said. */
 var DE_ACT = { seq: 0, data: null, failed: false, hourly: false };
+/* F16 (cycle 26): the day's punches and its activity are two reads, and either
+ * can land first. A suggestion is offered for a slot the DAY left empty — but
+ * "empty" was read off the inputs, which are blank until the punches arrive.
+ * With the activity first, "In 7:56 AM [Apply]" showed over a real 08:00
+ * Clock In; Apply marked the slot touched, so the late prefill skipped it and
+ * Save rewrote the real punch to an inferred one the manager never saw (g68:
+ * an async prefill against a user action). So the state of the punches read
+ * rides the render — 'loading' | 'loaded' | 'failed' — and nothing is
+ * suggested, or can be applied, until it is 'loaded' for this open. */
+var _dePunches = 'loading';
 var _deInfVal = { ClockIn: '', ClockOut: '' };
+/* DQ3 (cycle 26, operator 2026-11-19) — "Confirm as is". A time SAVED with the
+ * Inferred mark could only lose it by being changed, so a manager who had
+ * checked it (the rep said yes, the schedule agrees) had to nudge a correct
+ * time by a minute. `_deSavedInf` is the time the day LOADED with the mark —
+ * never one applied in this open, which nobody has had the chance to check —
+ * and `_deConfirm` is the manager's press. A confirmed slot is sent with
+ * `slots.confirmed`, not `slots.inferred`: the server keeps the time, moves
+ * the row's mark to Confirmed and writes who did it. Typing another time
+ * makes it an ordinary edit again. */
+var _deSavedInf = { ClockIn: '', ClockOut: '' };
+var _deConfirm = { ClockIn: false, ClockOut: false };
 var DE_SLOT_INPUT = { ClockIn: 'de-clockin', ClockOut: 'de-clockout' };
-function deSlotInferred_(type) {
-  var el = document.getElementById(DE_SLOT_INPUT[type]);
-  return !!(el && el.value && _deInfVal[type] && el.value === _deInfVal[type]);
+var DE_SLOT_LABEL = { ClockIn: 'Clock In', ClockOut: 'Clock Out' };
+/** PURE (Node-pinned) — what a clock slot's mark is: 'confirm' when the
+ *  manager pressed Confirm as is and the slot still holds the saved inferred
+ *  time; 'inferred' while it holds a time applied or loaded as inferred; ''
+ *  for an empty slot or a time the manager typed. */
+function deSlotMark_(value, infVal, savedInf, confirming) {
+  if (confirming && savedInf && value === savedInf) return 'confirm';
+  if (infVal && value === infVal) return 'inferred';
+  return '';
 }
+/** PURE (Node-pinned) — may this slot be confirmed? Only a time the day was
+ *  LOADED with as inferred, still unchanged, and never in range mode (a range
+ *  save writes other days and confirms nothing). */
+function deSlotCanConfirm_(value, savedInf, rangeMode) {
+  return !!(value && savedInf && value === savedInf && !rangeMode);
+}
+function deSlotState_(type) {
+  var el = document.getElementById(DE_SLOT_INPUT[type]);
+  var v = (el && el.value) || '';
+  return { mark: deSlotMark_(v, _deInfVal[type], _deSavedInf[type], _deConfirm[type]),
+    canConfirm: deSlotCanConfirm_(v, _deSavedInf[type], deRangeModeOn_()) };
+}
+function deSlotInferred_(type) { return deSlotState_(type).mark === 'inferred'; }
+function deSlotConfirmed_(type) { var s = deSlotState_(type); return s.mark === 'confirm' && s.canConfirm; }
 function deSyncInferredTags_() {
   ['ClockIn', 'ClockOut'].forEach(function (t) {
+    var s = deSlotState_(t);
+    var confirming = s.mark === 'confirm' && s.canConfirm;
     var tag = document.getElementById(DE_SLOT_INPUT[t] + '-inf');
-    if (tag) tag.hidden = !deSlotInferred_(t);
+    if (tag) {
+      tag.hidden = !s.mark;
+      tag.textContent = confirming ? 'Confirmed as is — Save Changes to keep' : 'Inferred (app activity)';
+      tag.classList.toggle('confirmed', confirming);
+    }
+    var btn = document.getElementById(DE_SLOT_INPUT[t] + '-inf-confirm');
+    if (btn) {
+      btn.hidden = !s.canConfirm;
+      btn.textContent = confirming ? 'Undo' : 'Confirm as is';
+      btn.setAttribute('aria-label', confirming ? ('Undo confirming ' + DE_SLOT_LABEL[t])
+        : ('Confirm ' + DE_SLOT_LABEL[t] + ' as is — keep the time and clear the Inferred mark'));
+    }
   });
+}
+function deToggleConfirm_(type) {
+  if (!deSlotState_(type).canConfirm) return;
+  _deConfirm[type] = !_deConfirm[type];
+  if (typeof overlayMarkDirty_ === 'function') overlayMarkDirty_('day-edit-overlay');   // F63: a press, not an input
+  deSyncInferredTags_();
+}
+/** PURE — DQ3: the export result's line for confirmed punches ('' for none). */
+function expConfirmedHtml_(n) {
+  n = Number(n) || 0;
+  if (n <= 0) return '';
+  return '<div class="exp-inferred">' + esc(n + ' punch' + (n === 1 ? '' : 'es') +
+    ' set from app activity, confirmed by a manager') + '</div>';
 }
 function deHourLabel_(h) { h = ((h % 24) + 24) % 24; return (h % 12 || 12) + (h < 12 ? ' AM' : ' PM'); }
 /** PURE (DOM-free; Node + DOM pinned) — the activity panel for one day.
- *  `o` = {clockInEmpty, clockOutEmpty, isRepToday, range}. */
+ *  `o` = {clockInEmpty, clockOutEmpty, isRepToday, range, punches}. A
+ *  suggestion needs `punches === 'loaded'` — anything else (still loading,
+ *  failed, or not said) suggests nothing: the slots are not known to be empty. */
 function deActivityHtml_(d, o) {
   o = o || {};
   var head = '<div class="de-act-head"><span class="de-act-title">App activity</span>';
   var hm = function (s) { return /^\d{2}:\d{2}$/.test(String(s || '')) ? s : ''; };
   var first = hm(d && d.first), last = hm(d && d.last);
+  // F30 (cycle 26): rows the log could not write around this day — "none
+  // recorded" is then not "none happened", and the panel says which it is.
+  var lf = d && d.logFails && d.logFails.count > 0 ? d.logFails : null;
+  var failNote = lf ? '<div class="de-act-note" data-de-act-fails>' + icon('warning', 12) + ' The activity log could not be written ' + esc(actNum_(lf.count)) +
+    ' time' + (lf.count === 1 ? '' : 's') + (lf.firstDate && lf.lastDate
+      ? (lf.firstDate === lf.lastDate ? ' on ' + esc(String(lf.firstDate)) : ' between ' + esc(String(lf.firstDate)) + ' and ' + esc(String(lf.lastDate))) : '') +
+    ', so activity on this day may be missing here.</div>' : '';
   if (!d || !(d.pings > 0) || !first) {
     // Batch G: activity is condensed and kept, so "none" is only a verdict
     // inside what was kept — a day before it says so, never a plain "none".
     return head + '</div><div class="de-act-note">No app activity recorded on this day' +
-      (d && d.keptFrom && d.date && d.date < d.keptFrom ? ' (activity before ' + esc(String(d.keptFrom)) + ' was not kept)' : '') + '.</div>';
+      (d && d.keptFrom && d.date && d.date < d.keptFrom ? ' (activity before ' + esc(String(d.keptFrom)) + ' was not kept)' : '') + '.</div>' + failNote;
   }
   var lvl = !!d.hasCounts && Array.isArray(d.level);
   var cnt = Math.max(0, Number(d.clicks) || 0), kst = Math.max(0, Number(d.keys) || 0);
@@ -2094,11 +2297,20 @@ function deActivityHtml_(d, o) {
   var html = head + scale +
     '<div class="de-act-strip' + (lvl ? ' lvl' : '') + '" role="img" aria-label="' + esc(label) + '">' + cells + '</div>' +
     '<div class="de-act-ticks" aria-hidden="true"><span>' + deHourLabel_(h0) + '</span><span>' + deHourLabel_(mid) + '</span><span>' + deHourLabel_(h1) + '</span></div>';
+  html += failNote;
+  // F27 (cycle 26): counts with no app activity beside them are not drawn — said, not silently dropped.
+  if (d.ignored > 0) html += '<div class="de-act-note" data-de-act-ignored>Counts were sent for ' + esc(actNum_(d.ignored)) + ' ' + esc(String(size)) +
+    '-minute block' + (d.ignored === 1 ? '' : 's') + ' with no app activity recorded beside ' + (d.ignored === 1 ? 'it' : 'them') + '; those are not drawn or counted.</div>';
   if (o.range) return html + '<div class="de-act-note">Suggestions are for a single day — clear <b>To</b> to use them.</div>';
+  // F16: no suggestion until the day's own punches are on the form.
+  var known = o.punches === 'loaded';
   var sug = [];
-  if (o.clockInEmpty) sug.push('In ' + esc(dispTime(first)) + ' <button type="button" class="de-act-apply" data-de-apply="ClockIn" aria-label="Apply ' + esc(dispTime(first)) + ' as Clock In">Apply</button>');
-  if (o.clockOutEmpty && !o.isRepToday && last !== first) sug.push('Out ' + esc(dispTime(last)) + ' <button type="button" class="de-act-apply" data-de-apply="ClockOut" aria-label="Apply ' + esc(dispTime(last)) + ' as Clock Out">Apply</button>');
+  if (known && o.clockInEmpty) sug.push('In ' + esc(dispTime(first)) + ' <button type="button" class="de-act-apply" data-de-apply="ClockIn" aria-label="Apply ' + esc(dispTime(first)) + ' as Clock In">Apply</button>');
+  if (known && o.clockOutEmpty && !o.isRepToday && last !== first) sug.push('Out ' + esc(dispTime(last)) + ' <button type="button" class="de-act-apply" data-de-apply="ClockOut" aria-label="Apply ' + esc(dispTime(last)) + ' as Clock Out">Apply</button>');
   if (sug.length) html += '<div class="de-act-sug"><span>Suggested from app activity:</span> ' + sug.join(' ') + '</div>';
+  if (!known) html += '<div class="de-act-note" data-de-act-wait>' + (o.punches === 'failed'
+    ? 'This day\u2019s punches could not be loaded, so no time is suggested from app activity.'
+    : 'Loading this day\u2019s punches \u2014 a time is suggested only for a punch the day does not have.') + '</div>';
   return html + '<div class="de-act-note">Activity is sampled at most every ' + esc(String(d.gapMin || size)) +
     ' minutes while the app is in use, so the last activity can be a few minutes later than shown. A time you apply stays editable, and saves marked <b>Inferred (app activity)</b>.</div>' +
     (lvl ? '<div class="de-act-note">Bars count clicks and keystrokes in this app only — never what was typed. A phone call or another program reads as idle, and the last minutes before a window closes may be missing: context, not a score.</div>' : '');
@@ -2134,12 +2346,15 @@ function deRenderActivity_() {
     isRepToday: !!(d.timezone && d.date === isoDateTz(d.timezone)),
     range: deRangeModeOn_(),
     hourly: DE_ACT.hourly,
+    punches: _dePunches,
   });
 }
 function deLoadActivity_(empId, date) {
   var seq = ++DE_ACT.seq;
   DE_ACT.data = null; DE_ACT.failed = false;
   _deInfVal = { ClockIn: '', ClockOut: '' };
+  _deSavedInf = { ClockIn: '', ClockOut: '' };      // DQ3: a new day, nothing loaded yet
+  _deConfirm = { ClockIn: false, ClockOut: false };
   deSyncInferredTags_();
   deRenderActivity_();
   google.script.run
@@ -2158,6 +2373,7 @@ function deLoadActivity_(empId, date) {
 function deApplySuggestion_(type) {
   var d = DE_ACT.data;
   if (!d || !DE_SLOT_INPUT[type]) return;
+  if (_dePunches !== 'loaded') return;   // F16: never over a punch that has not been shown
   var v = type === 'ClockIn' ? d.first : d.last;
   if (!/^\d{2}:\d{2}$/.test(String(v || ''))) return;
   var el = document.getElementById(DE_SLOT_INPUT[type]);
@@ -2306,13 +2522,14 @@ function openDayEditModal(empId, empName, prefillDate, tzHint) {
   // usually re-syncs a moment later, but not when the day has no row or the
   // read fails, which is exactly when a manager is adding punches by hand.
   deRenderBreaks_([]);
-  ensureOverlay('day-edit-overlay');   // F-40: the focus stash/restore lifecycle
+  ensureOverlay('day-edit-overlay', { labelledBy: 'day-edit-title', unsaved: { what: 'this day' } });   // F-40: the focus stash/restore lifecycle; F63: asks before it discards
   loadDayEditPunches(empId, _deDate, _deDate);
   deLoadActivity_(empId, _deDate);   // round 12 E2
 }
 
 function loadDayEditPunches(empId, start, end) {
   var seq = ++_deLoadSeq;
+  _dePunches = 'loading';   // F16: per load — the open and every date change
   google.script.run
     .withSuccessHandler(function (data) {
       // Response-identity guard (L9): quickly reopening the modal for a
@@ -2321,10 +2538,11 @@ function loadDayEditPunches(empId, start, end) {
       // times to B. The date check alone can't catch that. The sequence
       // guard covers the same employee re-opened on another date.
       if (empId !== _deEmpId || seq !== _deLoadSeq) return;
-      if (data.error) { deSetLoading_('failed', 'couldn\u2019t load this day\u2019s punches — reopen to retry'); return; }
+      if (data.error) { _dePunches = 'failed'; deSetLoading_('failed', 'couldn\u2019t load this day\u2019s punches — reopen to retry'); deRenderActivity_(); return; }
       deSetLoading_(false);
+      _dePunches = 'loaded';   // F16: the day is known now — with punches or with none
       var day = (data.days || []).find(function (d) { return d.date === _deDate; });
-      if (!day) return;
+      if (!day) { deRenderActivity_(); return; }
       // F1 (cycle 25): with "To" already filled the prefill is NOT written into
       // the form — range mode sends every non-blank slot to every day — it is
       // parked in the stash, and comes back if "To" is cleared.
@@ -2333,20 +2551,25 @@ function loadDayEditPunches(empId, start, end) {
         if (!_deTouched.clockin)  { _deRangeStash.clockin  = day.clockIn  ? day.clockIn.substring(0, 5) : ''; _dePrefilled.clockin = true; }
         if (!_deTouched.clockout) { _deRangeStash.clockout = day.clockOut ? day.clockOut.substring(0, 5) : ''; _dePrefilled.clockout = true; }
         if (!_deTouched.breaks)   { _deRangeStash.day = day; _dePrefilled.breaks = true; }
+        deRenderActivity_();
         return;
       }
       // Fill only what the manager has NOT typed into yet (the race above).
       if (!_deTouched.clockin)  { document.getElementById('de-clockin').value  = day.clockIn  ? day.clockIn.substring(0, 5) : ''; _dePrefilled.clockin = true;
-        _deInfVal.ClockIn = (day.infClockIn && day.clockIn) ? day.clockIn.substring(0, 5) : ''; }   // E2: a saved inferred time stays marked until changed
+        _deInfVal.ClockIn = (day.infClockIn && day.clockIn) ? day.clockIn.substring(0, 5) : '';   // E2: a saved inferred time stays marked until changed
+        _deSavedInf.ClockIn = _deInfVal.ClockIn; }   // DQ3: and only a SAVED one can be confirmed
       if (!_deTouched.clockout) { document.getElementById('de-clockout').value = day.clockOut ? day.clockOut.substring(0, 5) : ''; _dePrefilled.clockout = true;
-        _deInfVal.ClockOut = (day.infClockOut && day.clockOut) ? day.clockOut.substring(0, 5) : ''; }
+        _deInfVal.ClockOut = (day.infClockOut && day.clockOut) ? day.clockOut.substring(0, 5) : '';
+        _deSavedInf.ClockOut = _deInfVal.ClockOut; }
       if (!_deTouched.breaks)   { deSetBreaksFromDay_(day); _dePrefilled.breaks = true; }
       deSyncInferredTags_();
       deRenderActivity_();   // E2: a suggestion shows only for a slot the day left empty
     })
     .withFailureHandler(function () {
       if (empId !== _deEmpId || seq !== _deLoadSeq) return;
+      _dePunches = 'failed';
       deSetLoading_('failed', 'couldn\u2019t load this day\u2019s punches — reopen to retry');
+      deRenderActivity_();
     })
     .getEmployeeTimesheetForManager(empId, start, end);
 }
@@ -2357,6 +2580,8 @@ function loadDayEditPunches(empId, start, end) {
  * delegated on the host so it survives each re-render. */
 document.getElementById('de-clockin').addEventListener('input', function () { deMarkTouched_('clockin'); deSyncInferredTags_(); deRenderActivity_(); });
 document.getElementById('de-clockout').addEventListener('input', function () { deMarkTouched_('clockout'); deSyncInferredTags_(); deRenderActivity_(); });
+document.getElementById('de-clockin-inf-confirm').addEventListener('click', function () { deToggleConfirm_('ClockIn'); });   // DQ3
+document.getElementById('de-clockout-inf-confirm').addEventListener('click', function () { deToggleConfirm_('ClockOut'); });
 // E2: Apply on a suggestion (delegated — the panel is rebuilt on every render).
 document.getElementById('de-act').addEventListener('click', function (e) {
   var b = e.target.closest ? e.target.closest('[data-de-apply]') : null;
@@ -2396,6 +2621,7 @@ document.getElementById('de-date-to').addEventListener('change', deApplyRangePre
 // Filling/clearing "To" flips range mode, which caps the list at one pair.
 document.getElementById('de-date-to').addEventListener('change', deSyncRangeMode_);
 document.getElementById('de-date-to').addEventListener('change', function () { deRenderActivity_(); });   // E2: no single-day suggestion in range mode
+document.getElementById('de-date-to').addEventListener('change', deSyncInferredTags_);   // DQ3: no confirm in range mode, and the mark returns with the times
 // Typing into a break field can change nothing structural, but the row COUNT
 // is what gates the add button and the range note, so keep them in step.
 document.getElementById('de-breaks').addEventListener('input', deSyncRangeMode_);
@@ -2429,8 +2655,33 @@ function mgrAddDaysIso_(iso, n) {
 document.getElementById('de-date').addEventListener('change', function () {
   var d = this.value;
   if (!d || !_deEmpId) return;
+  // FT2 (cycle 26 follow-ons): the picker loads another day over the form.
+  // F63 made Escape, Cancel and the backdrop ask before unsaved edits to this
+  // day are lost; this was the one way left to lose them without a word. A
+  // "Keep editing" puts the picker back on the day being edited.
+  var picker = this;
+  var deOvAsk = document.getElementById('day-edit-overlay');
+  if (d !== _deDate && deOvAsk && overlayNeedsDiscardAsk_(deOvAsk)) {
+    uiConfirm({
+      title: 'Discard changes?',
+      message: 'Your changes to ' + _deDate + ' have not been saved. Loading another day loses them.',
+      confirmLabel: 'Discard', cancelLabel: 'Keep editing', tone: 'danger',
+    }).then(function (ok) {
+      if (ok) deLoadPickedDate_(d);
+      else picker.value = _deDate;
+    });
+    return;
+  }
+  deLoadPickedDate_(d);
+});
+/** Load day `d` into the open Day Edit modal (the date picker's change). */
+function deLoadPickedDate_(d) {
   _deDate = d;
   _deTouched = {};
+  // F63: another day is being loaded over the form — nothing typed is left in
+  // it to ask about (the picker itself never marks the modal dirty).
+  var deOv = document.getElementById('day-edit-overlay');
+  if (deOv) deOv._dirty = false;
   deSetLoading_(true, 'loading punches…');
   // F(cycle-8 M-2): keep the "To" picker's floor tracking the edit date; a
   // now-invalid To (≤ the new From) is cleared rather than silently kept.
@@ -2442,7 +2693,7 @@ document.getElementById('de-date').addEventListener('change', function () {
   deRenderBreaks_([]);
   loadDayEditPunches(_deEmpId, d, d);
   deLoadActivity_(_deEmpId, d);   // E2
-});
+}
 
 document.getElementById('de-save').addEventListener('click', function () {
   if (!_deEmpId || !_deDate) return;
@@ -2455,6 +2706,8 @@ document.getElementById('de-save').addEventListener('click', function () {
   };
   // E2: which clock slots still hold a time applied from app activity.
   slots.inferred = { ClockIn: deSlotInferred_('ClockIn'), ClockOut: deSlotInferred_('ClockOut') };
+  // DQ3: which saved inferred times the manager confirmed as they stand.
+  slots.confirmed = { ClockIn: deSlotConfirmed_('ClockIn'), ClockOut: deSlotConfirmed_('ClockOut') };
   var strayMsg = deStrayUnresolved_(slots.breaks);
   if (strayMsg) { showToast(strayMsg, 'toast-error'); return; }
   var reason = document.getElementById('de-reason').value.trim();
@@ -2481,7 +2734,7 @@ document.getElementById('de-save').addEventListener('click', function () {
     btn.textContent = 'Save Changes';
     if (!result.success) { showToast((result.error || 'Error'), 'toast-error'); return; }
     var savedEmp = _deEmpId;
-    closeOverlay(document.getElementById('day-edit-overlay'));
+    closeOverlay(document.getElementById('day-edit-overlay'), { saved: true });   // F63: saved, not discarded
     if (typeof payStmtReturnAfterEdit_ === 'function') payStmtReturnAfterEdit_(savedEmp);   // 25post B4
     showToast(rangeMode
       ? ('Applied ' + (result.punchesWritten || 0) + ' punch(es) across ' + (result.daysTouched || 0) + ' day(s)')

@@ -18,6 +18,11 @@
 //   node scripts/counts.mjs --json       machine-readable
 //   node scripts/counts.mjs --block      the CLAUDE.md block text
 //   node scripts/counts.mjs --check      compare against CLAUDE.md, exit 1 on drift
+//   node scripts/counts.mjs --write      put the derived block into CLAUDE.md
+//
+// --write exists because the block was "generated — do not hand-edit" with
+// nothing that wrote it: every batch that added a pin edited the rows by hand
+// and ran --check to see whether it had typed them right (cycle 26 FW3).
 //
 // RECURSION: --check and the bare form RUN the two Node harnesses. run.js's own
 // pin therefore calls this with --static --json; if it ever asked for the
@@ -135,7 +140,14 @@ export function triggers() {
 
 /** Per-browser localStorage keys. Every one is an `ums…` literal; the count has
  *  been stated in words ("Eighteen client-side localStorage keys") and rewritten
- *  by hand on each add and retirement. */
+ *  by hand on each add and retirement.
+ *
+ *  A key FAMILY — a prefix completed at run time, `'umsPopoutGeom_' + tool` —
+ *  is one entry, named by its prefix. The whole-literal pattern could not see
+ *  it (the quote does not follow the underscore's word), so the per-tool
+ *  pop-out geometry was counted only by its legacy fallback key (cycle 26
+ *  F71). A prefix counts only where some file hands it to localStorage: the
+ *  pop-out's WINDOW name is the same shape and is not a key. */
 export function localStorageKeys() {
   const files = [];
   const walk = (dir) => {
@@ -147,7 +159,15 @@ export function localStorageKeys() {
   };
   walk('web-app');
   const keys = new Set();
-  for (const f of files) for (const m of read(f).matchAll(/'(ums[A-Za-z0-9]+)'/g)) keys.add(m[1]);
+  const srcs = files.map(read);
+  for (const src of srcs) for (const m of src.matchAll(/'(ums[A-Za-z0-9]+)'/g)) keys.add(m[1]);
+  const prefixes = new Set();
+  for (const src of srcs) for (const m of src.matchAll(/'(ums[A-Za-z0-9]+[_:])'\s*\+/g)) prefixes.add(m[1]);
+  for (const pre of prefixes) {
+    const stored = new RegExp('localStorage\\.(?:getItem|setItem|removeItem)\\(\\s*\'' + pre + '\'\\s*\\+');
+    const viaKey = new RegExp('\\b(\\w+)\\s*=\\s*\'' + pre + '\'\\s*\\+[^\\n]*;[\\s\\S]{0,400}?localStorage\\.(?:getItem|setItem|removeItem)\\(\\s*\\1\\b');
+    if (srcs.some((src) => stored.test(src) || viaKey.test(src))) keys.add(pre + '…');
+  }
   return [...keys].sort();
 }
 
@@ -198,9 +218,13 @@ function harnessTotal(rel) {
   // Catch it, read the summary out of the captured output, and say that.
   let out;
   try {
+    // DOM_ONLY (the DOM harness's bite-check subset) is CLEARED: a count taken
+    // from a subset would be a smaller number that looks like the harness's.
+    const env = Object.assign({}, process.env, { [NO_SPAWN]: '1' });
+    delete env.DOM_ONLY;
     out = execFileSync(process.execPath, [path.join(ROOT, rel)], {
       encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
-      env: Object.assign({}, process.env, { [NO_SPAWN]: '1' }),
+      env,
     });
   } catch (e) {
     const captured = String(e && e.stdout || '');
@@ -259,7 +283,7 @@ const ROWS = [
   ['qaEndpoints', 'QA-gated endpoints (`canSeeQa_`)', "`'QA access required.'` in the server source"],
   ['installedTriggers', 'Installable triggers created', '`installAutomationTriggers`'],
   ['groupedTriggerJobs', 'Jobs riding a dispatcher', '`TRIGGER_GROUPS`'],
-  ['localStorageKeys', 'localStorage keys', "`ums…` literals in `web-app/`"],
+  ['localStorageKeys', 'localStorage keys', "`ums…` literals in `web-app/` (a per-tool key family counts once)"],
   ['invariants', 'Invariant library entries', '`.cycle/config.md`'],
   ['regressionScenarios', 'Regression scenarios (S*)', '`.cycle/config.md`'],
 ];
@@ -293,7 +317,42 @@ export function blockIn(claude) {
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-if (isMain) {
+/** --write. In TWO steps, because the harness that supplies two of the rows
+ *  holds pins that compare the block's OTHER rows with the tree: while those
+ *  rows are stale the harness is red, and a red harness has no totals to give.
+ *  So the rows that need no harness are written first (the harness totals kept
+ *  as they were), then the harness is run and the two totals written. A harness
+ *  that is red for any other reason still refuses — with the static rows
+ *  already brought up to date. */
+function writeBlock() {
+  const file = path.join(ROOT, 'CLAUDE.md');
+  const before = blockIn(read('CLAUDE.md'));
+  if (before === null) { console.error('counts --write: CLAUDE.md has no ' + BEGIN + ' … ' + END + ' block.'); process.exit(1); }
+  const kept = (label) => { const m = new RegExp('\\| ' + label + ' \\| (\\d+) \\|').exec(before); return m ? Number(m[1]) : null; };
+  const put = (want) => { const claude = read('CLAUDE.md'); const have = blockIn(claude); if (have !== want) fs.writeFileSync(file, claude.replace(have, () => want)); };
+  put(renderBlock(Object.assign(derive({ withHarness: false }), { pureTests: kept('Pure harness tests'), domTests: kept('DOM harness tests') })));
+  let c;
+  try { c = derive({ withHarness: true }); }
+  catch (e) {
+    if (!(e instanceof CountsError)) throw e;
+    console.error('counts --write: the rows that need no harness are written; the two harness totals are not.\ncounts: ' + e.message);
+    process.exit(1);
+  }
+  const after = renderBlock(c);
+  put(after);
+  if (after === before) { console.log('counts --write: CLAUDE.md already agrees with the tree.'); return; }
+  const h = before.split('\n'), w = after.split('\n');
+  for (let i = 0; i < Math.max(h.length, w.length); i++) if (h[i] !== w[i]) console.log('  was: ' + (h[i] ?? '(missing)') + '\n  now: ' + (w[i] ?? '(missing)'));
+  console.log('counts --write: CLAUDE.md updated.');
+}
+
+if (isMain && process.argv.includes('--write')) {
+  // The harness totals are part of the block, so a --static write would
+  // blank two rows: refuse rather than write a block --check then rejects.
+  if (process.argv.includes('--static')) { console.error('counts --write: needs the harness totals — drop --static.'); process.exit(1); }
+  try { writeBlock(); }
+  catch (e) { if (!(e instanceof CountsError)) throw e; console.error('counts: ' + e.message); process.exit(1); }
+} else if (isMain) {
   const argv = process.argv.slice(2);
   const withHarness = !argv.includes('--static');
   let c;
@@ -323,7 +382,7 @@ if (isMain) {
       for (let i = 0; i < Math.max(h.length, w.length); i++) {
         if (h[i] !== w[i]) console.error('  doc:  ' + (h[i] ?? '(missing)') + '\n  tree: ' + (w[i] ?? '(missing)'));
       }
-      console.error('\nRegenerate with: node scripts/counts.mjs --block');
+      console.error('\nRegenerate with: node scripts/counts.mjs --write');
       process.exit(1);
     }
     console.log('counts --check: CLAUDE.md agrees with the tree.');

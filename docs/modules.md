@@ -248,7 +248,10 @@ not restate it. Server endpoints live in the fourteen server files
      incomplete day (counted up to two days before today, so a shift in
      progress is not flagged) and every pending time-off or punch-adjustment
      request dated inside the period. An open day inside the 30-day edit window
-     opens Day Edit; an older one is named as a hand-edit. The collapsed
+     opens Day Edit; an older one is named as a hand-edit. "Today" is the
+     manager's (the 8 am open-punch scan's frame), a day is "inside the window"
+     by the REP's own today — Day Edit's rule — and the caption names the
+     roster's timezone (cycle 26 F31; it was CONFIG.TIMEZONE and "Dates in IST"). The collapsed
      Periodic row says critical / warning / ready / check failed — a failed read
      never reads as ready. An offboarded rep whose punches the export still
      ships by ID is found too, labelled (`payrollSubjectId_`, F19), and Day Edit
@@ -264,7 +267,10 @@ not restate it. Server endpoints live in the fourteen server files
      (`payStmtAdjustments_`; a failed read is named). Manage Time's Live Status
      flags a clocked-in rep idle 30+ minutes — no app activity and no punch,
      scheduled breaks taken out — with an amber chip and a line under the card
-     (`liveIdleMin_`, INV-391; in-app only).
+     (`liveIdleMin_`, INV-391; in-app only). Since cycle 26 (F29) the time is
+     measured from the rep's last gesture (the pause flush reports it), the
+     chip says "about", and when the activity stamps cannot be read the card
+     says the check did not run instead of flagging everyone.
 
      **25post round 12 E2 (operator 2026-10-28): app activity and inferred
      punches.** Every presence ping (a real gesture, at most one per window per
@@ -285,6 +291,31 @@ not restate it. Server endpoints live in the fourteen server files
      it. The export file is untouched: the inferred punches are listed beside
      the export link and in the automated export email
      (`exportInferredLines_`).
+
+     **Cycle 26 DQ3 (operator 2026-11-19) — Confirm as is.** A time already
+     saved as inferred has a "Confirm as is" button in Day Edit. Saving keeps
+     the time, sets column J to `Confirmed (app activity)` and writes a
+     `PunchConfirm` audit row. The Inferred chip goes from every timesheet
+     surface; the export's inferred list drops the punch and a line counts
+     the confirmed ones. A time applied in the same open cannot be confirmed
+     until it has been saved.
+
+     **Cycle 26 follow-ons (FR, 2026-11-19).** The Pay Period Close card lists
+     each period's inferred times nobody has confirmed, each a button into Day
+     Edit; they are named beside "Ready to close", never counted against it.
+     A bulk approve or deny that partly fails opens a notice naming each
+     request it could not decide and why. Team Punches says when today's
+     activity bars are from an earlier read.
+
+     **Cycle 26 DS1 (operator 2026-11-19) — a rep's confirm request.** On
+     their own pay statement a rep sees "Confirm Clock In" (or Out) under a
+     day whose time a manager set from app activity. Pressing it files a
+     request on the punch-adjustment queue; nothing changes until a manager
+     approves it, and then only the Inferred mark moves to Confirmed. A
+     request that no longer matches the day (the time was changed) cannot be
+     approved — the manager denies it. **Since FS1** the Pay Period Close
+     card's list of unconfirmed inferred times says which ones already have
+     the rep's request waiting, and where to approve it.
 
      **AC1 (operator 2026-11-11) — activity levels.** The ping also counts the
      clicks and keystrokes in each 10-minute block (counts only; a two-minute
@@ -458,6 +489,44 @@ lighter `--warn-fill`.
      without the timed intake calls (the intake form times itself, first input
      to send). % Answered is never adjusted.
 
+     **Cycle 26 Batch 10 (2026-11-18).** The outbound read is cached against
+     the CDR data stamp and shared by the team (it was re-read per rep every
+     five minutes). "Avg talk excl. intake" appears only when the timed forms
+     ran longer than the rep's average call, beside that average ("… with
+     them"); an amended intake send is not a timed intake call. Team → a
+     window with no call data draws one "Calls —" row with the reason and "—"
+     in each rep's call cells; the Intake column sorts; the outbound row says
+     "not in yet" or "data through MM-DD" whenever the export is behind.
+
+     **Cycle 26 Batch PD (2026-11-18) — partial days.** A day the Department
+     Dashboard marks partial for a rep counts as its share of a day in the
+     three day-based call figures: the Dashboard's "on pace" line (with "X of
+     Y workdays, N partial" under it, the days and shares on hover), its
+     month-to-date deltas on Answered and Missed, and My Stats' daily
+     Answered / Missed trends (a ring on the day, the date in words, and a
+     team average per credited rep-day). Counts, rates and talk time do not
+     change; the Department card and Team Metrics are not adjusted; a rep
+     sees only their own partial days, and never a reason.
+
+     **Cycle 26 follow-ons (FQ, 2026-11-18).** The hero names the day when
+     it is not literally yesterday; Refresh keeps the figures on screen until
+     the read answers; a 7D / 30D / custom range lists the rep's partial days
+     under Calls answered; Team shows no Transfers figure for a window with
+     no transfer rows, and managers get a "likely outbound name mismatch"
+     line when a rep's outbound calls sit under another spelling.
+
+     **Cycle 26 decisions (DQ1 + DQ2, operator 2026-11-19).** A manager's
+     Team table marks a rep who has partial days in the window ("2 partial"
+     beside the name) and names the days under the table; the counts, rates
+     and talk time are not adjusted, and the copied table gains a Partial days
+     column. **Since DS2** a range also has an "Ans / day" column — answered
+     over the days the rep took calls, a partial day as its share (none under
+     one credited day); it is the one figure on the table that counts them —
+     with, **since DT1**, its twin "Handled / day" after Handled (adj.): the
+     handled count over the same credited days. A rep's Team
+     view is unchanged. The "Intake" count no longer includes the note of an
+     AMENDED intake send — that note wears "PMD amended" in Call Notes.
+
      **Batch 6 (2026-09-18):** the Admin Overview KPI strip reports TEAM
      numbers — notes across every enrolled rep (all-time) and the cross-rep
      unresolved-action walk — with each cell stating its own scope, and a
@@ -520,8 +589,38 @@ lighter `--warn-fill`.
   Resolution, and find in the page.
 - **Shortcut:** Ctrl/⌘+Shift+S opens or closes it from any page.
 
+**Cycle 26 Batch 11 (F58): the Scratchpad keeps what was typed.** Unsaved
+text is held per page, so switching page while a save is running no longer
+loses the last lines; a refresh that answers late never paints older text
+over newer; a page that will not open offers "Try again". Unsaved text is
+also kept in the browser (for the account that typed it, up to 24 hours) and
+restored after a reload — saved once the page is confirmed unchanged, or put
+on a "Recovered text" page if it was changed elsewhere. **F59:** an unsaved
+call note from another window that the rep answered "Not now" to is kept and
+offered again, instead of being replaced by the next keystroke.
+
+**Cycle 26 follow-ons (FT1): recovered text when the pad is full.** A
+scratchpad holds ten pages. If unsaved text has to go to a "Recovered text"
+page and there is no room (or the page could not be made), the text is kept
+in a row at the top of the pad — never written over the page that changed —
+with **Move to a new page**, **Copy it** and **Discard**. Deleting a page
+moves it by itself. It stays in the browser for up to 24 hours, like other
+unsaved text.
+
+**Cycle 26 Batch 12 (F42): each rep's Scratchpad saves on its own.** The
+saves used a lock that turned out to be shared by every rep, so with many
+people typing at once some saves timed out. Each rep's pad now has its own
+short lease; a rep's autosave waits only for another save of the same pad.
+
 The server allowlist and the client sanitizer were widened together. A link
 keeps only an http(s) href.
+
+**Cycle 26 follow-ons after Batch 14 (2026-11-20):** a rep's Search that
+matches more than 200 notes says it is showing the newest 200 and to narrow
+by date range; it used to read "200 results" (FX5). The "copy it by hand"
+dialog a blocked copy opens is above the Reference drawer and the Scratchpad
+whichever of them opened it (FX4). The reminders list's Mark done and Cancel
+are wired through one listener; nothing visible changed (FX8).
 
 **Batch E (operator 2026-11-02):** Dept Requests is a Call Notes tab (it was
 under Metrics), between Sent Forms and Team Notes.
@@ -576,6 +675,26 @@ next call (insurance card images are not kept). Drafts lists every form's
 saved drafts, newest first, with Open and Delete; a send removes the draft it
 came from. The silent autosave is unchanged.
 
+**Cycle 26 Batch 2 (2026-11-13):** a draft never holds the SSN (the rep is asked for it
+again after a reload or when a parked draft is opened), and the Drafts note says a draft
+is removed the next time Team Tools is open in that browser. Amend & re-send asks before it
+replaces a form that holds another call's answers or card images, and the amended form
+carries none of them. A card read that outlives a Clear or a switch of form offers nothing;
+a reader that fails says whether it was the network, a file that failed its check, or the
+browser.
+
+**Cycle 26 Batch 13 and its follow-ons (2026-11-20):** attached images are grouped into
+cards before anything is offered — "Card 1", "Card 2", each with its own line and its own
+Use as primary / secondary; the reader no longer merges every image into one suggestion
+(F21). When one card comes back as two suggestions, **Same card as Card N** joins them and
+marks the values the two photos disagreed on; a Medicare card and a plan card are never
+offered it (FV1). On Safari and iOS before 16.4 the Intake tool loads and only the card
+reader is unavailable, and says so (F67). The intake email's "Send feedback on this
+recommendation" button works for any company sign-in, not only people on the Employees
+sheet — a Sales or PAP sender's row carries the address and a blank name (F22) — and one
+person may send twelve in an hour (FV2). Storage Health reads "Kept — no purge exists" for
+the Intake store: there never was a purge of it (F23).
+
 **P1 (operator 2026-11-05):** on each employee's pay week a **Check your
 timesheet** item appears in Needs you (Review opens Time / PTO; Done hides it
 until the next period) and a banner sits atop the Time / PTO calendar, from
@@ -626,6 +745,22 @@ lines, break pages and place a signature block, with Insert buttons and a
 Preview of exactly what the employee will see. The letterhead also heads the
 certificate and the printed copy.
 
+**Cycle 26 Batch 6 (2026-11-16) — Employee Docs integrity.** Verify, the
+certificate and the copy read ONE verdict: green only when the content hash,
+the PDF's hash and the signature hash were all recomputed and match; a check
+that could not be made is "NOT verified", with its reason. The certificate
+prints that verdict on its face; the reader notes a record that no longer
+verifies; no copy is made from an altered one. "The managers" on a copy email
+are today's roster managers (anyone left out is named), one person may send
+ten copies before waiting, and the message says where the copy was made. A
+written body may embed only stored images; a converted Google Doc's image
+placeholders are removed. A review-only document shows no Submit. The PDF
+viewer is fetched with a checksum check from two CDNs and a failed load can
+be retried in place. "Add box" places a field box from the keyboard. The
+weekly coaching recap covers everything since the previous one. In the
+Scratchpad, Ctrl/⌘+Enter ticks the checklist item the cursor is on or opens
+the link it is in.
+
 **Batch F (operator 2026-11-02):** Coaching's "Who needs a 1-on-1" board shows
 each rep's last 1-on-1 and when the next is due (late in red, none on record as
 "due now"), with a **Log** button that records one (the date, an optional note)
@@ -641,6 +776,19 @@ summary row per rep per day (first and last activity, active minutes, the
 10-minute map), written nightly before the raw pings — now kept 14 days — are
 purged. Day Edit's activity strip reads the summary for any condensed day and
 says when a day predates what was kept.
+
+**Cycle 26 Batch 9:** Day Edit suggests a Clock In / Out from app activity only
+once the day's own punches have loaded (F16). A block's clicks and keystrokes
+are drawn only beside a ping — that block or the one either side — and capped
+per block; counts sent for blocks with nothing beside them are counted and
+said, not drawn (F27). A row the activity log could not write is counted
+(`ACTIVITY_LOG_FAILS`), reported on Admin → System for 48 hours and named on
+the day's panel (F30). A day is condensed once it ended more than six hours
+ago, so counts that arrive late are in its summary.
+
+**Cycle 26 follow-ons after Batch 14 (FX6):** the pay-period tile on Time /
+PTO says when the timesheet archive could not be read — hours from earlier in
+the period may be missing — as the calendar beside it already did.
 
 **Batch B (operator 2026-11-02):** a department email's send tags its note:
 - Close Order `close-<reason>`, through `CLOSE_REASON_TAGS`.
@@ -837,6 +985,21 @@ longer sent to reps.
      tracking has no thread, so it gets none, and its button and the
      confirmation say so. The `deptResolvedReply` toggle turns the reply off.
 
+     **Cycle 26 Batch 4 — Admin and automation.** The Admin toggle and
+     retention saves write only what the admin changed (a stale page cannot
+     put another admin's change back). The monthly accrual health line reads
+     clean once the credit has run; the hourly call-data read-ahead keeps the
+     Dashboard's year-to-date transfer totals and reports honestly; the
+     pay-week reminder is sent at or after 9 am Central, once per person.
+     **Cycle 26 Batch 3 — the replies on a thread.** A Dept Request's resolved
+     reply answers the request's own email (the newest one the app sent that
+     carries its id), not the thread's first message; a thread where that
+     email cannot be found gets no reply and the person is told. A Spanish
+     resolved reply is not sent when it could reach an address outside the
+     company, and a resolve on a thread with nothing open is "already". A
+     requester who replies to the app's "marked resolved" email — quoting it —
+     is a new request; their out-of-office is not. Both replies carry
+     `MAIL_BCC_ALL` (`appReplyAll_`).
      **SP1 (operator 2026-11-09) — Spanish Inbox resolve with a reply.** Mark
      resolved (and Resolve selected) asks how the request ended — reached the
      patient, left a voicemail, no answer or wrong number — and for an optional
@@ -855,6 +1018,19 @@ longer sent to reps.
      and unnamed rows dropped, "Z" written as "Hawaii Only (Z)"), listing every
      step in the preview before anything is replaced. The rule in the source's
      top-left cell is shown above every insurance lookup answer.
+
+     **Cycle 26 Batch 5 (2026-11-16) — payor lookups.** The lookup's answer
+     says what became of every payor table (searched, not imported, empty,
+     only partly read); a no-match while a table was not searched is not
+     called "plan not listed". An exclusion in a plan's name covers only the
+     states written directly after it. Green is a plain accept; an accept
+     with anything beside it is amber, "Cannot be accepted" is red and "No
+     auth required" is neutral. A card the cross-table check did not reach
+     says so, and the price row's payor line shows the column label, state
+     and table. On the Admin panel, Replace writes exactly what the preview
+     showed (a fingerprint), and a note or audit row that fails after the
+     table went in is reported on a successful import. The handbook import
+     replaces its images, quizzes and forms tabs in one write each.
 
      **PT1 (operator 2026-11-09) — payor tables.** The insurance lookup
      searches Primary Medicaid as well as Medicare / MA, as one search: the
@@ -1761,9 +1937,13 @@ longer sent to reps.
      - **Manual home:** the landing opens with the manual's version, three router
        openers, "Go to a section" and a tile per chapter; in the pop-out and on a
        phone the lookups come first.
-     - **Narrow screens:** in the pop-out and at ≤720px the side is one row —
+     - **Narrow screens:** in the pop-out and below 1024px (the shell's phone
+       layout, which caps the view at 600px — the fold was 720px until cycle 26,
+       leaving a 272px reader up to 1023px) the side is one row —
        search and **Contents** (every chapter and article in a dialog) — and the
-       tree shows only while searching.
+       tree shows only while searching. A chapter's masthead index and its
+       Previous / Next cards answer to the READER's width (container queries):
+       one column when it is narrow.
      - **Quick cards:** a chapter's Quick Reference Card closes its masthead (open
        unless closed for that chapter), Print card prints it as a card with its
        diagram on the next sheet, and Appendix C offers Print all cards. Cards 4,

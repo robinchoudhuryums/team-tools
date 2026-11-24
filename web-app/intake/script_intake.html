@@ -224,6 +224,10 @@
   .intk-card-line span { color: var(--muted); }
   .intk-card-acts { display: flex; gap: 8px; flex-wrap: wrap; }
   .intk-card-note { margin: 0; font-size: .75rem; color: var(--muted); }
+  /* F21 (cycle 26): one section per card. With several, each is set apart. */
+  .intk-card-one { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .intk-card-one + .intk-card-one { border-top: 1px solid var(--line); padding-top: 10px; }
+  .intk-card-which { font-size: .8rem; font-weight: 600; color: var(--muted); }
   /* I2 — saved drafts: the count on the rail button and the Drafts list. */
   .intk-drafts-n { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 999px; background: var(--accent); color: var(--paper-card); font-family: var(--mono); font-size: 11px; line-height: 18px; text-align: center; }
   .intk-modal.intk-drafts-modal { width: min(560px, calc(100vw - 32px)); }
@@ -2683,7 +2687,7 @@ function intakePpdSend_(confirmedExternal) {
       // view — a late success after nav-away must not clobber #view-area.
       // State still resets so stale images can't ride into the next send.
       if (currentView === requestedView) intakeClearForm_('ppd');
-      else { INTAKE_STATE.ppd.images = []; INTAKE_STATE.preview = null; }   // drop PHI payload after send (F3)
+      else { intakeResetFormSubject_('ppd'); INTAKE_STATE.preview = null; }   // drop PHI payload after send (F3) — and the amendment with it (F1)
       // M-5 (cycle 10): the email sent but the PHI submission record didn't
       // persist — surface it loudly instead of a silent server-side warn.
       if (res.storeWarning) showToast(res.storeWarning, 'toast-warn');
@@ -2996,7 +3000,7 @@ function intakeAcctSend_(form, confirmedExternal) {
       intakeClearDraft_(form);   // drop the persisted draft (PHI) on a successful send
       intakeSavedRemove_(INTAKE_STATE[form].savedId); INTAKE_STATE[form].savedId = null;   // I2: and the saved draft it came from
       if (currentView === requestedView) intakeClearForm_(form);
-      else { INTAKE_STATE[form].images = []; INTAKE_STATE.preview = null; delete INTAKE_CARD[form]; }   // drop PHI payload after send (F3)
+      else { intakeResetFormSubject_(form); INTAKE_STATE.preview = null; }   // drop PHI payload after send (F3) — and the amendment with it (F1)
       // M-5 (cycle 10): loud toast when the PHI submission record didn't persist.
       if (res.storeWarning) showToast(res.storeWarning, 'toast-warn');
       else showToast(form.toUpperCase() + ' emailed to ' + res.recipient, 'toast-success');
@@ -3111,16 +3115,19 @@ function intakeProcessImage_(form, file) {
 function intakeRenderGallery_(form) {
   var g = document.getElementById('intk-gallery');
   if (!g) return;
+  // F20: the gallery on screen may be the OTHER account form's (shared ids).
+  var drop = document.getElementById('intk-drop');
+  if (drop && drop.getAttribute('data-form') !== form) return;
   g.innerHTML = (INTAKE_STATE[form].images || []).map(function (src, idx) {
     return '<div class="intk-thumb"><img src="' + esc(src) + '" alt="">' +
       '<button type="button" class="rm" aria-label="Remove image ' + (idx + 1) + '"' +   // A1
       ' onclick="intakeRemoveImage_(\'' + form + '\',' + idx + ')">&#10005;</button></div>';
   }).join('');
   // I3: the card reader's button under the images (or its open suggestion).
-  var host = document.getElementById('intk-card-read');
+  var host = intakeCardHost_(form);
   if (!host) return;
   if (INTAKE_CARD[form]) { intakeCardPanel_(form); return; }
-  host._seq = (host._seq || 0) + 1;   // a read in flight for the old set of images is dropped
+  INTAKE_CARD_SEQ[form] = (INTAKE_CARD_SEQ[form] || 0) + 1;   // a read in flight for the old set of images is dropped
   var n = (INTAKE_STATE[form].images || []).length;
   host.innerHTML = n ? '<button type="button" class="intk-btn" data-card-read="1">' + icon('fileText', 14) + ' ' +
     esc(INTAKE_STATE[form].lang === 'ES' ? 'Leer los datos del seguro de la tarjeta' : 'Read the insurance details from the card') + '</button>' : '';
@@ -3156,18 +3163,63 @@ var INTAKE_OCR_FILES = {
 };
 var INTAKE_OCR = { state: '', waiting: [], det: null, rec: null, dict: null };   // state '' | 'loading' | 'ready'
 var INTAKE_CARD = {};   // per form: { fields, read, of } — the open suggestion
+// F20 (cycle 26): which read is current, per FORM. It was a counter on the
+// host ELEMENT — and a Clear, a saved draft or a send re-renders the form, so
+// the read in flight kept checking a detached node whose counter never moved:
+// it finished over the previous patient's images and offered their payer and
+// member ID on the next patient's blank form. Bumped by a new read, a change
+// to the images, and every subject change (intakeResetFormSubject_).
+var INTAKE_CARD_SEQ = {};
+/** F20 — the card reader's host, only while THIS form is the one on screen.
+ *  PMD and PAP share the ids `intk-card-read` and `intk-gallery`, so a lookup
+ *  by id alone painted a PMD patient's details into the PAP view. */
+function intakeCardHost_(form) {
+  var drop = document.getElementById('intk-drop');
+  if (!drop || drop.getAttribute('data-form') !== form) return null;
+  return document.getElementById('intk-card-read');
+}
 
 function intakeOcrHex_(buf) {
   return Array.prototype.map.call(new Uint8Array(buf), function (b) { return (b < 16 ? '0' : '') + b.toString(16); }).join('');
+}
+/** F75 (cycle 26) — a reader failure that says WHICH: `kind` is 'download'
+ *  (the file did not arrive — a blocked or dropped network), 'checksum' (it
+ *  arrived and is not the pinned file) or 'start' (the browser could not run
+ *  it); `file` is the INTAKE_OCR_FILES key. No image or value rides it. */
+function intakeOcrErr_(kind, file, msg) {
+  var e = new Error(msg || kind);
+  e.kind = kind; e.file = file || '';
+  return e;
+}
+/** PURE (Node-pinned) — what the rep is told, by kind. Only 'start' blames the
+ *  browser; a download failure names the network; a checksum failure says the
+ *  files were not used and to tell an admin. */
+function intakeOcrFailText_(kind, es) {
+  if (kind === 'download') {
+    return es ? 'No se pudo descargar el lector de tarjetas (la red lo bloqueó o se interrumpió) — intente de nuevo, o escriba los datos del seguro.'
+      : 'The card reader could not be downloaded (the network blocked it, or the connection dropped) — try again, or type the insurance details.';
+  }
+  if (kind === 'checksum') {
+    return es ? 'Los archivos del lector de tarjetas no pasaron la verificación de seguridad y no se usaron — escriba los datos del seguro y avise a su administrador.'
+      : 'The card reader\'s files failed a safety check and were not used — type the insurance details, and tell your admin.';
+  }
+  return es ? 'No se pudo leer la tarjeta en este navegador — escriba los datos del seguro.' : 'The card could not be read in this browser — type the insurance details instead.';
+}
+/** PURE (Node-pinned) — the line the error beacon carries: the kind and the
+ *  file KEY only (an allowlisted name) — never an image, a value or a URL. */
+function intakeOcrBeaconText_(kind, file) {
+  var key = Object.prototype.hasOwnProperty.call(INTAKE_OCR_FILES, file) ? file : 'unknown';
+  return 'Intake card reader: ' + (kind === 'checksum' ? 'a pinned file failed its checksum' : 'failed (' + String(kind).replace(/[^a-z]/g, '') + ')') + ' — file ' + key;
 }
 /** One pinned file, checked: resolves to its bytes, or rejects naming the file. */
 function intakeOcrFetch_(key) {
   var f = INTAKE_OCR_FILES[key];
   return fetch(INTAKE_OCR_CDN + f.path, { credentials: 'omit' })
-    .then(function (r) { if (!r.ok) throw new Error('could not download ' + key); return r.arrayBuffer(); })
+    .then(function (r) { if (!r.ok) throw intakeOcrErr_('download', key, 'could not download ' + key); return r.arrayBuffer(); },
+      function () { throw intakeOcrErr_('download', key, 'could not download ' + key); })   // the request itself failed (blocked, offline)
     .then(function (buf) {
       return crypto.subtle.digest('SHA-256', buf).then(function (d) {
-        if (intakeOcrHex_(d) !== f.sha256) throw new Error(key + ' did not match its checksum');
+        if (intakeOcrHex_(d) !== f.sha256) throw intakeOcrErr_('checksum', key, key + ' did not match its checksum');
         return buf;
       });
     });
@@ -3196,7 +3248,7 @@ function intakeOcrEngine_() {
           s.textContent = new TextDecoder().decode(got.ort);   // the checked bytes, never a second download
           document.head.appendChild(s);
         }
-        if (!window.ort) throw new Error('the reader did not start');
+        if (!window.ort) throw intakeOcrErr_('start', 'ort', 'the reader did not start');
         ort.env.wasm.numThreads = 1;
         ort.env.wasm.proxy = false;
         ort.env.wasm.wasmBinary = got.wasm;
@@ -3206,7 +3258,7 @@ function intakeOcrEngine_() {
       })
       .then(function (det) { INTAKE_OCR.det = det; return ort.InferenceSession.create(new Uint8Array(got.rec), { executionProviders: ['wasm'] }); })
       .then(function (rec) { INTAKE_OCR.rec = rec; settle(null); })
-      .catch(function (e) { settle(e || new Error('the reader did not start')); });
+      .catch(function (e) { settle(e || intakeOcrErr_('start', '', 'the reader did not start')); });
   });
 }
 
@@ -3343,15 +3395,38 @@ function intakeCardRows_(lines) {
 // "Group Number0701234"), so a label is found without a word boundary after
 // it where its own letters make it unmistakable. A value must look like its
 // field, or it is not taken — the rep types it instead.
+// F67 (cycle 26): the patterns are SOURCES, compiled at first use inside a
+// try (intakeCardRx_). They were regex LITERALS with a lookbehind — "not after
+// a letter" — and a literal the engine cannot parse is an early error for the
+// whole <script>: on Safari / iOS older than 16.4 none of this partial's
+// functions were defined, so PPD, PMD, PAP, Sent and Catalog all vanished, not
+// only the optional card reader. A pin parses every client partial and refuses
+// a lookbehind in any regex literal.
 var INTAKE_CARD_LABELS = [
-  { key: 'rxBin', skip: true, re: /(?<![a-z])(?:rx?\s*bin|bin(?![a-z]))(?:\s*(?:#|no\.?|number)(?![a-z]))?/i },
-  { key: 'rxPcn', skip: true, re: /(?<![a-z])(?:rx?\s*pcn|pcn(?![a-z]))(?:\s*(?:#|no\.?)(?![a-z]))?/i },
-  { key: 'rxGrp', skip: true, re: /(?<![a-z])rx\s*(?:grp|group)(?:\s*(?:#|no\.?|number)(?![a-z]))?/i },
-  { key: 'payerId', skip: true, re: /(?<![a-z])payer\s*(?:id|#)(?![a-z])/i },
-  { key: 'mbi', re: /(?<![a-z])(?:medicare\s*(?:number|no\.?|#|id|claim\s*number)|mbi)(?![a-z])/i, ok: null },
-  { key: 'memberId', re: /(?<![a-z])(?:member\s*(?:identification|id|#|no\.?|number)|subscriber\s*(?:id|#|no\.?|number)|identification\s*(?:no\.?|number|#)|id\s*(?:no\.?|number|#))(?![a-z]{2})/i, ok: /^(?=.*\d)[A-Z0-9-]{5,20}$/ },
-  { key: 'group', re: /(?<![a-z])(?:group|grp)(?:\s*(?:number|no\.?|#|id)(?![a-z]))?/i, ok: /^(?=.*\d)[A-Z0-9-]{3,15}$/ },
+  { key: 'rxBin', skip: true, src: '(?<![a-z])(?:rx?\\s*bin|bin(?![a-z]))(?:\\s*(?:#|no\\.?|number)(?![a-z]))?' },
+  { key: 'rxPcn', skip: true, src: '(?<![a-z])(?:rx?\\s*pcn|pcn(?![a-z]))(?:\\s*(?:#|no\\.?)(?![a-z]))?' },
+  { key: 'rxGrp', skip: true, src: '(?<![a-z])rx\\s*(?:grp|group)(?:\\s*(?:#|no\\.?|number)(?![a-z]))?' },
+  { key: 'payerId', skip: true, src: '(?<![a-z])payer\\s*(?:id|#)(?![a-z])' },
+  { key: 'mbi', src: '(?<![a-z])(?:medicare\\s*(?:number|no\\.?|#|id|claim\\s*number)|mbi)(?![a-z])', ok: null },
+  { key: 'memberId', src: '(?<![a-z])(?:member\\s*(?:identification|id|#|no\\.?|number)|subscriber\\s*(?:id|#|no\\.?|number)|identification\\s*(?:no\\.?|number|#)|id\\s*(?:no\\.?|number|#))(?![a-z]{2})', ok: /^(?=.*\d)[A-Z0-9-]{5,20}$/ },
+  { key: 'group', src: '(?<![a-z])(?:group|grp)(?:\\s*(?:number|no\\.?|#|id)(?![a-z]))?', ok: /^(?=.*\d)[A-Z0-9-]{3,15}$/ },
 ];
+var INTAKE_CARD_ADVANTAGE_SRC = 'medicare\\s*advantage|(?<![a-z])(?:hmo|ppo|pffs|d-?snp)(?![a-z])|part\\s*c(?![a-z])|gold\\s*plus';
+// {labels, advantage} once compiled; false when this browser cannot compile them.
+var INTAKE_CARD_RX = null;
+/** The compiled card patterns, or false where the browser has no regex
+ *  lookbehind — the card reader then says so, and the rest of Intake works. */
+function intakeCardRx_() {
+  if (INTAKE_CARD_RX === null) {
+    try {
+      INTAKE_CARD_RX = {
+        labels: INTAKE_CARD_LABELS.map(function (L) { return { key: L.key, skip: !!L.skip, ok: L.ok, re: new RegExp(L.src, 'gi') }; }),
+        advantage: new RegExp(INTAKE_CARD_ADVANTAGE_SRC, 'i'),
+      };
+    } catch (e) { INTAKE_CARD_RX = false; }
+  }
+  return INTAKE_CARD_RX;
+}
 // Words a value can run into when the reader drops a space ("X1234005CMS").
 var INTAKE_CARD_TAIL_WORDS = ['CMS', 'RXBIN', 'RXPCN', 'RXGRP', 'BIN', 'PCN', 'RX', 'PLAN', 'ISSUER', 'PAYER', 'PCP', 'EFF'];
 // Payers a rep will see on a card, matched with the spaces taken out; the
@@ -3393,6 +3468,8 @@ var INTAKE_CARD_SURE = 0.8;
  *  own characters (I3a). */
 function intakeCardParse_(rows) {
   var out = { payer: '', memberId: '', group: '', mbi: '', advantage: false, unsure: {} };
+  var rx = intakeCardRx_();
+  if (!rx) return out;   // F67: no lookbehind in this browser — intakeCardRead_ has already said so
   rows = rows || [];
   var rowText = function (r) { return r.items.map(function (i) { return i.text; }).join('  '); };
   var probsOf = function (it) { return it.probs || it.text.split('').map(function () { return 1; }); };
@@ -3416,8 +3493,9 @@ function intakeCardParse_(rows) {
   rows.forEach(function (row, ri) {
     var text = rowText(row), probs = rowProbs(row);
     var hits = [];
-    INTAKE_CARD_LABELS.forEach(function (L) {
-      var re = new RegExp(L.re.source, 'gi'), m;
+    rx.labels.forEach(function (L) {
+      var re = L.re, m;
+      re.lastIndex = 0;
       while ((m = re.exec(text))) {
         if (!m[0]) { re.lastIndex++; continue; }
         if (hits.some(function (h) { return m.index < h.end && m.index + m[0].length > h.start; })) continue;
@@ -3458,7 +3536,7 @@ function intakeCardParse_(rows) {
       }
     });
   });
-  out.advantage = /medicare\s*advantage|(?<![a-z])(?:hmo|ppo|pffs|d-?snp)(?![a-z])|part\s*c(?![a-z])|gold\s*plus/i.test(all);
+  out.advantage = rx.advantage.test(all);
   var flat = function (s) { return s.toLowerCase().replace(/[^a-z&]/g, ''); };
   for (var r = 0; r < rows.length && !out.payer; r++) {
     for (var i = 0; i < rows[r].items.length && !out.payer; i++) {
@@ -3492,6 +3570,102 @@ function intakeCardMerge_(a, b) {
   if (out.advantage) { out.mbi = ''; delete out.unsure.mbi; }
   return out;
 }
+/** PURE — the known payers a payer line names (matched with the spaces out). */
+function intakeCardPayerKeys_(payer) {
+  var f = String(payer || '').toLowerCase().replace(/[^a-z&]/g, '');
+  return INTAKE_CARD_PAYERS.filter(function (p) { return f.indexOf(p) >= 0; });
+}
+/** PURE (Node-pinned) — F21 (cycle 26): how one image's read relates to a card
+ *  built so far. 'conflict' — they are different cards: a different member ID,
+ *  Medicare ID, group or payer; a Medicare card against a plan's card.
+ *  'match' — a value they both carry is the same. 'none' — nothing to tell
+ *  them by (a back that carries only a phone number). Two payer lines are the
+ *  same payer when they name a known payer in common ("Aetna" / "Aetna
+ *  Medicare"); a line naming none is compared as written. An Advantage read
+ *  with NO value of its own is not a card of its own: it stays 'none', joins
+ *  the card before it, and the merge voids that card's MBI as it always has —
+ *  withholding a Medicare ID is the safe side of that doubt. */
+function intakeCardRel_(a, b) {
+  a = a || {}; b = b || {};
+  var own = function (f) { return !!(f.payer || f.memberId || f.group); };
+  if ((a.mbi && b.advantage && own(b)) || (b.mbi && a.advantage && own(a))) return 'conflict';
+  if ((a.mbi && !a.memberId && b.memberId && !b.mbi) || (b.mbi && !b.memberId && a.memberId && !a.mbi)) return 'conflict';
+  var match = false, ids = ['memberId', 'mbi', 'group'];
+  for (var i = 0; i < ids.length; i++) {
+    var x = String(a[ids[i]] || '').toUpperCase(), y = String(b[ids[i]] || '').toUpperCase();
+    if (!x || !y) continue;
+    if (x !== y) return 'conflict';
+    match = true;
+  }
+  if (a.payer && b.payer) {
+    var ka = intakeCardPayerKeys_(a.payer), kb = intakeCardPayerKeys_(b.payer);
+    var flat = function (v) { return String(v).toLowerCase().replace(/[^a-z0-9&]/g, ''); };
+    var same = (ka.length && kb.length) ? ka.some(function (k) { return kb.indexOf(k) >= 0; }) : flat(a.payer) === flat(b.payer);
+    if (!same) return 'conflict';
+    match = true;
+  }
+  return match ? 'match' : 'none';
+}
+/** PURE (Node-pinned) — F21: the attached images' reads (in image order; null
+ *  for one that could not be read) as CARDS — [{fields, images: [1-based]}].
+ *  The reads were merged as if every image were one card, first value found
+ *  per field: a Humana card and an Aetna card gave "Humana · ID H123 · Group
+ *  555" — Humana's ID with Aetna's group — and any plan card voided the real
+ *  Medicare card's MBI. A read joins the newest card it MATCHES; one with
+ *  nothing to tell it by goes with the card the image BEFORE it went to (a
+ *  front, then its back); anything else starts a card. Within a card the
+ *  front/back merge is unchanged. */
+function intakeCardGroup_(reads) {
+  var cards = [], prev = -1;   // prev: the card the last readable image joined
+  (reads || []).forEach(function (rd, i) {
+    if (!rd) return;
+    var target = -1;
+    for (var c = cards.length - 1; c >= 0 && target < 0; c--) if (intakeCardRel_(cards[c].fields, rd) === 'match') target = c;
+    if (target < 0 && prev >= 0 && intakeCardRel_(cards[prev].fields, rd) === 'none') target = prev;
+    if (target < 0) { cards.push({ fields: rd, images: [i + 1] }); target = cards.length - 1; }
+    else { cards[target].fields = intakeCardMerge_(cards[target].fields, rd); cards[target].images.push(i + 1); }
+    prev = target;
+  });
+  return cards;
+}
+/** PURE (Node-pinned) — FV1 (cycle 26): two suggestions the rep says are ONE
+ *  card, joined. The grouping can split a card in two — a second photo whose
+ *  ID is misread by one character, a payer the list does not know printed
+ *  differently front and back — and the rep had no way to say so. The upper
+ *  card's value is kept for each field, a blank is filled from the lower one,
+ *  and a field the two DISAGREED on is marked "check this": which read was
+ *  right is the rep's to say. */
+function intakeCardJoinFields_(a, b) {
+  a = a || {}; b = b || {};
+  var out = intakeCardMerge_(a, b);
+  INTAKE_CARD_FIELDS.forEach(function (p) {
+    var k = p[0], x = String(a[k] || '').toUpperCase(), y = String(b[k] || '').toUpperCase();
+    if (x && y && x !== y && out[k]) out.unsure[k] = true;
+  });
+  return out;
+}
+/** PURE (Node-pinned) — FV1: may these two be offered as "the same card"?
+ *  Not when joining them would drop a Medicare ID one of them holds (the
+ *  merge withholds an MBI beside an Advantage read): a Medicare card and a
+ *  plan card are two cards, and one press must not lose the number. */
+function intakeCardCanJoin_(a, b) {
+  a = a || {}; b = b || {};
+  return !((a.mbi || b.mbi) && !intakeCardMerge_(a, b).mbi);
+}
+/** PURE — does a card's read hold anything to offer? */
+function intakeCardHasValue_(f) {
+  return !!f && INTAKE_CARD_FIELDS.some(function (p) { return f[p[0]]; });
+}
+/** The cards a stored suggestion still offers: not yet used, and — when there
+ *  is more than one — holding a value. (`fields` alone is the shape a
+ *  suggestion had before F21.) Each keeps its index in the stored list. */
+function intakeCardOffered_(st) {
+  var all = (st && Array.isArray(st.cards)) ? st.cards : ((st && st.fields) ? (st.cards = [{ fields: st.fields, images: [] }]) : []);
+  var live = [];
+  all.forEach(function (c, n) { if (c && !c.used) live.push({ n: n, card: c }); });
+  var withValue = live.filter(function (x) { return intakeCardHasValue_(x.card.fields); });
+  return (live.length > 1 && withValue.length) ? withValue : live;
+}
 /** PURE (Node-pinned) — the one insurance line the form's field holds:
  *  "Medicare 1EG4TE5MK72" (I1 tidies it to "Medicare · 1EG4-TE5-MK72"), or
  *  "Payer · ID … · Group …". */
@@ -3509,87 +3683,128 @@ var INTAKE_CARD_FIELDS = [['payer', 'Payer'], ['memberId', 'Member ID'], ['mbi',
  *  not start — a broken photo is not the browser's fault (g142). */
 function intakeCardRead_(form) {
   var imgs = (INTAKE_STATE[form] && INTAKE_STATE[form].images) || [];
-  var host = document.getElementById('intk-card-read');
-  if (!imgs.length || !host) return;
+  if (!imgs.length || !intakeCardHost_(form)) return;
   var es = INTAKE_STATE[form].lang === 'ES';
-  var status = function (msg) { host.innerHTML = '<p class="intk-card-status" role="status">' + icon('refresh', 13) + '<span>' + esc(msg) + '</span></p>'; };
-  var fail = function (msg) {
+  var seq = INTAKE_CARD_SEQ[form] = (INTAKE_CARD_SEQ[form] || 0) + 1;
+  // F20: every paint looks the host up AGAIN and only while this read is still
+  // the form's current one — never a node captured before the wait (g147).
+  var live = function () { return INTAKE_CARD_SEQ[form] === seq ? intakeCardHost_(form) : null; };
+  var status = function (msg) { var host = live(); if (host) host.innerHTML = '<p class="intk-card-status" role="status">' + icon('refresh', 13) + '<span>' + esc(msg) + '</span></p>'; };
+  var fail = function (msg, noRetry) {
+    var host = live();
+    if (!host) return;
     // No image or typed text rides this message (g146) — and it says what failed.
     host.innerHTML = '<p class="intk-card-status intk-card-fail" role="status">' + icon('warning', 13) + '<span>' + esc(msg) + '</span>' +
-      '<button type="button" class="intk-btn intk-card-retry">' + esc(es ? 'Intentar de nuevo' : 'Try again') + '</button></p>';
+      (noRetry ? '' : '<button type="button" class="intk-btn intk-card-retry">' + esc(es ? 'Intentar de nuevo' : 'Try again') + '</button>') + '</p>';
     var b = host.querySelector('.intk-card-retry');
     if (b) b.addEventListener('click', function () { intakeCardRead_(form); });
   };
+  // F67: a browser that cannot compile the card patterns is told before the
+  // 30 MB reader is fetched — "in this browser" is the right source here (g142).
+  if (!intakeCardRx_()) { fail(intakeOcrFailText_('start', es), true); return; }
   status(INTAKE_OCR.state === 'ready' || window.INTAKE_OCR_ENGINE ? (es ? 'Leyendo la tarjeta…' : 'Reading the card…')
     : (es ? 'Cargando el lector (unos 30 MB la primera vez)…' : 'Loading the card reader (about 30 MB the first time)…'));
-  var seq = host._seq = (host._seq || 0) + 1;
   var images = imgs.slice();
   intakeOcrEngine_().then(function (engine) {
-    var merged = null, failed = [], i = 0;
+    var reads = [], failed = [], i = 0;
     var next = function () {
-      if (host._seq !== seq) return null;
-      if (i >= images.length) return { fields: merged, failed: failed, total: images.length };
+      if (INTAKE_CARD_SEQ[form] !== seq) return null;
+      if (i >= images.length) return { cards: intakeCardGroup_(reads), failed: failed, total: images.length };   // F21: per card, not one merge
       status((es ? 'Leyendo la imagen ' : 'Reading image ') + (i + 1) + (es ? ' de ' : ' of ') + images.length + '…');
       var n = i + 1;
       return intakeCardImage_(images[i]).then(function (img) { return engine.read(img); }).then(function (lines) {
-        var f = intakeCardParse_(intakeCardRows_(lines));
-        merged = merged ? intakeCardMerge_(merged, f) : f;
-      }, function () { failed.push(n); }).then(function () { i++; return next(); });
+        reads[n - 1] = intakeCardParse_(intakeCardRows_(lines));
+      }, function () { reads[n - 1] = null; failed.push(n); }).then(function () { i++; return next(); });
     };
     return next();
-  }, function () { return { engineFailed: true }; }).then(function (res) {
-    if (host._seq !== seq || !res) return;
-    if (res.engineFailed) { fail(es ? 'No se pudo leer la tarjeta en este navegador — escriba los datos del seguro.' : 'The card could not be read in this browser — type the insurance details instead.'); return; }
-    if (!res.fields) {
+  }, function (e) { return { engineFailed: true, kind: (e && e.kind) || 'start', file: (e && e.file) || '' }; }).then(function (res) {
+    if (!live() || !res) return;   // F20: the form moved on (another patient, another form, another read)
+    if (res.engineFailed) {
+      // F75 (cycle 26): WHICH failure. A blocked CDN, a file that failed its
+      // checksum and a browser that cannot run the reader all said "in this
+      // browser" — the wrong source for two of them (g142), and the checksum
+      // failure, the one event the pinning exists to catch, reached nobody.
+      fail(intakeOcrFailText_(res.kind, es));
+      if (res.kind === 'checksum' && typeof errBeaconSend_ === 'function') errBeaconSend_(intakeOcrBeaconText_(res.kind, res.file), '', 'errorState');
+      return;
+    }
+    if (!res.cards.length) {
       fail(res.total === 1 ? (es ? 'La imagen no se pudo leer — pruebe con una foto más clara, o escriba los datos.' : 'The image could not be read — try a clearer photo, or type the details.')
         : (es ? 'Ninguna de las imágenes se pudo leer — pruebe con fotos más claras, o escriba los datos.' : 'None of the images could be read — try clearer photos, or type the details.'));
       return;
     }
-    INTAKE_CARD[form] = { fields: res.fields, failed: res.failed };
+    INTAKE_CARD[form] = { cards: res.cards, failed: res.failed };
     intakeCardPanel_(form);
   }).catch(function () {
-    if (host._seq === seq) fail(es ? 'No se pudo leer la tarjeta en este navegador — escriba los datos del seguro.' : 'The card could not be read in this browser — type the insurance details instead.');
+    fail(intakeOcrFailText_('start', es));   // fail() paints only while this read is still current
   });
 }
 function intakeCardImage_(src) {
   return new Promise(function (ok, no) { var i = new Image(); i.onload = function () { ok(i); }; i.onerror = function () { no(new Error('image')); }; i.src = src; });
 }
 /** The suggestion: each value in a box the rep can correct, the line it makes,
- *  and Use as primary / secondary. Nothing reaches the form until then. */
+ *  and Use as primary / secondary. Nothing reaches the form until then.
+ *  F21: one section PER CARD — two cards are two suggestions, each with its
+ *  own line and its own buttons; using one leaves the other offered. */
 function intakeCardPanel_(form) {
-  var host = document.getElementById('intk-card-read');
+  var host = intakeCardHost_(form);   // F20: this form's host, or nothing
   var st = INTAKE_CARD[form];
   if (!host || !st) return;
   var es = INTAKE_STATE[form].lang === 'ES';
-  var f = st.fields;
-  var shown = INTAKE_CARD_FIELDS.filter(function (p) { return p[0] !== 'mbi' || f.mbi || !f.memberId; });
-  var any = INTAKE_CARD_FIELDS.some(function (p) { return f[p[0]]; });
-  var unsure = f.unsure || (f.unsure = {});
+  var offered = intakeCardOffered_(st);
+  var several = offered.length > 1;
+  var any = offered.some(function (x) { return intakeCardHasValue_(x.card.fields); });
   var failedNote = (st.failed || []).length ? '<p class="intk-card-status intk-card-fail" role="status">' + icon('warning', 13) + '<span>' + esc((es ? 'No se pudo leer: imagen ' : 'Could not read image ') + st.failed.join(', ') +
     (es ? ' — los datos vienen de las demás.' : ' — what is shown comes from the others.')) + '</span></p>' : '';
+  var dismiss = '<button type="button" class="intk-btn" data-card-close="1">' + esc(es ? 'Cerrar' : 'Dismiss') + '</button>';
+  var section = function (x, pos) {
+    var f = x.card.fields, unsure = f.unsure || (f.unsure = {});
+    // FV1: every card after the first can be joined to the one above it.
+    var above = pos > 0 ? offered[pos - 1] : null;
+    var join = (above && intakeCardCanJoin_(above.card.fields, f)) ? '<button type="button" class="intk-btn" data-card-join="1">' +
+      esc((es ? 'Es la misma tarjeta que la Tarjeta ' : 'Same card as Card ') + pos) + '</button>' : '';
+    var shown = INTAKE_CARD_FIELDS.filter(function (p) { return p[0] !== 'mbi' || f.mbi || !f.memberId; });
+    var imgs = x.card.images || [];
+    var name = (es ? 'Tarjeta ' : 'Card ') + (pos + 1);
+    var title = several ? '<div class="intk-card-which">' + esc(name + (imgs.length ? ' · ' + (es ? (imgs.length === 1 ? 'imagen ' : 'imágenes ') : (imgs.length === 1 ? 'image ' : 'images ')) + imgs.join(', ') : '')) + '</div>' : '';
+    return '<div class="intk-card-one" data-card-n="' + x.n + '"' + (several ? ' role="group" aria-label="' + esc(name) + '"' : '') + '>' + title +
+      '<div class="intk-card-grid">' + shown.map(function (p) {
+        var k = p[0], check = !!(f[k] && unsure[k]);
+        var chkId = 'intk-card-chk-' + (several ? x.n + '-' : '') + k;
+        // I3a: an empty box says it was not found; a value the reader was not
+        // sure of says to check it — a flag, never a percentage (the reader's
+        // scores are not odds, and a number invites trust).
+        return '<label class="intk-card-f' + (check ? ' intk-card-unsure' : '') + '"><span>' + esc(p[1]) + '</span>' +
+          '<input type="text" autocomplete="off" aria-label="' + esc(p[1] + (several ? ', ' + name : '')) + '" data-card-key="' + k + '" value="' + esc(f[k] || '') + '"' +
+            ' placeholder="' + esc(es ? 'No está en la tarjeta — escríbalo' : 'Not found on the card — type it') + '"' + (check ? ' aria-describedby="' + chkId + '"' : '') + '>' +
+          (check ? '<span class="intk-card-chk" id="' + chkId + '">' + icon('warning', 11) + ' ' + esc(es ? 'Revise este' : 'Check this one') + '</span>' : '') + '</label>';
+      }).join('') + '</div>' +
+      '<p class="intk-card-line"><span>' + esc(es ? 'Se escribirá:' : 'Will be written as:') + '</span> <b data-card-line>' + esc(intakeCardLine_(f)) + '</b></p>' +
+      '<div class="intk-card-acts"><button type="button" class="intk-btn primary" data-card-use="8">' + esc(es ? 'Usar como seguro primario' : 'Use as primary insurance') + '</button>' +
+        '<button type="button" class="intk-btn" data-card-use="9">' + esc(es ? 'Usar como seguro secundario' : 'Use as secondary insurance') + '</button>' +
+        join + (several ? '' : dismiss) + '</div>' +
+    '</div>';
+  };
+  var head = !any ? (es ? 'No se encontraron datos del seguro en las imágenes — escríbalos en el formulario.' : 'No insurance details were found in the images — type them on the form.')
+    : several ? (es ? 'Se leyeron ' + offered.length + ' tarjetas — compare cada dato con su tarjeta' : 'Read from ' + offered.length + ' cards — check each value against its card')
+    : (es ? 'Leído de la tarjeta — compare cada dato con la tarjeta' : 'Read from the card — check each value against the card');
   host.innerHTML = '<div class="intk-card-panel" role="group" aria-label="' + esc(es ? 'Datos leídos de la tarjeta' : 'Details read from the card') + '">' +
-    '<div class="intk-card-head">' + icon('fileText', 14) + ' ' + esc(any ? (es ? 'Leído de la tarjeta — compare cada dato con la tarjeta' : 'Read from the card — check each value against the card')
-      : (es ? 'No se encontraron datos del seguro en las imágenes — escríbalos en el formulario.' : 'No insurance details were found in the images — type them on the form.')) + '</div>' +
+    '<div class="intk-card-head">' + icon('fileText', 14) + ' ' + esc(head) + '</div>' +
     failedNote +
-    (any ? '<div class="intk-card-grid">' + shown.map(function (p) {
-      var k = p[0], check = !!(f[k] && unsure[k]);
-      // I3a: an empty box says it was not found; a value the reader was not
-      // sure of says to check it — a flag, never a percentage (the reader's
-      // scores are not odds, and a number invites trust).
-      return '<label class="intk-card-f' + (check ? ' intk-card-unsure' : '') + '"><span>' + esc(p[1]) + '</span>' +
-        '<input type="text" autocomplete="off" aria-label="' + esc(p[1]) + '" data-card-key="' + k + '" value="' + esc(f[k] || '') + '"' +
-          ' placeholder="' + esc(es ? 'No está en la tarjeta — escríbalo' : 'Not found on the card — type it') + '"' + (check ? ' aria-describedby="intk-card-chk-' + k + '"' : '') + '>' +
-        (check ? '<span class="intk-card-chk" id="intk-card-chk-' + k + '">' + icon('warning', 11) + ' ' + esc(es ? 'Revise este' : 'Check this one') + '</span>' : '') + '</label>';
-    }).join('') + '</div>' +
-    '<p class="intk-card-line"><span>' + esc(es ? 'Se escribirá:' : 'Will be written as:') + '</span> <b data-card-line>' + esc(intakeCardLine_(f)) + '</b></p>' +
-    '<div class="intk-card-acts"><button type="button" class="intk-btn primary" data-card-use="8">' + esc(es ? 'Usar como seguro primario' : 'Use as primary insurance') + '</button>' +
-      '<button type="button" class="intk-btn" data-card-use="9">' + esc(es ? 'Usar como seguro secundario' : 'Use as secondary insurance') + '</button>' : '<div class="intk-card-acts">') +
-      '<button type="button" class="intk-btn" data-card-close="1">' + esc(es ? 'Cerrar' : 'Dismiss') + '</button></div>' +
+    (any ? offered.map(section).join('') + (several ? '<div class="intk-card-acts">' + dismiss + '</div>' : '')
+      : '<div class="intk-card-acts">' + dismiss + '</div>') +
     '<p class="intk-card-note">' + esc(es ? 'Leído en este navegador — las imágenes no se envían a ningún lugar para leerlas.' : 'Read in this browser — the images are not sent anywhere to be read.') + '</p>' +
   '</div>';
+  var cardOf = function (el) {
+    var sec = el && el.closest ? el.closest('[data-card-n]') : null;
+    var n = sec ? parseInt(sec.getAttribute('data-card-n'), 10) : -1;
+    return (sec && st.cards && st.cards[n]) ? { n: n, sec: sec, f: st.cards[n].fields } : null;
+  };
   host.oninput = function (e) {
     var k = e.target && e.target.getAttribute('data-card-key');
-    if (!k) return;
+    var c = k ? cardOf(e.target) : null;
+    if (!c) return;
+    var f = c.f, unsure = f.unsure || (f.unsure = {});
     f[k] = String(e.target.value || '').trim();
     if (unsure[k]) {   // the rep has looked at it: the flag goes
       delete unsure[k];
@@ -3598,35 +3813,78 @@ function intakeCardPanel_(form) {
       if (chk) chk.remove();
       e.target.removeAttribute('aria-describedby');
     }
-    var line = host.querySelector('[data-card-line]');
+    var line = c.sec.querySelector('[data-card-line]');
     if (line) line.textContent = intakeCardLine_(f);
   };
   host.onclick = function (e) {
     var t = e.target.closest ? e.target.closest('button') : null;
     if (!t) return;
     if (t.hasAttribute('data-card-close')) { delete INTAKE_CARD[form]; host.innerHTML = ''; intakeRenderGallery_(form); return; }
+    if (t.hasAttribute('data-card-join')) { var j = cardOf(t); if (j) intakeCardJoin_(form, j.n); return; }
     var idx = t.getAttribute('data-card-use');
-    if (idx) intakeCardUse_(form, parseInt(idx, 10));
+    var c = idx ? cardOf(t) : null;
+    if (c) intakeCardUse_(form, parseInt(idx, 10), c.n);
   };
 }
-/** Write the line into the primary (8) or secondary (9) insurance field —
- *  asking first when that field already holds something — then let I1 tidy
- *  and check it and the draft save it. */
-function intakeCardUse_(form, idx) {
+/** FV1 (cycle 26): card `n` is the same card as the one offered above it —
+ *  join the two into the upper one (intakeCardJoinFields_), keep both cards'
+ *  images on it, and redraw. Nothing reaches the form; the joined card is
+ *  still only a suggestion, with the fields the two disagreed on marked. */
+function intakeCardJoin_(form, n) {
   var st = INTAKE_CARD[form];
-  var el = document.querySelector('#intk-' + form + '-form [data-intk-idx="' + idx + '"]');
+  if (!st) return;
+  var offered = intakeCardOffered_(st), pos = -1;
+  offered.forEach(function (x, i) { if (x.n === n) pos = i; });
+  if (pos < 1) return;
+  var into = offered[pos - 1].card, from = offered[pos].card;
+  if (!intakeCardCanJoin_(into.fields, from.fields)) return;
+  into.fields = intakeCardJoinFields_(into.fields, from.fields);
+  into.images = (into.images || []).concat(from.images || []).sort(function (x, y) { return x - y; });
+  st.cards.splice(n, 1);
+  intakeCardPanel_(form);
+  // The redraw replaced the pressed button (g141): focus goes to the joined
+  // card's first marked box, or its first box.
+  var host = intakeCardHost_(form);
+  var sec = host && host.querySelector('[data-card-n="' + st.cards.indexOf(into) + '"]');
+  var box = sec && (sec.querySelector('.intk-card-unsure input') || sec.querySelector('input'));
+  if (box) { try { box.focus(); } catch (_) {} }
+  showToast('Joined into one card — check the values marked.', 'toast-success');
+}
+/** Write card `n`'s line into the primary (8) or secondary (9) insurance field —
+ *  asking first when that field already holds something — then let I1 tidy
+ *  and check it and the draft save it. F21: the other cards stay offered. */
+function intakeCardUse_(form, idx, n) {
+  var st = INTAKE_CARD[form];
+  var sel = '#intk-' + form + '-form [data-intk-idx="' + idx + '"]';
+  var el = document.querySelector(sel);
   if (!st || !el) return;
-  var line = intakeCardLine_(st.fields);
+  intakeCardOffered_(st);   // (a suggestion stored before F21 gains its one card)
+  var card = st.cards && st.cards[n == null ? 0 : n];
+  if (!card || card.used) return;
+  var line = intakeCardLine_(card.fields);
   if (!line) return;
   var go = function () {
+    // The suggestion this press was made on — a form reset or a new read while
+    // "Replace?" was open has replaced it, and its line is not this form's
+    // (g147). The field is looked up again: the form may have been redrawn.
+    el = document.querySelector(sel);
+    if (INTAKE_CARD[form] !== st || !el) return;
     el.value = line;
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
-    delete INTAKE_CARD[form];
-    var host = document.getElementById('intk-card-read');
-    if (host) host.innerHTML = '';
-    intakeRenderGallery_(form);
-    showToast((idx === 8 ? 'Primary' : 'Secondary') + ' insurance filled from the card — check it.', 'toast-success');
+    card.used = idx;
+    var left = intakeCardOffered_(st).filter(function (x) { return intakeCardHasValue_(x.card.fields); });
+    var host = intakeCardHost_(form);
+    if (left.length) {
+      intakeCardPanel_(form);   // the cards not used yet, with whatever the rep corrected in them
+      var nextBtn = host && host.querySelector('[data-card-use]');
+      if (nextBtn) { try { nextBtn.focus(); } catch (_) {} }
+    } else {
+      delete INTAKE_CARD[form];
+      if (host) host.innerHTML = '';
+      intakeRenderGallery_(form);
+    }
+    showToast((idx === 8 ? 'Primary' : 'Secondary') + ' insurance filled from the card — check it.' + (left.length ? ' ' + left.length + ' more card' + (left.length === 1 ? ' is' : 's are') + ' still offered.' : ''), 'toast-success');
   };
   var cur = String(el.value || '').trim();
   if (!cur || cur === line) { go(); return; }
@@ -3644,6 +3902,40 @@ function intakeCardUse_(form, idx) {
 var INTAKE_DRAFT_KEY = 'umsIntakeDrafts';
 var INTAKE_DRAFT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 var _intakeDraftTimer = null;
+
+// F72 (cycle 26) — what a draft may NOT keep at rest. A draft is plain text in
+// this browser's localStorage, and its 24 hours end only when Team Tools is
+// next open here — so on a loaner or a shared profile it can sit for good. The
+// SSN (the `ssn` kind of INTAKE_FMT_FIELDS) is therefore never written to
+// either draft store. It stays in MEMORY for the session (`INTAKE_STATE[form]
+// .held`), so a tool switch and back keeps it; a reload or a parked draft does
+// not, and says so. Stored drafts written before this are scrubbed by the sweep.
+var INTAKE_DRAFT_NEVER_KINDS = ['ssn'];
+var INTAKE_DRAFT_SSN_NOTE = 'The SSN is never kept in a draft — enter it again.';
+var INTAKE_SWEEP_EVERY_MS = 15 * 60 * 1000;
+var _intakeSweepTimer = null;
+/** PURE (Node-pinned) — split a form's answers into what a draft keeps and
+ *  what is held in memory only. → { kept, held, omitted }. */
+function intakeDraftSplit_(form, answers) {
+  var kinds = INTAKE_FMT_FIELDS[form] || {};
+  var kept = {}, held = {};
+  Object.keys(answers || {}).forEach(function (k) {
+    var v = answers[k];
+    if (INTAKE_DRAFT_NEVER_KINDS.indexOf(kinds[k]) < 0) { kept[k] = v; return; }
+    if (String(v == null ? '' : v).trim()) held[k] = v;
+  });
+  return { kept: kept, held: held, omitted: Object.keys(held).length > 0 };
+}
+/** PURE (Node-pinned) — scrub ONE stored draft in place (a draft saved before
+ *  F72 still holds the SSN). → true when it changed. */
+function intakeDraftScrub_(form, d) {
+  if (!d || !d.answers) return false;
+  var r = intakeDraftSplit_(form, d.answers);
+  if (!r.omitted) return false;
+  d.answers = r.kept;
+  d.omitted = true;
+  return true;
+}
 
 /** INT2-3 (cycle 23) — whose drafts these are. The key is shared by everyone
  *  who signs in on this browser profile, and the 24h expiry used to be checked
@@ -3672,9 +3964,17 @@ function intakeDraftsKept_(all, owner, now) {
 function intakeSweepDrafts_() {
   var owner = intakeDraftOwner_();
   if (!owner) return;
+  // F72 (cycle 26): the sweep ran at boot and when an intake view opened —
+  // never on a clock, so a tab left open over a weekend kept its drafts past
+  // their 24 hours. One timer for the session, armed by the first sweep.
+  if (!_intakeSweepTimer && typeof setInterval === 'function') {
+    _intakeSweepTimer = setInterval(function () { try { intakeSweepDrafts_(); } catch (e) {} }, INTAKE_SWEEP_EVERY_MS);
+  }
   try { intakeSavedMine_(); } catch (e) {}   // I2: the saved drafts follow the same owner + 24h rule
   var r = intakeDraftsKept_(intakeReadDrafts_(), owner, Date.now());
-  if (!r.dropped) return;
+  var scrubbed = 0;
+  Object.keys(r.kept).forEach(function (form) { if (intakeDraftScrub_(form, r.kept[form])) scrubbed++; });   // F72: a draft from before it
+  if (!r.dropped && !scrubbed) return;
   if (Object.keys(r.kept).length) intakeWriteDrafts_(r.kept);
   else { try { localStorage.removeItem(INTAKE_DRAFT_KEY); } catch (e) {} }
 }
@@ -3703,7 +4003,15 @@ function intakeDraftSaveNow_(form) {
   var snap = (form === 'ppd') ? intakeCollectPpd_() : intakeCollectAcct_(form);
   var owner = intakeDraftOwner_();
   if (!owner) return;   // INT2-3: a draft nobody can be named as owning is never written
-  var draft = { answers: snap.answers || {}, at: Date.now(), owner: owner };
+  // F72: the SSN is split off — held in memory for this session, never stored.
+  var split = intakeDraftSplit_(form, snap.answers || {});
+  if (INTAKE_STATE[form]) INTAKE_STATE[form].held = split.omitted ? split.held : null;
+  var draft = { answers: split.kept, at: Date.now(), owner: owner };
+  if (split.omitted) draft.omitted = true;
+  // F19 (cycle 26): which saved draft this working copy came from. It lived in
+  // memory only, so after a reload the send no longer removed that draft and
+  // it sat in Drafts to be opened and sent a second time.
+  if (INTAKE_STATE[form] && INTAKE_STATE[form].savedId) draft.savedId = INTAKE_STATE[form].savedId;
   if (form === 'ppd') draft.patientInfo = snap.patientInfo || '';
   var all = intakeReadDrafts_();
   all[form] = draft;
@@ -3742,6 +4050,12 @@ function intakeRestoreDraft_(form) {
   // INT2-3: someone else's draft (or one saved before drafts had owners) is
   // another patient's PHI — drop it, never restore it under this user.
   if (!d.owner || d.owner !== intakeDraftOwner_()) { intakeClearDraft_(form); return; }
+  // F19: the saved draft it came from, while that draft still exists.
+  if (d.savedId && !INTAKE_STATE[form].savedId &&
+      intakeSavedMine_().some(function (x) { return x.id === d.savedId && x.form === form; })) INTAKE_STATE[form].savedId = d.savedId;
+  // F72: a draft stored before the SSN rule is read without it (the sweep rewrites it).
+  var hadOmitted = !!d.omitted || intakeDraftScrub_(form, d);
+  var held = INTAKE_STATE[form].held;
   var restored = false;
   if (form === 'ppd') {
     var root = document.getElementById('intk-ppd-form');
@@ -3754,8 +4068,11 @@ function intakeRestoreDraft_(form) {
   } else {
     intakeApplyAcctAnswers_(form, d.answers || {});
     if (Object.keys(d.answers || {}).some(function (k) { return d.answers[k]; })) restored = true;
+    // F72: what was held in memory this session goes back with it; after a
+    // reload there is none, and the toast says the SSN has to be typed again.
+    if (held) { intakeApplyAcctAnswers_(form, held); restored = true; }
   }
-  if (restored) showToast('Draft restored', '');
+  if (restored) showToast('Draft restored' + (hadOmitted && !held ? ' — ' + INTAKE_DRAFT_SSN_NOTE : ''), '');
 }
 
 function intakeClearDraft_(form) {
@@ -3836,7 +4153,9 @@ function intakeSavedWrite_(list) {
 function intakeSavedMine_() {
   var all = intakeSavedRead_();
   var r = intakeSavedKept_(all, intakeDraftOwner_(), Date.now());
-  if (r.dropped) intakeSavedWrite_(r.kept);
+  var scrubbed = 0;
+  r.kept.forEach(function (d) { if (intakeDraftScrub_(d.form, d)) scrubbed++; });   // F72: a draft parked before it
+  if (r.dropped || scrubbed) intakeSavedWrite_(r.kept);
   return r.kept.slice().sort(function (a, b) { return b.at - a.at; });
 }
 function intakeSavedRemove_(id) {
@@ -3864,15 +4183,17 @@ function intakeSaveNamedDraft_(form) {
   var images = (INTAKE_STATE[form] && INTAKE_STATE[form].images) || [];
   var go = function () {
     var id = INTAKE_STATE[form].savedId || ('d' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
+    var split = intakeDraftSplit_(form, snap.answers || {});   // F72: a parked draft never holds the SSN
     var entry = { id: id, form: form, owner: owner, at: Date.now(), label: intakeSavedLabel_(form, snap),
-      answers: snap.answers || {}, patientInfo: form === 'ppd' ? (snap.patientInfo || '') : '',
+      answers: split.kept, patientInfo: form === 'ppd' ? (snap.patientInfo || '') : '',
       lang: INTAKE_STATE[form].lang || 'EN', amendOf: INTAKE_STATE[form].amendOf || null };
+    if (split.omitted) entry.omitted = true;
     var r = intakeSavedUpsert_(intakeSavedMine_(), entry, INTAKE_SAVED_MAX);
     if (r.error) { showToast(r.error, 'toast-warn'); return; }
     if (!intakeSavedWrite_(r.list)) { showToast('Could not save the draft — this browser is not keeping data (private window?).', 'toast-error'); return; }
     INTAKE_STATE[form].savedId = null;
     intakeClearForm_(form);
-    showToast('Draft saved for ' + entry.label + ' — open it from Drafts (kept 24 hours, in this browser).', 'toast-success');
+    showToast('Draft saved for ' + entry.label + ' — open it from Drafts (kept 24 hours, in this browser).' + (entry.omitted ? ' ' + INTAKE_DRAFT_SSN_NOTE : ''), 'toast-success');
   };
   if (!images.length) { go(); return; }
   uiConfirm({ title: 'Save draft without the card images?', confirmLabel: 'Save draft', cancelLabel: 'Keep working',
@@ -3896,7 +4217,7 @@ function intakeOpenDraftsList_() {
     }).join('');
     ov.innerHTML = '<div class="modal intk-modal intk-drafts-modal">' +
       '<div class="head"><h3 id="intk-drafts-title">Saved drafts</h3><button class="xclose" data-drafts-close="1" aria-label="Close">' + icon('x', 16) + '</button></div>' +
-      '<div class="body"><p class="intk-drafts-note">Kept in this browser for you only, 24 hours from the last save. Insurance card images are not kept.</p>' +
+      '<div class="body"><p class="intk-drafts-note">Kept in this browser for you only. A draft is removed 24 hours after its last save — the next time Team Tools is open in this browser, so on a shared or borrowed computer delete your drafts before you leave. Insurance card images and the SSN are never kept.</p>' +
       (rows ? '<ul class="intk-drafts-list">' + rows + '</ul>' : '<p class="intk-drafts-empty">No saved drafts. <b>Save draft</b> on a form parks it here while you take the next call.</p>') +
       '</div></div>';
   };
@@ -3938,19 +4259,20 @@ function intakeOpenSavedDraft_(id) {
     var ov = document.getElementById('intk-drafts-overlay');
     if (ov) closeOverlay(ov);
     intakeClearDraft_(form);   // the working copy is being replaced; its autosave goes with it
-    INTAKE_STATE[form].images = [];
-    delete INTAKE_CARD[form];
+    intakeResetFormSubject_(form);
     INTAKE_STATE[form].lang = d.lang === 'ES' ? 'ES' : 'EN';
     window.INTAKE_AMEND_PREFILL = { form: form, savedId: d.id, savedLabel: d.label, amendOf: d.amendOf || null,
-      patientInfo: d.patientInfo || '', answers: d.answers || {}, language: d.lang || 'EN' };
+      patientInfo: d.patientInfo || '', answers: d.answers || {}, language: d.lang || 'EN', omitted: !!d.omitted };
     enterTool('intake', form === 'ppd' ? 'intakePpd' : (form === 'pmd' ? 'intakePmdAccount' : 'intakePapAccount'));
   };
   // What is on that form now, if it is the one on screen; otherwise its autosave.
-  var snap = null;
-  if (intakeFormRoot_(form)) { try { snap = (form === 'ppd') ? intakeCollectPpd_() : intakeCollectAcct_(form); } catch (e) { snap = null; } }
-  else { var a = intakeReadDrafts_()[form]; snap = (a && a.owner === intakeDraftOwner_()) ? a : null; }
-  var n = intakeFilledCount_(snap, INTAKE_STATE[form].images);
-  if (!n || INTAKE_STATE[form].savedId === d.id) { go(); return; }
+  var h = intakeFormHolds_(form);
+  var n = h.answers + h.images;
+  // F19 (cycle 26): the draft already on the form re-opens without a question
+  // ONLY while nothing was typed or attached since — the test used to be the
+  // id alone, so the older saved copy replaced everything typed after it.
+  var untouched = INTAKE_STATE[form].savedId === d.id && !h.images && intakeSameAnswers_(form, h.snap, d);
+  if (!n || untouched) { go(); return; }
   uiConfirm({ title: 'Replace what is on the ' + INTAKE_FORM_NAMES[form] + ' form?', tone: 'danger', confirmLabel: 'Open draft', cancelLabel: 'Keep the form',
     message: n + ' answer' + (n === 1 ? '' : 's') + ' on the form now will be replaced — Save draft first to keep them.' })
     .then(function (ok) { if (ok) go(); });
@@ -4400,17 +4722,34 @@ function intakeBeginAmend_() {
   if (!d) return;
   var form = d.formType === 'PPD' ? 'ppd' : (d.formType === 'PMD' ? 'pmd' : 'pap');
   var tab = form === 'ppd' ? 'intakePpd' : (form === 'pmd' ? 'intakePmdAccount' : 'intakePapAccount');
-  window.INTAKE_AMEND_PREFILL = {
-    form: form,
-    submissionId: d.submissionId,
-    timestamp: d.timestamp,
-    patientInfo: d.patientInfo || '',
-    dob: d.dob || '',
-    answers: d.answers || {},
-    language: d.language || 'EN',
+  var go = function () {
+    // F1 (cycle 26): the amendment REPLACES whatever that form held, so what
+    // belonged to the previous patient goes first — the working copy's
+    // autosave, and (in the reset) the attached card images, the card
+    // suggestion and the saved-draft id. None of it was reset here, so the
+    // AMENDED email carried the other patient's insurance cards.
+    intakeClearDraft_(form);
+    intakeResetFormSubject_(form);
+    window.INTAKE_AMEND_PREFILL = {
+      form: form,
+      submissionId: d.submissionId,
+      timestamp: d.timestamp,
+      patientInfo: d.patientInfo || '',
+      dob: d.dob || '',
+      answers: d.answers || {},
+      language: d.language || 'EN',
+    };
+    intakeCloseModal_();
+    enterTool('intake', tab);
   };
-  intakeCloseModal_();
-  enterTool('intake', tab);
+  // Ask first when that form holds another call's work (the saved-draft
+  // path's question): its answers would be lost and its images dropped.
+  var h = intakeFormHolds_(form);
+  if (!h.answers && !h.images) { go(); return; }
+  uiConfirm({ title: 'Replace what is on the ' + INTAKE_FORM_NAMES[form] + ' form?', tone: 'danger', confirmLabel: 'Amend', cancelLabel: 'Keep the form',
+    message: 'The ' + INTAKE_FORM_NAMES[form] + ' form holds ' + intakeHoldsText_(h.answers, h.images) + ' from another call. Amending replaces ' +
+      (h.answers + h.images === 1 ? 'it' : 'them') + (h.images ? ' — the images are removed, not sent with the amendment' : '') + '. Save draft first to keep the answers.' })
+    .then(function (ok) { if (ok) go(); });
 }
 
 /** Is an amendment prefill parked for THIS form? The enters skip their draft
@@ -4428,6 +4767,11 @@ function intakeConsumeAmendPrefill_(form) {
   var p = window.INTAKE_AMEND_PREFILL;
   if (p && p.form === form) {
     window.INTAKE_AMEND_PREFILL = null;
+    // F1 + F19 (cycle 26): a prefill makes this form ANOTHER patient's, by
+    // whichever path parked it — so the reset is here too, not only in the
+    // callers. The enter above drew the gallery from the old images.
+    intakeResetFormSubject_(form);
+    intakeRenderGallery_(form);
     if ((p.language === 'ES') !== (INTAKE_STATE[form].lang === 'ES')) {
       // Match the original's language BEFORE applying answers (a re-render
       // would wipe them): re-park the prefill, flip the language and re-enter,
@@ -4449,7 +4793,7 @@ function intakeConsumeAmendPrefill_(form) {
       INTAKE_STATE[form].savedId = p.savedId;
       intakeRestoreAnswers_(form, { patientInfo: p.patientInfo, answers: p.answers });
       try { intakeDraftSaveNow_(form); } catch (e) {}
-      showToast('Draft opened — ' + (p.savedLabel || 'Unnamed patient') + '.', 'toast-info');
+      showToast('Draft opened — ' + (p.savedLabel || 'Unnamed patient') + '.' + (p.omitted ? ' ' + INTAKE_DRAFT_SSN_NOTE : ''), 'toast-info');
     } else {
       INTAKE_STATE[form].amendOf = { submissionId: p.submissionId, timestamp: p.timestamp };
       intakeRestoreAnswers_(form, { patientInfo: p.patientInfo, answers: p.answers, dob: p.dob });
@@ -4561,6 +4905,59 @@ function intakeFilledCount_(snap, images) {
   if (snap && String(snap.patientInfo || '').trim()) n++;
   return n + ((images && images.length) || 0);
 }
+/** F1 + F19 + F20 (cycle 26) — everything that belongs to the PATIENT on a
+ *  form but lives outside its fields, dropped in ONE place: the attached card
+ *  images, the card suggestion and any card read still in flight, the saved
+ *  draft the form was opened from, the amendment it was, and the answers held
+ *  in memory only (F72). Every path that replaces a form's subject calls this
+ *  — Clear, a send, opening a saved draft, amending a sent submission. Each
+ *  used to reset its own subset, and the amend path reset none of them: a sent
+ *  PMD amended over a half-done one went out with the OTHER patient's
+ *  insurance cards, and its send deleted that patient's parked draft. */
+function intakeResetFormSubject_(form) {
+  var st = INTAKE_STATE[form];
+  if (!st) return;
+  st.images = [];
+  st.amendOf = null;
+  st.savedId = null;
+  st.held = null;
+  delete INTAKE_CARD[form];
+  INTAKE_CARD_SEQ[form] = (INTAKE_CARD_SEQ[form] || 0) + 1;   // F20: a read in flight was for the previous patient
+}
+/** What a form holds right now — its answers if it is the one on screen,
+ *  otherwise its autosave (the signed-in rep's own) — and its attached images.
+ *  → { snap, answers, images }. One reader for every "replace the form?" ask. */
+function intakeFormHolds_(form) {
+  var snap = null;
+  if (intakeFormRoot_(form)) { try { snap = (form === 'ppd') ? intakeCollectPpd_() : intakeCollectAcct_(form); } catch (e) { snap = null; } }
+  else { var a = intakeReadDrafts_()[form]; snap = (a && a.owner === intakeDraftOwner_()) ? a : null; }
+  return { snap: snap, answers: intakeFilledCount_(snap, null), images: ((INTAKE_STATE[form] && INTAKE_STATE[form].images) || []).length };
+}
+/** PURE (Node-pinned) — "3 answers and 2 insurance card images", for the ask. */
+function intakeHoldsText_(answers, images) {
+  var parts = [];
+  if (answers) parts.push(answers + ' answer' + (answers === 1 ? '' : 's'));
+  if (images) parts.push(images + ' insurance card image' + (images === 1 ? '' : 's'));
+  return parts.join(' and ');
+}
+/** PURE (Node-pinned) — F19: do two snapshots of `form` hold the same answers?
+ *  Blank and missing are the same; the order of keys is not compared. The
+ *  patient line is compared for the PPD only — an account form's is derived
+ *  from its answers (and a saved draft stores it for the PPD alone). */
+function intakeSameAnswers_(form, a, b) {
+  var norm = function (x) {
+    var out = {}, m = (x && x.answers) || {};
+    Object.keys(m).forEach(function (k) { var v = String(m[k] == null ? '' : m[k]).trim(); if (v) out[k] = v; });
+    return out;
+  };
+  if (form === 'ppd') {
+    var pa = String((a && a.patientInfo) || '').trim(), pb = String((b && b.patientInfo) || '').trim();
+    if (pa !== pb) return false;
+  }
+  var x = norm(a), y = norm(b), kx = Object.keys(x), ky = Object.keys(y);
+  if (kx.length !== ky.length) return false;
+  return kx.every(function (k) { return x[k] === y[k]; });
+}
 /** U6 (cycle 22): the Clear button. One click used to wipe a 46-question PPD
  *  (and its draft — the only other copy) with no confirm and no undo. An empty
  *  form clears at once; anything filled asks first, naming what will go. */
@@ -4575,10 +4972,10 @@ function intakeConfirmClear_(form) {
 }
 function intakeClearForm_(form) {
   INTAKE_TIMER[form] = 0;   // M1: a cleared form is a new call
-  INTAKE_STATE[form].images = [];
-  INTAKE_STATE[form].amendOf = null;   // an amend never survives a clear/send
-  INTAKE_STATE[form].savedId = null;   // I2: a cleared form is no longer that saved draft (the draft itself stays in the list)
-  delete INTAKE_CARD[form];   // I3: a card's details read for this patient go with the form
+  // The images, the amendment (an amend never survives a clear/send), the
+  // saved-draft id (I2: the draft itself stays in the list) and the card's
+  // read details (I3) — one reset, shared with every other subject change.
+  intakeResetFormSubject_(form);
   // Drop the cached preview too — it holds the full patient-answer payload
   // (PHI). Clearing the form must not leave it resident in memory (F3).
   INTAKE_STATE.preview = null;
@@ -4686,6 +5083,18 @@ function intakeNoteFields_(formType, payload, recipient, recs) {
   };
 }
 
+/** PURE — the form time an intake send's call note carries: the seconds from
+ *  first input to send, and none for an amendment of a sent submission. */
+function intakeNoteTimedSec_(payload, formSec) {
+  if (intakeNoteIsAmend_(payload)) return 0;
+  return formSec > 0 ? formSec : 0;
+}
+/** PURE — DQ2 (cycle 26): is this send an AMENDMENT of a form already sent?
+ *  Its call note is marked (subformData.intakeAmend), so the intake count
+ *  leaves it out — a correction is not a new intake call. */
+function intakeNoteIsAmend_(payload) {
+  return !!(payload && String(payload.amendsSubmissionId || '').trim());
+}
 function intakeAutoLogNote_(formType, payload, recipient, recs, onView, formSec) {
   var f = intakeNoteFields_(formType, payload, recipient, recs);
   var label = f.label, ft = f.ft;
@@ -4718,7 +5127,11 @@ function intakeAutoLogNote_(formType, payload, recipient, recs, onView, formSec)
   };
   // M1: the form's time (first input to send) — the whitelisted
   // completionSeconds the Call Notes form timer already writes.
-  if (formSec > 0) notePayload.subformData.completionSeconds = formSec;
+  // F34 (cycle 26): never for an AMENDMENT — correcting a sent form is not a
+  // call, and its few seconds were counted as a timed intake call and taken
+  // out of the rep's average talk time.
+  if (intakeNoteTimedSec_(payload, formSec) > 0) notePayload.subformData.completionSeconds = formSec;
+  if (intakeNoteIsAmend_(payload)) notePayload.subformData.intakeAmend = true;   // DQ2: not counted as an intake call
   google.script.run
     .withSuccessHandler(function (res) {
       var ok = res && res.success;

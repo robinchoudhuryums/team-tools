@@ -290,11 +290,57 @@ entry says which it is.
   intake form timer needs nothing either: intake notes logged after the
   deploy carry their form time; older ones count as intake calls, untimed.
   **Tell the team** what Adjusted means (the ⓘ on the panel says it too).
+  **Cycle 26 Batch 10:** the tab is part of the CDR data stamp, so the app
+  sees the morning's export within about two minutes and does not re-read
+  the tab between exports. While the export is behind the call data, Stats
+  says "Outbound calls — not in yet" (a day) or "data through MM-DD" (a
+  range) — if that line stays past mid-morning, the outbound export in
+  call-data-reporting did not run. "Avg talk excl. intake" now appears only
+  for a rep whose timed intake forms ran longer than their average call.
+<a id="operator-pd-partial-days-tab"></a>
+- **The CDR Report's `Partial Days` tab — a marked day counts as its share (cycle 26 Batch PD, operator 2026-11-18).**
+  **Nothing to set up in Team Tools.** The tab is the Department
+  Dashboard's (call-data-reporting): its admins mark a day an agent worked
+  only part of, and the dashboard creates the tab the first time. Row 1 is
+  `Date | Agent | Credit | Reason | Added By | Added At`. Team Tools reads
+  columns A–C only — never the Reason — and never writes to the workbook.
+  Until the tab exists nothing changes and Admin → System says "No partial
+  days marked" in green.
+  **What a mark does here:** for that rep only, the day counts as its Credit
+  in the Dashboard's "on pace" line, in the month-to-date change on Answered
+  and Missed, and in the daily Answered / Missed trends on Stats. The calls
+  stay in every count; rates and talk time do not change; the Department
+  card and Team Metrics are not adjusted. **Since DQ1 (2026-11-19)** a
+  manager's Team Metrics names each rep's partial days — dates and shares,
+  beside the name and under the table; a rep still sees only their own, and
+  nobody sees a reason. **Since DS2** the manager's table on a range has an
+  "Ans / day" column that counts a marked day as its share (the days the rep
+  took calls are the basis); no other figure there moves. **Since DT1**
+  "Handled / day" does the same for Handled (adj.), over the same days. A Credit of 1 is
+  the dashboard's
+  "reviewed, a whole day" and is ignored, as is a mark on a day the rep took
+  no call.
+  **Names:** a mark counts for the roster name the call data counts for — an
+  agent whose phone name differs needs their Agent Alias Overrides row, as
+  for every other call figure. Marks for agents not on this roster (other
+  departments) are ignored and counted on the System tab's CDR row. A
+  marked name that LOOKS like a roster name spelled differently is named
+  there as a warning (FQ9) — add its Agent Alias Overrides row and it clears.
+  **If something is wrong:** Admin → System → the CDR Report row states the
+  tab ("sheet · N marks for M agents", "no tab yet", "no day is marked"). A
+  warning there means row 1 is no longer `Date | Agent | Credit` (a change
+  in call-data-reporting that needs the matching change here) or the tab
+  could not be read; either way Stats counts no day as partial meanwhile.
+  A new or changed mark shows within about two minutes (the data stamp).
+  **Two-repo contract:** the tab's name and the meaning of columns A–C. A
+  rename, or a move of any of the three, is an edit in both repos.
+
 <a id="operator-set-script-property-cdr-ss-id"></a>
 - **Set Script Property `CDR_SS_ID`** to the CDR Report spreadsheet
   ID (the same spreadsheet backing the `call-data-reporting`
   Department Dashboard). `getCdrSS_()` reads this before CONFIG.
-  Without it, the Metrics tool and the shift-stats CDR enrichment
+  Without it, Stats (Dashboard → Stats — the Metrics tool until Batch E,
+  2026-11-02), the Dashboard's call cards and the shift-stats CDR enrichment
   will show "No call data found" or gracefully degrade (the CDR
   overlay in `managerGetShiftStats` is best-effort). The deployer
   account must have at least Viewer access to this spreadsheet.
@@ -402,6 +448,17 @@ entry says which it is.
   any seat cell it calls unreadable.** The inherently-solid codes (solid whatever
   the cell says) are one list in code, `intakeInherentlySolidCodes_`; an
   unreadable word on one of those is only a warning.
+  **The `IntakeFeedback` tab (auto-provisioned on the first feedback) and
+  retention (cycle 26 F22 + F23):** it holds what a recipient wrote from an
+  intake email's "Send feedback on this recommendation" button — Timestamp ·
+  SubmissionId · FormType · FromEmail · FromName · Feedback. The text may name
+  the patient, so it is PHI and stays in this store. A sender is a roster
+  employee or, since F22, anyone signed in to an org account (the Sales and
+  PAP teams are not on the roster): `FromName` is then blank and the AuditLog
+  line reads "sender not on the roster". **Nothing in this spreadsheet is
+  ever purged — there is no purge job for it.** Admin → System → Storage
+  Health said "Optional purge" until F23; it now reads "Kept — no purge
+  exists". Rows are removed only by hand.
 <a id="operator-intake-recipient-addresses-are-script-property-backed"></a>
 - **Intake recipient addresses are Script-Property-backed.**
   `INTAKE_SALES_EMAIL` (PMD default), `INTAKE_SLEEP_EMAIL` (PAP default),
@@ -1338,6 +1395,10 @@ entry says which it is.
   inline warnings, and **danger-confirms** (uiConfirm) only when a manager
   ENABLES or RAISES one of the two irreversible purge windows. Takes effect on the
   next nightly run (re-run `installAutomationTriggers()` once if not yet done).
+  **Since cycle 26 F18** Save writes only the windows YOU changed, and
+  refuses — naming the window and its current value — when another admin
+  changed the same window after your page loaded; the panel then reloads.
+  Before, a page left open put a purge window back to its old number.
 <a id="operator-form-data-retention-is-off-by-default"></a>
 - **Form-data retention is OFF by default.** `purgeExpiredFormData`
   (daily manager-tz 2am, inside the `runNightlyPurges` dispatcher since
@@ -1687,6 +1748,14 @@ entry says which it is.
     plan-not-listed → **TRY** guidance rather than an empty result.
 
   The rep's QUERY is never persisted (the `kbMapDistances` privacy posture).
+
+  **Since cycle 26 F5** the lookup tells the rep which payor tables it did
+  NOT search: a table whose tab does not exist yet reads "not imported yet",
+  one with a header and no rows "its tab has no rows", and one longer than
+  5,000 rows "only its first 5000 rows". While any of those is true, a plan
+  that is not found is NOT called "plan not listed". So: import every payor
+  table the team relies on (Admin → Config → Reference data tables shows
+  which have rows), and keep each under 5,000 rows.
 
 <a id="operator-the-ooppricing-and-locationacceptance-tabs-kb-spreadsheet"></a>
 - **The `OopPricing` and `LocationAcceptance` tabs** (operator 2026-09-16) live
@@ -2187,6 +2256,13 @@ entry says which it is.
   it under the BAA before turning it on. Its auto-managed counter
   `INTAKE_ADDR_CHECKS_24H` (24 hourly counts, the route-lookup counter's shape) caps the checks at 1,000 a day;
   delete it to reset.
+  **Since cycle 26 F18** the toggle save writes only the toggles YOU changed:
+  a page left open no longer puts back a toggle another admin changed since.
+  A page that was open across a deploy is asked to reload before it can save.
+  **The pay-week reminder (cycle 26 F28)** now sends at or after 9 am Central
+  — a missed or failed run is made up by the next hourly one — and keeps
+  `PAY_WEEK_REMINDER_SENT` (auto-managed: the day and who was sent to;
+  deleting it during a reminder day sends that day's reminders again).
 <a id="operator-script-property-automation-digest-last-runs"></a>
 - **Script Property `AUTOMATION_DIGEST_LAST_RUNS`** (auto-managed). JSON
   object `{ eod|urgent|weekly|trainingOverdue|deptReqReminder|managerBrief|selfTest|coachingRecap|spanishAutoAssign|missedPunch|exportCheck|automationHealth:
@@ -2285,6 +2361,18 @@ entry says which it is.
   column (self-healing — nothing to set up), filled only for a document with
   an initials box; like the signature cell beside it, never edit it — it is
   inside the signature hash.
+  **Since cycle 26 Batch 6:** Verify is green only when every check ran and
+  matched; "Integrity NOT verified" with a reason means a check could not be
+  made (usually the PDF could not be read — look at `EmpDocFiles`), and a
+  certificate made in that state says NOT VERIFIED on its face. The PDF
+  viewer is fetched from cdnjs.cloudflare.com, then cdn.jsdelivr.net, and
+  run only if its checksum matches the one in the code — at least ONE of the
+  two hosts must be reachable from the team's browsers. A written document's
+  body may no longer embed an image by web address (issue it as a PDF
+  instead); a TEMPLATE that does will be refused when it is used — edit the
+  template. Emailing copies is limited to 10 per person, the count kept for
+  six hours after the latest send (`EMPDOC_COPY_WINDOW_MAX` /
+  `EMPDOC_COPY_WINDOW_SECS` in `00_config.js`).
 <a id="operator-letterheads-and-roster-company-ed4"></a>
 - **Letterheads (ED4, operator 2026-11-09) — `Employees` column S =
   `Company`, the `EMPDOC_LETTERHEADS` Script Property and the
@@ -2340,9 +2428,27 @@ entry says which it is.
   skipped. Days condensed before AC1 have no counts and draw on/off as
   before. **Tell the team** that Day Edit and Team Punches now show how much
   each person used the app, block by block — use of this app only, so a call
-  or work in another program looks idle.
+  or work in another program looks idle. **Since cycle 26 FS3** one person
+  can add at most forty ActivityLog rows in a ten-minute block (pings and
+  counts rows together — several times what real windows send). Past that
+  the rows are not written and ONE AuditLog row, `ActivityRowsLimited`, names
+  the person and the time; Manage → Recent Activity shows it. Nothing to set:
+  the count lives in the script cache. If you ever see that row, a browser
+  tab of theirs is stuck or something is calling the app in a loop — have
+  them reload.
 - **The `ActivityLog` tab (ADP spreadsheet) and Timesheet column J — app
-  activity and inferred punches (25post round 12 E2, 2026-10-28).** **Nothing
+  activity and inferred punches (25post round 12 E2, 2026-10-28).** **Since
+  cycle 26 DQ3** Timesheet column J holds `Inferred (app activity)` or, after
+  a manager pressed Confirm as is in Day Edit, `Confirmed (app activity)` — do
+  not type or clear either by hand: the first puts the punch on the export's
+  inferred list, the second on its confirmed count. **Since
+  cycle 26 (F30)** a row that cannot be written is counted in the auto-managed
+  Script Property `ACTIVITY_LOG_FAILS` (`{count, firstMs, lastMs, lastError}`).
+  Admin → System lists it for 48 hours after the latest failure, and Day Edit
+  and Team Punches say so on a day the failures touch. If it appears: check
+  the tab exists, is not protected against the deploying account, and that the
+  ADP workbook is not at its cell limit. It ages out on its own; delete the
+  property to reset the count. **Nothing
   to set up:** the tab is auto-provisioned on the first presence ping after
   the deploy. Columns: Timestamp (CONFIG.TIMEZONE) · EmpId · Ms (epoch
   milliseconds — the column Day Edit searches). One row per presence ping —
@@ -2604,7 +2710,9 @@ entry says which it is.
   Tracks employee-requested punch corrections (ReqId, EmpId, EmpName, Date,
   PunchType, RequestedTime, Reason, Status, SubmittedAt) pending manager
   approval. No manual setup needed. Two TRAILING columns self-heal onto an
-  existing tab: `Action` (B3 — `resume` marks a resume-shift request) and
+  existing tab: `Action` (B3 — `resume` marks a resume-shift request; since
+  cycle 26 DS1 `confirm` marks a rep's request that a time set from app
+  activity be confirmed as it stands — approving it writes no time) and
   **`EndTime` (cycle 22 T3, 2026-09-23)** — the rep's filed FINISH for a
   pending resume, attached when they file an Adjust → Clock Out for that day.
   Leave both alone. A blank `EndTime` on a resume for a day that has already
@@ -2645,7 +2753,19 @@ entry says which it is.
   (`CONFIG.CALL_NOTES.FORM_BASE_URL`). Interactive (fillable) forms
   must also have a rendering function in `form_public.html`.
 <a id="operator-the-editor-suite-is-owner-only-cycle-22"></a>
-- **The editor suite is OWNER-only (cycle 22 S1, 2026-09-23).** Every runner
+- **The editor suite is OWNER-only (cycle 22 S1, 2026-09-23).** *(Since cycle
+  26 F73 a test that overwrites a live Script Property — the feature flags,
+  `ADMIN_EMAILS`, `MANAGER_EMAILS`, the archive window, the What's-new id, the
+  email templates — first copies the real value to `TEST_STASH_VALUE_<key>`,
+  or notes `TEST_STASH_ABSENT_<key>` when there was none. It is removed when
+  the test puts the value back. **If a run is stopped or times out, run
+  `cleanupTestData` (or start another run): it restores every stashed value
+  and names them in the log. Do not delete a `TEST_STASH_…` property by hand
+  — after a killed run it is the only copy of the real setting.** Since FX1
+  the restore's log line says how long ago the run stopped and, when the
+  value it replaced was not the original, WHAT it replaced — if you had set
+  that property by hand after the run stopped, that is your value: set it
+  again.)* Every runner
   (`runAllTests`, `runAllTestsPartA`/`PartB`, `runSmokeTests`,
   `runSingleTest`), `setupTestEnvironment`, `cleanupTestData` and every
   `test_*` refuses unless the caller IS the script owner:
@@ -2758,6 +2878,11 @@ entry says which it is.
   Property, no tab; it all expires by itself. **To see the speed-up:** Apps
   Script → Executions — `getDashboardMetrics` and `getMyMetrics` log "cached"
   or "read" with their milliseconds.
+  **Since cycle 26 F25** the read-ahead is healthy on a deployment with no
+  CDR store and on one without the optional Transfer tab (it failed or was
+  "partial" every hour before), and it reports a window it read but could not
+  keep (over the cache's 100 KB per value) as a partial run, by name — if that
+  ever appears, tell the developer: the window needs a smaller cached shape.
 <a id="operator-dept-request-audit-and-resolved-reply-dr1"></a>
 - **Dept Request audit list and the resolved reply (DR1, operator 2026-11-09) —
   the `DeptRequestCrmChecks` tab and the `deptResolvedReply` toggle.** **Nothing
@@ -2771,8 +2896,13 @@ entry says which it is.
   a person marks a request resolved — the email's link, the in-app button or a
   "Resolved" answer under Replies to check — the app replies on the request's
   email thread from the mailbox it runs as, to the sender and the department,
-  saying who marked it and when. A request sent before thread tracking (before
-  the 22post D deploy) has no thread and gets no reply; the person is told so.
+  saying who marked it and when (every `MAIL_BCC_ALL` address is copied, since
+  cycle 26 F33). A request sent before thread tracking (before the 22post D
+  deploy) has no thread and gets no reply; the person is told so. Since cycle
+  26 F9 the reply answers the request's OWN email — on a thread two requests
+  share it is no longer the first request's; when that email cannot be found
+  on the thread, no reply is sent and the person is told (`notSent=unmatched`
+  in the audit row).
   **Toggle:** `deptResolvedReply` (Admin → Config → feature toggles), ON by
   default; off = no reply, the resolve unchanged. Each reply (or why there was
   none) is an AuditLog `DeptRequestResolvedReply` row, by id. **Tell the
@@ -2785,7 +2915,12 @@ entry says which it is.
   patient / left a voicemail / no answer / wrong number) and an optional note,
   and replies on the request's thread from the deploying mailbox (or the
   `REP_SENDER_FROM` alias when set) as "UMS Team Tools" — the requester and
-  everyone on the thread receive it. Turn the reply off with Admin → Config →
+  everyone on the request's email receive it (and every `MAIL_BCC_ALL`
+  address, since cycle 26 F33). **Since cycle 26 F12 the reply is NOT sent
+  when the email includes an address outside `CONFIG.ORG_EMAIL_DOMAINS`** (the
+  note may name a patient): the request still resolves and the toast says no
+  reply was sent — if staff write from a domain that list lacks, add it. Turn
+  the reply off with Admin → Config →
   feature toggles → `spanishResolveReply`; the resolve itself is unchanged.
   `SpanishManualResolved` gains a fifth header, `Outcome`, written by itself on
   the first resolve after the deploy (older rows stay blank); the note is never
@@ -2808,6 +2943,13 @@ entry says which it is.
   with an empty top-left cell removes it. Until the first source upload after
   the deploy there is no note. If the preview warns that two columns would both
   be read as one field, rename one in the source before importing.
+  **Since cycle 26 F37** Replace writes exactly what the preview showed. A
+  page that was open across a deploy is refused with "Reload the page" —
+  reload, pick the file again, check the preview, Replace. If the table goes
+  in but its standing note (or the audit row) cannot be written, the import
+  still succeeds and a warning stays on screen saying which; upload the same
+  file again to set the note.
+
 <a id="operator-pt1-payor-tables"></a>
 - **Payor tables — the `MedicaidPayors` tab (PT1, operator 2026-11-09).**
   **Nothing to set up beyond the upload.** Manage → Admin → Config → Reference
@@ -2897,22 +3039,34 @@ entry says which it is.
 
 <a id="operator-the-handbook-app-hb1-2"></a>
 - **The handbook app (`handbook-app/`, HB1.2, operator 2026-10-28).** A second
-  Apps Script project that serves the handbook read-only to anyone signed in to
-  the domain. One-time setup, from the repo root:
+  Apps Script project that serves the handbook to anyone signed in to the
+  domain. The handbook's TEXT is read-only there (it is imported, never
+  authored in the app); the app itself WRITES — its own Handbook spreadsheet
+  (People, quiz attempts, plans, read marks, bookmarks, notes) and three tabs
+  of the KB spreadsheet (feedback, content requests, its search signal).
+  One-time setup, from the repo root:
   1. Create the project in a scratch folder (so clasp cannot overwrite the
      committed manifest): `mkdir /tmp/hb && cd /tmp/hb && clasp create --type
      standalone --title "UMS Handbook"`. Copy the `scriptId` from
      `/tmp/hb/.clasp.json` into `handbook-app/.clasp.json` (replacing
-     `SET-ME-…`) and commit it.
+     `SET-ME-…`) and commit it — **or, since cycle 26 F57, keep it on the
+     machine**: write `{"scriptId": "<the id>"}` to
+     `handbook-app/.clasp.local.json` (gitignored), or set the
+     `HANDBOOK_SCRIPT_ID` environment variable. The push uses the first of
+     environment, local file, committed file that holds a real id, and puts
+     the committed `.clasp.json` back afterwards.
   2. `npm run handbook:push` — it checks that the copies match `web-app/` (run
      `npm run handbook:sync` first if they do not), then pushes.
   3. In the new project's editor: Project Settings → Script Properties → add
      `HANDBOOK_KB_SS_ID` = the KB spreadsheet's id (the same id as Team Tools'
      `KB_SS_ID`). Unset, every page says so by name.
   4. Deploy → New deployment → Web app: Execute as **Me**, Who has access
-     **Anyone within the organisation**. Authorise the two scopes (read
-     spreadsheets, see your email address). Open the URL: it should list the
-     chapters and the version.
+     **Anyone within the organisation**. Authorise the scopes it asks for —
+     the ones `handbook-app/appsscript.json` lists: see, edit, create and
+     delete your spreadsheets; see your email address; send email as you (the
+     training reminders, off by default); and manage triggers (installing the
+     reminder trigger). A push that adds a scope asks again. Open the URL: it
+     should list the chapters and the version.
 
   **The account you deploy as must be able to open the KB spreadsheet** — the
   app reads it as you. (HB7.1 moves it to a shared account.) **Whenever** the
@@ -3090,3 +3244,52 @@ entry says which it is.
   makes and checks a PDF of the Word manual only where LibreOffice works; if it
   prints "pdf: not made", export the Word file from Word or Google Docs and
   check it for blank pages yourself.
+
+  **Since cycle 26 F40** the import replaces the `ManualImages`,
+  `ManualQuizzes` and `ManualFiles` tabs in one write each — they are never
+  emptied first. An import whose write fails leaves the previous images,
+  quizzes or forms in place and names the failure in the import result.
+
+  **Since cycle 26 F56** the form viewer's pdf.js is fetched from
+  cdnjs.cloudflare.com, then cdn.jsdelivr.net, and run only when its checksum
+  matches the code's — one of the two hosts must be reachable. A failed load
+  is no longer kept: closing and reopening the form tries again. This change
+  is in the hand-written page, so push the handbook app
+  (`npm run handbook:push`) and cut a new version.
+
+  **Since cycle 26 Batch 7 (the handbook server).** Nothing must be set.
+  - **`npm run handbook:push`** now refuses to push while no script id is
+    configured (see step 1) and runs a pinned clasp through npx; `npm run
+    handbook:push -- --dry-run` says which project it would push to. If you
+    have been pushing from a hand-edited `handbook-app/.clasp.json`, move the
+    id into `handbook-app/.clasp.local.json` and `git checkout` the committed
+    file.
+  - **`ReadMarks` gains a sixth column, `Retrain`** — written by the app; on an
+    existing tab its header cell (F1) stays blank (type `Retrain` there if
+    you like — the app does not read this tab's header). Do not edit the
+    cells: they decide who is asked to read a section again.
+  - **After the deploy** every reader's browser re-reads the chapters once;
+    a page that was open across the deploy must be reloaded before "I've
+    read this" works (it says so). **Expect a one-time wave of "read it
+    again"**: anyone who signed a section before this deploy whose text has
+    since changed, where the changelog flags that section for retraining, is
+    asked once more.
+  - **Auto-managed Script Properties** (handbook project):
+    `HANDBOOK_REMINDERS_OUTCOME` (the last reminder run — `{at, status, sent,
+    failed, overdue, error}`; shown on Training → My team; delete to forget
+    it), `HANDBOOK_REMINDERS_RUNNING` (a run's claim, gone when it ends; a run
+    the platform cut off leaves it for at most fifteen minutes — delete it to
+    run again sooner), and `HANDBOOK_REMINDERS_LAST` with `…_LAST_1`,
+    `…_LAST_2`… (who has been emailed today — deleting them during the day
+    lets a second run email people again).
+  - **Optional: `HANDBOOK_URL`** — the address reminder emails link to. Unset,
+    it is the deployment's own address with a `/dev` ending made `/exec`. Set
+    it if readers should arrive through another address.
+  - **Limits a reader can meet:** 30 pieces of section feedback and 5 topic
+    requests per six hours (`HB_FEEDBACK_WINDOW_MAX`, `HB_REQUEST_WINDOW_MAX`
+    in `Handbook.js`), and 500 synced notes per account.
+  - **A `Notes` row whose SectionId is `sync-off`** (cycle 26 F55) marks a
+    reader who turned "Keep my notes in my account" off: while it is there the
+    app refuses to take their notes from any computer. It is written and
+    removed by the app (one row per reader). Do not delete it — the reader's
+    other computers would send their notes back; do not add one by hand.

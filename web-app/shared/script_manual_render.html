@@ -69,6 +69,14 @@
   .kb-article.kb-diagram-big .kb-diagram { margin: 0; }
   .kb-article .kb-diagram a.kb-xref:hover text, .kb-article .kb-diagram a.kb-xref:focus text, .kb-article .kb-diagram a.kb-xref:hover { text-decoration: underline; }
   .kb-article .kb-diagram a.kb-xref:focus-visible { outline: 2px solid var(--ring-focus); }
+  /* Cycle 26: in DARK mode a "-deep" tone on its own "-soft" tint was too
+     little contrast for small text — MEASURED: --danger-deep 3.34:1 (the
+     CRITICAL kicker), --info-deep 4.34:1 (an HCPCS chip, the "Updated" badge),
+     --warning-deep 4.53:1; axe wants 4.5, and CI's axe found them one consumer
+     at a time. The fix is the PAIR's, and since the second pass it is the
+     TOKEN's (styles_design_tokens.html mixes the dark deep tones toward the
+     ink): the reader's own scoped copy of that recipe is gone, so there is one
+     definition and no per-consumer dark rule here to drift from it. */
   .kb-co-kick { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
   .kb-callout-critical .kb-co-kick { color: var(--danger-deep); }
   .kb-callout-policy .kb-co-kick { color: var(--info-deep); }
@@ -471,7 +479,11 @@
   /* M9 (design handoff, Phase 3): the chapter's masthead — kicker, the badge at
      44px, the short name, a meta line (kbManualPaintMeta_) and "In this chapter".
      The skeleton paints the same masthead from the tree, so nothing jumps. */
-  .kb-man-mast { padding: 14px 0 22px; border-bottom: 1px solid var(--line); margin-bottom: 8px; max-width: 900px; }
+  /* Cycle 26: the masthead is the size CONTAINER its index's one-column query
+     reads. A container query with no container above it never matches — in Team
+     Tools there was none, so "In this chapter" stayed two columns at any width
+     (37px titles at 390px, the gate's one KNOWN finding since cycle 25). */
+  .kb-man-mast { padding: 14px 0 22px; border-bottom: 1px solid var(--line); margin-bottom: 8px; max-width: 900px; container-type: inline-size; }
   .kb-man-mast-k { font-family: var(--mono); font-size: .7rem; letter-spacing: .14em; text-transform: uppercase; color: var(--muted-2); margin-bottom: 10px; }
   .kb-man-mast-h { display: flex; align-items: center; gap: 14px; margin: 0; font-family: var(--display); font-size: 1.85rem; font-weight: 600; letter-spacing: -.02em; line-height: 1.15; color: var(--ink); }
   .kb-man-mast .kb-man-badge { width: 44px; height: 44px; }
@@ -515,16 +527,21 @@
   .kb-man-skel-p { display: flex; flex-direction: column; gap: 10px; margin: 18px 0 26px; }
   .kb-man-skel-p .skel-bar { height: 12px; }
   /* M11: the chapter's neighbours, after its last section. */
-  .kb-man-chapnav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 20px; }
+  /* Cycle 26: the nav is a size container and its CARDS are what the query
+     restyles — a container cannot restyle itself, and as a two-column grid with
+     a query on the grid there was nothing above it to answer the query: at a
+     226px text column each card was 107px and its title 5px (measured). Half the
+     row each (a lone "Next" keeps the right half), the whole row when narrow. */
+  .kb-man-chapnav { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; container-type: inline-size; }
   .kb-man-chapnav:empty { display: none; }
-  .kb-man-cn { display: flex; align-items: center; gap: 12px; padding: 14px 16px; font: inherit; text-align: left; border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); color: var(--ink); cursor: pointer; min-width: 0; }
+  .kb-man-cn { display: flex; align-items: center; gap: 12px; flex: 0 0 calc(50% - 6px); box-sizing: border-box; padding: 14px 16px; font: inherit; text-align: left; border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); color: var(--ink); cursor: pointer; min-width: 0; }
   .kb-man-cn:hover, .kb-man-cn:focus-visible { border-color: var(--border-strong); background: var(--paper-2); }
-  .kb-man-cn-next { grid-column: 2; justify-content: flex-end; text-align: right; }
+  .kb-man-cn-next { margin-left: auto; justify-content: flex-end; text-align: right; }
   .kb-man-cn > svg { flex: none; color: var(--muted-2); }
   .kb-man-cn-txt { display: flex; flex-direction: column; min-width: 0; }
   .kb-man-cn-k { font-family: var(--mono); font-size: .66rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted-2); }
   .kb-man-cn-n { font-size: .95rem; font-weight: 600; overflow-wrap: anywhere; }
-  @container (max-width: 520px) { .kb-man-chapnav { grid-template-columns: minmax(0, 1fr); } .kb-man-cn-next { grid-column: auto; } }
+  @container (max-width: 520px) { .kb-man-cn { flex-basis: 100%; } }
   .kb-man-sec:last-of-type { border-bottom: none; }   /* the chapter cards follow it (M11) */
   .kb-man-badges:empty { display: none; }
   /* Operator testing 2026-10-08 — the reader reads like the HTML manual: the
@@ -633,8 +650,11 @@
      and ‹ › shrink to their chevrons (the label stays in the tooltip and the
      accessible name) — at 390px the title had kept five letters. Since the
      feedback joined the bar (2026-10-12) the buttons take a second row there, or
-     the title kept ONE letter: feedback, star and Print left, ‹ › right. */
-  @container (max-width: 560px) { .kb-man-bar-cn, .kb-man-bar-chev, .kb-man-bar-sep, .kb-man-bar-nav span { display: none; } .kb-man-bar { gap: 6px; padding-right: 10px; flex-wrap: wrap; row-gap: 4px; } .kb-man-bar-acts { flex-basis: 100%; margin-left: 0; } .kb-man-bar-acts [data-kb-man-bar-prev] { margin-left: auto; } .kb-man-bar-nav { padding: 5px 6px; } .kb-trail-chip { min-height: 32px; } }
+     the title kept ONE letter: feedback, star and Print left, ‹ › right.
+     Cycle 26: 640px, not 560px — MEASURED, a 566px bar (Reference at an 800px
+     window, once it folds) gave the chapter name 9px and the title 83px, and a
+     604px one 32px; the name has a word's room (48px) only from about 630px. */
+  @container (max-width: 640px) { .kb-man-bar-cn, .kb-man-bar-chev, .kb-man-bar-sep, .kb-man-bar-nav span { display: none; } .kb-man-bar { gap: 6px; padding-right: 10px; flex-wrap: wrap; row-gap: 4px; } .kb-man-bar-acts { flex-basis: 100%; margin-left: 0; } .kb-man-bar-acts [data-kb-man-bar-prev] { margin-left: auto; } .kb-man-bar-nav { padding: 5px 6px; } .kb-trail-chip { min-height: 32px; } }
   /* Helpful / Suggest an edit ride the reader bar for the section in view (operator
      2026-10-12 — a row closing every sub-section was clutter). A vote sent is
      pressed and the pair goes quiet; a disabled pair is faded unless pressed. */
@@ -2206,8 +2226,17 @@ function kbMd_(src) {
       x = x.replace(/`([^`]+)`/g, '<code>$1</code>');
       return x;
     }
-    var stash = [];
-    function keep(html) { stash.push(html); return '\u0000L' + (stash.length - 1) + '\u0000'; }
+    var stash = [], bare = [];
+    // `inLink`: what the element is when it sits INSIDE another link's text —
+    // an image's own anchor would nest in it, so there it is the <img> alone.
+    function keep(html, inLink) { stash.push(html); bare.push(inLink || html); return '\u0000L' + (stash.length - 1) + '\u0000'; }
+    // Cycle 26 (Batch 8 follow-on 7): a link's TEXT may hold a stashed element
+    // — `[![logo](https://…/a.png)](https://…/page)`. The restore below is ONE
+    // pass (which is also what keeps a token in a URL from being expanded), so
+    // a token inside a stashed link was never expanded: the link drew the
+    // sentinel, not the image. The text — and only the text, never the URL —
+    // is expanded here, when the link itself is stashed.
+    function linkText(txt) { return emph(txt).replace(/\u0000L(\d+)\u0000/g, function (_, n) { return bare[+n]; }); }
     // Images BEFORE links (otherwise the link rule renders the [alt](url)
     // part as an anchor with a stray "!"). http(s) only - no mailto for an
     // img src. Quotes are percent-encoded in the URL and entity-escaped in
@@ -2246,31 +2275,31 @@ function kbMd_(src) {
       if (!/^https?:/i.test(url)) return alt;
       url = url.replace(/"/g, '%22').replace(/'/g, '%27');
       alt = alt.replace(/"/g, '&quot;');
-      return keep('<a href="' + url + '" target="_blank" rel="noopener" class="kb-img-lnk">' +
-        '<img src="' + url + '" alt="' + alt + '" loading="lazy"></a>');
+      var img = '<img src="' + url + '" alt="' + alt + '" loading="lazy">';
+      return keep('<a href="' + url + '" target="_blank" rel="noopener" class="kb-img-lnk">' + img + '</a>', img);
     });
     t = t.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, function (m, txt, url) {
       // Batch M2 — a manual cross-reference (`kb:man-5-9#5.9.2`) becomes a
       // real link: the id and anchor charsets are restricted, so only these
       // characters can reach the attributes, and a delegated handler opens it.
       var km = url.match(/^kb:([a-z0-9-]{1,80})(?:#([0-9A-Za-z.]{1,20}))?$/);
-      if (km) return keep('<a href="#" class="kb-xref" data-kb-id="' + km[1] + '" data-kb-anchor="' + (km[2] || '') + '">' + emph(txt) + '</a>');
+      if (km) return keep('<a href="#" class="kb-xref" data-kb-id="' + km[1] + '" data-kb-anchor="' + (km[2] || '') + '">' + linkText(txt) + '</a>');
       // 25post — `lookup:insurance` / `lookup:price` opens that lookup in the
       // Ctrl/⌘+K drawer (the handbook's link to the payor sheet, in the app).
       // Only the two names reach the attribute; a delegated handler opens it.
       var lk = url.match(/^lookup:(insurance|price)$/);
-      if (lk) return keep('<a href="#" class="kb-lookup" data-kb-lookup="' + lk[1] + '" title="Opens the ' + (lk[1] === 'insurance' ? 'insurance' : 'price') + ' lookup beside the call">' + emph(txt) + '</a>');
+      if (lk) return keep('<a href="#" class="kb-lookup" data-kb-lookup="' + lk[1] + '" title="Opens the ' + (lk[1] === 'insurance' ? 'insurance' : 'price') + ' lookup beside the call">' + linkText(txt) + '</a>');
       // 25post (operator 2026-10-23) — `peek:fig-…`: a button the handbook
       // names shows its locator screenshot on hover, focus or a tap
       // (kbPeekShow_). Only the manual-image key charset reaches the attribute.
       var pk = url.match(/^peek:(fig-[a-z0-9-]{1,80})$/);
-      if (pk) return keep('<span class="kb-peek" tabindex="0" data-peek="' + pk[1] + '" aria-describedby="kb-peek-pop">' + emph(txt) + '</span>');
+      if (pk) return keep('<span class="kb-peek" tabindex="0" data-peek="' + pk[1] + '" aria-describedby="kb-peek-pop">' + linkText(txt) + '</span>');
       if (!/^(https?:|mailto:)/i.test(url)) return txt;
       // The top-level escape covers &, <, > but NOT quotes — a `"` in the URL
       // would otherwise break out of the href attribute (attribute injection,
       // e.g. an onmouseover handler). Percent-encode both quote characters.
       url = url.replace(/"/g, '%22').replace(/'/g, '%27');
-      return keep('<a href="' + url + '" target="_blank" rel="noopener">' + emph(txt) + '</a>');
+      return keep('<a href="' + url + '" target="_blank" rel="noopener">' + linkText(txt) + '</a>');
     });
     t = emph(t);
     // Restore the stashed link/image markup (the emphasis pass above can no
@@ -3481,6 +3510,7 @@ function kbFlashBlock_(el, instant) {
 function kbReaderScroll_(el, block, smooth) {
   var main = document.getElementById('kb-main');
   if (!el) return;
+  smooth = smooth && !kbMotionReduced_();   // F66 (cycle 26)
   if (!main || !main.contains(el)) { try { el.scrollIntoView({ block: block, behavior: smooth ? 'smooth' : 'auto' }); } catch (e) {} return; }
   var mr = main.getBoundingClientRect(), r = el.getBoundingClientRect(), cs = window.getComputedStyle ? getComputedStyle(main) : {};
   // Below the sticky band's REAL height when there is one — the trail row and the
@@ -3490,6 +3520,17 @@ function kbReaderScroll_(el, block, smooth) {
     : pad + (parseFloat((window.getComputedStyle ? getComputedStyle(el) : {}).scrollMarginTop) || 0);
   var y = Math.max(0, main.scrollTop + (r.top - mr.top - (main.clientTop || 0)) - off);
   try { main.scrollTo({ top: y, behavior: smooth ? 'smooth' : 'auto' }); } catch (e) { main.scrollTop = y; }
+}
+/** F66 (cycle 26) — does the reader want no animation? The device's setting,
+ *  or the handbook app's own Display switch (data-hb-motion on <html>; Team
+ *  Tools never sets it). An explicit `behavior: 'smooth'` is NOT overridden by
+ *  CSS `scroll-behavior`, so the stylesheet's reduced-motion rule never reached
+ *  a scripted scroll: an in-chapter open still glided. The script asks. */
+function kbMotionReduced_() {
+  try {
+    if (document.documentElement.getAttribute('data-hb-motion') === 'reduce') return true;
+    return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  } catch (e) { return false; }
 }
 /** The element a link with context `ctx` lands on in a rendered section, or null. */
 function kbXrefLandEl_(host, bodyMd, anchor, ctx, text) {

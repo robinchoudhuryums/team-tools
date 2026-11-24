@@ -1,0 +1,40 @@
+---BROAD SCAN IMPLEMENTATION SUMMARY---
+Findings implemented: None — one capability the operator decided on 2026-11-19 (the four decisions put after the FS follow-ons)
+New capabilities (G/ST): None from the scan's expansion plan. One capability by operator decision:
+  DT1 — Team Metrics gains Handled (adj.) per credited day for each rep (decision 3: "maybe just for Handled (adj.) for now")
+  Decided NOT to build: the rep's Confirm button on surfaces beyond the pay statement (decision 1: "agreed, should be fine for now"); a "confirm all" (decision 2: "agreed"); a per-day figure on the Team rail (decision 3: Handled (adj.) only); adjusting the Dashboard's Department card for partial days (decision 4: "stays the same")
+Files modified: web-app/40_metrics.js, web-app/metrics/script_metrics.html, test/client/run.js, test/client/dom/runDom.js, test/client/server-split-manifest.json, test/visual/mock.js, CLAUDE.md, .cycle/config.md, docs/gotchas.md, docs/design-decisions.md, docs/modules.md, docs/operator-state.md, docs/operator-log.md, docs/test-harness-log.md
+Estimate: S (~3 h), written to STATE.md's Estimates line before the first edit
+Actual: ~2.5 h
+
+CHANGES:
+DT1 — server | web-app/40_metrics.js | Each manager row carries `handledPerDay`: the adjusted handled count (answered plus connected outbound; the answered count when nothing was adjusted) over the SAME credited days as `answeredPerDay` — one decimal, none with no call data or under one credited day. Nothing else in `getTeamMetrics` reads it; no count, rate, total or talk time changes; the rep view is unchanged. Cache key `team_metrics_v9`.
+DT1 — client | web-app/metrics/script_metrics.html | On a range, and only where the "Handled (adj.)" column shows, the Team table has "Handled / day" directly after it. The hover says what was added and over which days — "52 handled (44 answered + 8 outbound connected) over 4.5 credited days (5 days with calls, 1 partial)" — or "30 answered, no outbound call over 3 days with calls" for a rep with nothing adjusted. No figure draws "—" with its reason. The header sorts (no figure lowest). The copied table has "Handled (adj.) / day" between "Ans / day" and "Credited days" whenever outbound was read, blank with no figure. The line under the table names both per-day columns when both show. Ans / day's cell is unchanged; the two cells share one divisor text and one empty cell.
+Pins | test/client/run.js, test/client/dom/runDom.js, test/visual/mock.js | Two pure pins, one DOM drive. Eight older pins followed the Team key, the new reader of the credited days, the copied header and the two new helpers their sandboxes load. The Team fixture rows carry the field.
+
+TEST RESULTS: passed. Pure 1774/1774, DOM 482/482; `lint-server`, `split-manifest --check`, `handbook-sync --check`, `counts.mjs --check` clean; `cycle-closeout --check` in step. Visual: the seven Team Metrics scenarios (wide light and dark, phone, tablet, half, the two Today ones) — no page overflow, no console error; the table was opened and read in the wide shot.
+  Measured: with every optional column showing, the table is 1,327px in a 1,192px frame at a 1440px window (it was 1,214px — already 21px over); it scrolls sideways inside its own frame, as designed. Without "ATT excl. intake" it is 1,191px and fits.
+  Bite-checks: 28 mutations: 27 bit (19 pure, 8 DOM). The one that did not was an equivalent mutant — the expression's `null` for a rep with no call data could not be reached, since such a rep has no credited day — so the branch was removed (the expression reads the row's own answered count) and its three mutations were re-run on the new form and bit.
+  CI: run 1820 (c2d2e8a, the code and pins) and run 1821 (e431b97, the simplified expression and the docs) completed with conclusion success. The commit that adds this block and the checkpoint is pushed with it; its run is not read here.
+  NOT verified here: nothing ran in a deployed Apps Script project; the editor suite was not run (no editor test was added — the figure is one expression over two pinned helpers). The figure needs the Outbound Calls tab read, and a real partial-day mark, to be seen end to end.
+  Regression scenarios whose Subsystem overlaps the modified files (Server; Client (Metrics views)): S41, S42, S43, S74, S80, S93, S105, S110, S121, S122, S136, S142, S151, S152, S153, S188, S189, S190, S192, S193, S194, S196 and the new S198 — NOT WALKED: each is a browser walk on a deployed instance (Test Command is `manual`). What stands in: the driven pins, the DOM drive and the Chromium shots.
+REGRESSION RISKS: (1) The divisor is the days the rep took INBOUND calls. A day spent only on outbound calls adds its calls and no day, so that rep's "Handled / day" reads high; a rep with outbound calls and no inbound day has no figure. The hover states the divisor. (2) The table is one column wider: with every optional column showing it now scrolls 135px sideways inside its frame at 1440px (21px before), which puts "Transfers" off the first screen. (3) For a rep with nothing adjusted the figure equals their "Ans / day" — the same number in two columns, by design (the Handled column does the same with the count). (4) With the partial-day marks unreadable it counts whole days, like Ans / day; the line under the table says so for both. (5) The Team key moved to v9 (one cold read after the deploy). (6) A page open from before the deploy ignores the new field; a new page against an old cached row cannot happen (the key changed).
+INVARIANTS AT RISK: None broken. INV-437 clause (2) ("nothing else reads the credited days") was REWORDED: the one other reader is the Handled twin, which has its own entry (INV-440). INV-434 holds — no count, rate or total is computed from the marks. INV-124 / INV-66 (the rep view) — the field rides `reps`, which the rep view does not carry (driven). INV-85 followed (the Team key). INV-185 followed (the fixture rows carry the field). g04 followed (the column is sortable and has a sort case — bitten). New: INV-440.
+NET SCORE: 0 production fixes − 0 new failure modes = 0 (1 new capability). DT1: a capability by decision (NO). No new failure mode counted: the figure is what its hover says it is, and the wider table scrolls inside a frame that already scrolled in the same case — both are listed above as risks, and the first is the one to watch.
+
+OPERATOR ACTIONS / DEPLOY:
+- No Script Property, tab or column to set | BLOCKS DEPLOY: N
+- Tell managers: Stats → Team has "Handled / day" on a range; a rep with outbound-only days reads high | BLOCKS DEPLOY: N
+Deploy: Team Tools — `cd web-app && clasp push -f`, then Deploy → Manage deployments → Edit → Version: New version (rides the owed Team Tools deploys). Handbook app — not touched.
+
+(Not complete in production until blocking operator actions are done AND the deploy step is confirmed.)
+
+FOLLOW-ON ITEMS:
+- DT1 — the divisor could become "days with any call" if the Outbound Calls read kept each rep's days; it keeps totals only, and per-rep dates in a cached window work against the 100 KB cache cap. Worth doing only if outbound-only days turn out to be common.
+- DT1 — if the sideways scroll is felt, the per-day figure can move into the "Handled (adj.)" cell's hover (it stays in the copied table either way), or the table's first column can be pinned.
+- DT1 — "ATT excl. intake" has no per-day form (it is an average, not a count); the Team rail has none (decided).
+- Still as before: the items listed in `.cycle/blocks/26-followons5-broad-implement.md`; the scan's F36 items and Batches 11–14 stand as planned.
+
+DOCUMENTATION UPDATES NEEDED:
+- None outstanding — done in this batch: CLAUDE.md (a clause on g148; the decisions index; the counts block), docs/gotchas.md (one amendment), docs/design-decisions.md, docs/modules.md, docs/operator-state.md, docs/operator-log.md, docs/test-harness-log.md, .cycle/config.md (INV-440, INV-437 reworded; S198). Also corrected: the previous batch's docs commit (FS1–FS3) had left the `Visual Audit Stage` heading twice in `.cycle/config.md`; one was removed.
+---END BROAD SCAN IMPLEMENTATION SUMMARY---

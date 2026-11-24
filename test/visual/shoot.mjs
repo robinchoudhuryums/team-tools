@@ -3,42 +3,46 @@
 // Usage: node shoot.mjs [name-substring ...]   — no args shoots everything.
 //        node shoot.mjs --ci   — the CI subset (ci-gate.cjs), exit 1 on a layout finding.
 import { chromium } from 'playwright';
+import { chromiumPath } from './chromium-path.cjs';   // F74 (cycle 26): the ONE resolver for every script here
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import gate from './ci-gate.cjs';
+import contrast from './contrast.cjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // I3: the reader's real output for a specimen card (fake data), shared with the Node pins.
 const I3_CARD_LINES = JSON.stringify(JSON.parse(fs.readFileSync(path.join(HERE, '..', 'client', 'i3-card-lines.json'), 'utf8'))['c-bcbs/phone']);
 // I3a: a read with one value the reader was unsure of (the group), and a broken second image beside it.
 const I3_CARD_LINES_UNSURE = JSON.stringify(JSON.parse(fs.readFileSync(path.join(HERE, '..', 'client', 'i3-card-lines.json'), 'utf8'))['c-uhc/small']);
+// F21 (cycle 26): two different cards attached — the Medicare card and a plan
+// card — are two suggestions, each with its own boxes, line and buttons.
+// FV1: two PLAN cards carry the "Same card as Card 1" button (the mobile shot);
+// a Medicare card beside a plan card never does (the wide one).
+const I3_TWO_CARDS = (function (first, second) {
+  const all = JSON.parse(fs.readFileSync(path.join(HERE, '..', 'client', 'i3-card-lines.json'), 'utf8'));
+  return "(function(){ var L = " + JSON.stringify([all[first], all[second]]) + ", n = 0; window.INTAKE_OCR_ENGINE = { read: function () { return Promise.resolve(L[n++ % 2]); } }; " +
+    "var mk = function (fill, label) { var c = document.createElement('canvas'); c.width = 320; c.height = 200; var x = c.getContext('2d'); x.fillStyle = fill; x.fillRect(0, 0, 320, 200); x.fillStyle = '#fff'; x.font = '18px sans-serif'; x.fillText(label, 20, 40); return c.toDataURL('image/png'); }; " +
+    "INTAKE_STATE.pmd.images = [mk('#b23a48', 'Specimen card 1'), mk('#2b7cc9', 'Specimen card 2')]; intakeRenderGallery_('pmd'); var b = document.querySelector('[data-card-read]'); if (b) b.click(); " +
+    "setTimeout(function () { var p = document.getElementById('intk-card-read'); if (p) p.scrollIntoView({ block: 'center' }); }, 300); })()";
+});
 const PAGE = 'file://' + path.join(HERE, 'page.html');
 const PAGE_HB = 'file://' + path.join(HERE, 'page-handbook.html');   // HB1.4: the handbook app (opts.page: 'handbook')
 const OUT = path.join(HERE, 'shots');
 fs.mkdirSync(OUT, { recursive: true });
 
-// Chromium resolution: explicit env override → the pre-provisioned pw-browsers
-// install (any version) → Playwright's own default download.
-function chromiumPath() {
-  if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
-  const roots = [process.env.PLAYWRIGHT_BROWSERS_PATH, '/opt/pw-browsers'].filter(Boolean);
-  for (const root of roots) {
-    try {
-      const hit = fs.readdirSync(root).filter((d) => /^chromium-\d+$/.test(d)).sort().pop();
-      if (hit) {
-        const exe = path.join(root, hit, 'chrome-linux', 'chrome');
-        if (fs.existsSync(exe)) return exe;
-      }
-    } catch (e) { /* root absent — keep looking */ }
-  }
-  return undefined; // let Playwright resolve its own managed browser
-}
+// Chromium resolution — explicit env override → the pre-provisioned
+// pw-browsers install (newest build, either layout) → Playwright's own default
+// download — is chromium-path.cjs's, shared by every script here (F74).
 
 const WIDE = { width: 1440, height: 900 };
 const COMPACT = { width: 480, height: 800 };
 const COMPACT_SM = { width: 360, height: 640 };
 const MOBILE = { width: 390, height: 844 };
+// F65 (cycle 26): the widths BETWEEN the phone and the desk — a window beside
+// another app, half a 1920 screen. The handbook's rail is still on screen there.
+const TABLET = { width: 800, height: 900 };
+const HALF = { width: 960, height: 900 };
 
 // [name, {tool, tab}, viewport, mode, query, post?]
 // `post` (optional 6th element) is a JS expression evaluated in the page AFTER
@@ -51,6 +55,13 @@ const MOBILE = { width: 390, height: 844 };
 const KBD_SEARCH = "kbDrawerOpen_(); setTimeout(function(){ var a=document.getElementById('kb-ins-input-d'); if(a){a.value='aetna'; insLookupInput_(a);} var b=document.getElementById('kb-oop-item-d'); var c=document.getElementById('kb-oop-addr-d'); if(b&&c){b.value='scout'; c.value='75038'; oopLookupInput_(c);} }, 10)";
 const E6_SIGNAL_SCROLL = "setTimeout(function(){ var r=document.querySelector('#kb-land-blocks .kb-land-req'); if(r) r.scrollIntoView({ block: 'start' }); }, 300)";
 const KBL_SEARCH = "var a=document.getElementById('kb-ins-input'); if(a){a.value='aetna'; insLookupInput_(a);} var b=document.getElementById('kb-oop-item'); var c=document.getElementById('kb-oop-addr'); if(b&&c){b.value='scout'; c.value='75038'; oopLookupInput_(c);}";
+
+// Cycle 26 F5: a plan nobody lists, searched while one payor table was never
+// imported, one is empty and one is only partly read — the no-match that names
+// what it did not search instead of saying "plan not listed → TRY".
+const KBL_NOTFOUND_GAP = "var a=document.getElementById('kb-ins-input'); if(a){a.value='molina'; insLookupInput_(a);}" +
+  " (function tick(n){ var g=document.querySelector('#kb-ins-results .kb-ins-guide');" +
+  " if(g){ g.scrollIntoView({ block: 'end' }); return; } if(n>0) setTimeout(function(){tick(n-1);}, 50); })(18)";
 
 // The acceptance-by-code grid is behind a disclosure, so the codes T3 NAMES
 // were never in a shot. This polls for the button rather than guessing a delay:
@@ -105,6 +116,8 @@ const MANUAL_COPY = "try { Object.defineProperty(navigator, 'clipboard', { value
   " { ok: 'Copied', label: 'Drive Scout 3 Wheel \u00b7 W/ Shipping Cost' });";
 
 const HB_PAGE = { page: 'handbook' };
+// F65 (cycle 26): a handbook scenario whose named boxes must each be at least so wide (see `tooNarrow` below).
+const HB_MIN = (minWidth) => ({ page: 'handbook', minWidth });
 const HB_SEARCH = "var q=document.getElementById('hb-q'); q.value='waiting'; hbSearch_('waiting', true)";
 const HB_DEPT = "try { localStorage.setItem('umsHbDept', 'Chapter 03 \u2014 Respiratory & Resupply'); } catch (e) {} hbPaintDeptPicker_(); hbHome_(false)";
 const HB_FIRST = "hbApplyMe_(99, { email: 'alex.kim@example.com', name: 'Alex Kim', setUp: true, isAdmin: false, isManager: false, me: null, managers: [{ email: 'dana.reyes@example.com', name: 'Dana Reyes' }] }); hbHome_(false)";
@@ -117,6 +130,8 @@ const HB_LARGE = (o) => "hbApplyDisplay_(" + o + ", true)";
 const HB_READING = "Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: { q: [], speak: function (u) { this.q.push(u); }, pause: function () {}, resume: function () {}, cancel: function () {}, getVoices: function () { return []; }, addEventListener: function () {} } });" +
   " window.SpeechSynthesisUtterance = function (t) { this.text = t; };" +
   " setTimeout(function () { hbReadAloud_(); var s = window.speechSynthesis; for (var i = 0; i < 2; i++) { var u = s.q[s.q.length - 1]; if (u && u.onend) u.onend(); } }, 400)";
+const HB_FAILED = "setTimeout(function(){ HB_SO.setUp = undefined; HB_SO.signoffs = {}; HB_SO.error = 'The Handbook spreadsheet is busy.'; HB_TR.mine = { error: 'offline' };" +
+  " hbPaintCounts_(); hbPatchHome_(); hbShelfView_('me'); }, 300)";
 const HB_SUGGEST = "setTimeout(function(){ var b=document.querySelector('[data-kb-man-fb=\"suggest\"]'); if(b){ b.disabled=false; MANUAL_HOST.suggestEdit(b); } }, 300)";
 
 const SCENARIOS = [
@@ -131,6 +146,27 @@ const SCENARIOS = [
   // HBR1 — home's shelf on the reader's own view, and home in dark on a phone.
   ['handbook-shelf-me-light-wide', {}, WIDE,   'light', '', "setTimeout(function(){ hbShelfView_('me'); }, 300)", HB_PAGE],
   ['handbook-home-dark-mobile',    {}, MOBILE, 'dark',  '', '', HB_PAGE],
+  // F65 (cycle 26): home and search at 800 and 960px — the rail still showing.
+  // The two-column layouts folded only at 760px, so the hero's own column (the
+  // greeting, the heading, the search box) was a sliver beside the shelf.
+  // Each names the boxes that carry its content and the width each needs
+  // (minWidth): `narrowText` only reports text under 48px — narrower than a
+  // word — and the old hero column was EXACTLY 48px at 800 (208 at 960), so
+  // these scenarios passed on the layout they exist to catch until they said
+  // what "usable" is. Measured before → after: the hero's column 48 → 442px at
+  // 800 and 208 → 602 at 960; Continue reading 255 → 504; the results list 222 → 504.
+  ['handbook-home-light-tablet',   {}, TABLET, 'light', '', '', HB_MIN({ '.hb-hero-l': 340, '#hb-cont': 300, '#hb-due': 300 })],
+  ['handbook-home-dark-half',      {}, HALF,   'dark',  '', '', HB_MIN({ '.hb-hero-l': 340 })],
+  ['handbook-search-light-tablet', {}, TABLET, 'light', '', HB_SEARCH, HB_MIN({ '.hb-results-list': 400 })],
+  // F47 + F55 (cycle 26): what a failed read looks like — home with the sign-offs
+  // and the training plans not loaded (My reading, Due for you, the rail's "?"),
+  // Saved with the bookmarks not loaded, and a section read from a kept copy
+  // the server could not confirm (the banner) with no sign-off state to show.
+  ['handbook-failed-light-wide',   {}, WIDE,   'light', '', HB_FAILED, HB_PAGE],
+  ['handbook-saved-failed-light-mobile', {}, MOBILE, 'light', '', "hbGoSaved_(); setTimeout(function(){ HB_SV.error = 'The Handbook spreadsheet could not be opened.'; HB_SV.bookmarks = []; hbPaintSaved_(); }, 300)", HB_PAGE],
+  // (Section 0.11: it holds a CRITICAL callout, whose kicker failed axe's contrast in dark mode until
+  // the Batch 8 follow-ons — FO1. No other dark scenario shot one without high contrast.)
+  ['handbook-stale-dark-mobile',   {}, MOBILE, 'dark',  '?s=0.11', "setTimeout(function(){ HB_STALE.on = true; hbPaintStale_(); HB_SO.setUp = undefined; HB_SO.error = 'offline'; hbRepaintBar_(); }, 300)", HB_PAGE],
   // HBR2 — a chapter opened at its top (the masthead as a banner, the side column), and Suggest a topic.
   ['handbook-chapter-light-wide',  {}, WIDE,   'light', '', "setTimeout(function(){ MANUAL_HOST.openItem('man-0-2', '', { chapter: true }); setTimeout(function(){ document.getElementById('kb-main').scrollTop = 0; }, 900); }, 300)", HB_PAGE],
   ['handbook-suggest-topic-light-mobile', {}, MOBILE, 'light', '', HB_SEARCH + "; setTimeout(function(){ hbSuggestTopic_(); }, 600)", HB_PAGE],
@@ -151,6 +187,8 @@ const SCENARIOS = [
   // first visit's home prompt.
   ['handbook-people-light-wide',   {}, WIDE,   'light', '', 'hbGoPeople_()', HB_PAGE],
   ['handbook-people-dark-mobile',  {}, MOBILE, 'dark',  '', 'hbGoPeople_()', HB_PAGE],
+  // FO8 (cycle 26): Profile at 960px — the team column was 304px beside the 340px profile card.
+  ['handbook-people-light-half',   {}, HALF,   'light', '', 'hbGoPeople_()', HB_MIN({ '.hb-pp-right': 400 })],
   ['handbook-firstvisit-light-mobile', {}, MOBILE, 'light', '', HB_FIRST, HB_PAGE],
   // HB3.2 — quizzes: the list, a sitting, a result, the bar on a section.
   ['handbook-quizzes-light-wide',  {}, WIDE,   'light', '', 'hbGoQuizzes_()', HB_PAGE],
@@ -217,6 +255,10 @@ const SCENARIOS = [
   ['clock-coverage-error-light-wide', { tool: 'timeClock', tab: 'clock' }, WIDE, 'light', '?failrpc=getMyMetrics'],
   ['timeoff-light-wide',    { tool: 'timeClock', tab: 'timeoff' },    WIDE, 'light', ''],
   ['timeoff-dark-wide',     { tool: 'timeClock', tab: 'timeoff' },    WIDE, 'dark',  ''],
+  // DS1 (cycle 26): the rep's pay statement for the PREVIOUS period — inferred Clock Ins with the
+  // "Confirm Clock In" request button (inside the adjust window), text-only older ones, and one already pending.
+  ['paystmt-confirm-light-wide',  { tool: 'timeClock', tab: 'timeoff' }, WIDE,   'light', '', "openPayStatement_(1, '', '')"],
+  ['paystmt-confirm-dark-mobile', { tool: 'timeClock', tab: 'timeoff' }, MOBILE, 'dark',  '', "openPayStatement_(1, '', '')"],
   ['manage-light-wide',     { tool: 'manage',    tab: 'manage' },     WIDE, 'light', ''],
   ['manage-dark-wide',      { tool: 'manage',    tab: 'manage' },     WIDE, 'dark',  ''],
   // G1 + F19 (cycle 25 E2): the pay-period close checklist sits in the
@@ -224,6 +266,9 @@ const SCENARIOS = [
   ['manage-periodic-light-wide',   { tool: 'manage', tab: 'manage' }, WIDE,   'light', '', "mgrToggleGroup_('periodic', document.querySelector('#mgr-group-periodic .mgr-group-toggle'))"],
   ['manage-periodic-light-mobile', { tool: 'manage', tab: 'manage' }, MOBILE, 'light', '', "mgrToggleGroup_('periodic', document.querySelector('#mgr-group-periodic .mgr-group-toggle'))"],
   ['manage-periodic-error-light-wide', { tool: 'manage', tab: 'manage' }, WIDE, 'light', '?failrpc=getPayPeriodClose', "mgrToggleGroup_('periodic', document.querySelector('#mgr-group-periodic .mgr-group-toggle'))"],
+  // FR2 (cycle 26): the notice a partly failed bulk approve shows — each request's own reason, one button; the phone is where a long reason wraps.
+  ['manage-bulkfail-dark-mobile', { tool: 'manage', tab: 'manage' }, MOBILE, 'dark', '',
+    "mgrBulkFailDialog_('Approved', 2, [{ who: 'Nina Patel', date: '2026-11-12', error: 'This request was already Approved by another manager.' }, { who: 'Sam Ortiz', date: '2026-11-13', error: 'Cannot edit dates more than 30 days back.' }])"],
   ['cn-log-light-wide',     { tool: 'callNotes', tab: 'callNotes' },  WIDE, 'light', ''],
   // F35 (cycle 25): History had never been shot; its preset row gained a button.
   ['cn-history-light-wide',   { tool: 'callNotes', tab: 'callNotesHistory' }, WIDE,   'light', ''],
@@ -239,6 +284,22 @@ const SCENARIOS = [
   // call-data report never covers — every rep listed through notes, no rates
   // (M1: "—", never a red 0%). The three shots above/below preset a past range.
   ['metrics-team-today-light-wide', { tool: 'timeClock', tab: 'metricsTeam' }, WIDE, 'light', ''],
+  // Cycle 26 F35: the same lagged Today on a phone in dark — ONE call row
+  // with no figure and its reason (it drew "Answered 0 · Missed 0" in green),
+  // and the outbound row saying the export is not in yet.
+  ['metrics-team-today-dark-mobile', { tool: 'timeClock', tab: 'metricsTeam' }, MOBILE, 'dark', ''],
+  // Cycle 26 F35: My Stats on TODAY — the outbound export never holds it, and
+  // the rail says so whatever was placed (no row at all before).
+  ['metrics-today-light-wide', { tool: 'timeClock', tab: 'metricsMyStats' }, WIDE, 'light', '', "M_STATE.myMode='single';M_STATE.myDate=mTodayIso_();mMyStatsSyncPresets_();mLoadMyStats_()"],
+  // Batch PD (cycle 26): a rep with two partial days — the Dashboard card's
+  // "15.25 of 16 workdays, 2 partial" beside its pace, and the My Stats count
+  // trends' rings and "Partial days: …" note.
+  ['clock-partial-light-wide', { tool: 'timeClock', tab: 'clock' }, WIDE, 'light', '?partial=1'],
+  ['clock-partial-dark-mobile', { tool: 'timeClock', tab: 'clock' }, MOBILE, 'dark', '?partial=1'],
+  ['metrics-partial-light-wide', { tool: 'timeClock', tab: 'metricsMyStats' }, WIDE, 'light', '?partial=1'],
+  ['metrics-partial-dark-mobile', { tool: 'timeClock', tab: 'metricsMyStats' }, MOBILE, 'dark', '?partial=1'],
+  // FQ8 (cycle 26): the same rep's 7-day RANGE — the "Partial days" row under Calls answered.
+  ['metrics-partial-range-light-wide', { tool: 'timeClock', tab: 'metricsMyStats' }, WIDE, 'light', '?partial=1', "mMyPreset_('7d')"],
   ['metrics-team-dark-wide',  { tool: 'timeClock', tab: 'metricsTeam' },   WIDE, 'dark',  '?teamrange=7d'],
   ['intake-light-wide',     { tool: 'intake',    tab: null },         WIDE, 'light', ''],
   ['intake-catalog-light-wide', { tool: 'intake', tab: 'intakeCatalog' }, WIDE, 'light', ''],
@@ -262,6 +323,8 @@ const SCENARIOS = [
   // with what the real one returned for a specimen card photo.
   ['intake-card-read-light-wide', { tool: 'intake', tab: 'intakePmdAccount' }, WIDE, 'light', '', "(function(){ var L = " + I3_CARD_LINES + "; window.INTAKE_OCR_ENGINE = { read: function () { return Promise.resolve(L); } }; var c = document.createElement('canvas'); c.width = 320; c.height = 200; var x = c.getContext('2d'); x.fillStyle = '#2b7cc9'; x.fillRect(0, 0, 320, 200); x.fillStyle = '#fff'; x.font = '18px sans-serif'; x.fillText('Specimen card', 20, 40); INTAKE_STATE.pmd.images = [c.toDataURL('image/png')]; intakeRenderGallery_('pmd'); var b = document.querySelector('[data-card-read]'); if (b) b.click(); setTimeout(function () { var p = document.getElementById('intk-card-read'); if (p) p.scrollIntoView({ block: 'center' }); }, 300); })()", { wait: 700 }],
   ['intake-card-read-dark-mobile', { tool: 'intake', tab: 'intakePmdAccount' }, MOBILE, 'dark', '', "(function(){ var L = " + I3_CARD_LINES_UNSURE + "; window.INTAKE_OCR_ENGINE = { read: function () { return Promise.resolve(L); } }; var c = document.createElement('canvas'); c.width = 320; c.height = 200; var x = c.getContext('2d'); x.fillStyle = '#2b7cc9'; x.fillRect(0, 0, 320, 200); x.fillStyle = '#fff'; x.font = '18px sans-serif'; x.fillText('Specimen card', 20, 40); INTAKE_STATE.pmd.images = [c.toDataURL('image/png'), 'data:image/png;base64,AAAA']; intakeRenderGallery_('pmd'); var b = document.querySelector('[data-card-read]'); if (b) b.click(); setTimeout(function () { var p = document.getElementById('intk-card-read'); if (p) p.scrollIntoView({ block: 'center' }); }, 300); })()", { wait: 700 }],
+  ['intake-card-two-light-wide', { tool: 'intake', tab: 'intakePmdAccount' }, WIDE, 'light', '', I3_TWO_CARDS('c-medicare/clean', 'c-humana/clean'), { wait: 700 }],
+  ['intake-card-two-dark-mobile', { tool: 'intake', tab: 'intakePmdAccount' }, MOBILE, 'dark', '', I3_TWO_CARDS('c-uhc/clean', 'c-humana/clean'), { wait: 700 }],
   ['intake-pap-light-wide', { tool: 'intake', tab: 'intakePapAccount' }, WIDE, 'light', ''],
   // 25post A1: a Sent PPD's detail — each recommendation with its reason.
   ['intake-sent-detail-light-wide', { tool: 'intake', tab: 'intakeSent' }, WIDE, 'light', '', "intakeOpenSent_(document.querySelector('[data-sent-idx]')); setTimeout(function () { var g = document.querySelector('.intk-sent-grp'); if (g) g.scrollIntoView({ block: 'start' }); }, 250)"],
@@ -280,6 +343,9 @@ const SCENARIOS = [
   ['reference-search-signal-dark-mobile', { tool: 'reference', tab: null }, MOBILE, 'dark', '', E6_SIGNAL_SCROLL],
   ['training-light-wide',   { tool: 'develop',   tab: null },         WIDE, 'light', ''],
   ['coaching-light-wide',   { tool: 'develop',   tab: 'coaching' },   WIDE, 'light', ''],
+  // FW6 (cycle 26): Team Training — the manager's assignment matrix had no scenario, which is how its
+  // fixture came to render the error state unseen.
+  ['training-team-light-wide', { tool: 'develop', tab: 'trainingManage' }, WIDE, 'light', ''],
   ['clock-light-compact',   { tool: 'timeClock', tab: 'clock' },      COMPACT, 'light', '?compact=1'],
   ['cn-log-light-compact',  { tool: 'callNotes', tab: 'callNotes' },  COMPACT, 'light', '?compact=1'],
   ['cn-log-dark-compact',   { tool: 'callNotes', tab: 'callNotes' },  COMPACT, 'dark',  '?compact=1'],
@@ -362,6 +428,8 @@ const SCENARIOS = [
   // the signature block signed); the issue form's Preview on the employee's letterhead; the
   // admin's letterhead cards; the written document's printed copy.
   ['empdocs-letterhead-light-wide', { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '', "edOpenDoc_('d-signed')", { wait: 1200 }],
+  // Cycle 26 F14: a signed document whose signature record no longer verifies — the note above it.
+  ['empdocs-record-altered-light-wide', { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '', "edOpenDoc_('d-altered')", { wait: 1200 }],
   ['empdocs-letterhead-dark-mobile', { tool: 'develop', tab: 'myDocs' }, MOBILE, 'dark', '', "edOpenDoc_('d-signed')", { wait: 1200 }],
   ['empdocs-issue-preview-light-wide', { tool: 'develop', tab: 'docsManage' }, WIDE, 'light', '',
     "setTimeout(function () { var e = document.getElementById('ed-is-emp'); if (e) { e.value = e.options[1] ? e.options[1].value : ''; e.dispatchEvent(new Event('change')); } var t = document.getElementById('ed-is-title'); if (t) t.value = 'Remote work policy'; var b = document.getElementById('ed-is-body'); if (b) b.value = ':::center\\n**Remote work policy**\\n:::\\n\\nYou may work from home on Fridays with your manager\u2019s approval.\\n\\n[signature]'; var p = document.querySelector('[data-ed-wp=\\\"preview\\\"]'); if (p) p.click(); var w = document.getElementById('ed-is-wp'); if (w) w.scrollIntoView(); }, 800);", { wait: 1800 }],
@@ -410,6 +478,13 @@ const SCENARIOS = [
   // 22post B-2b — the floating panel in the pop-out: clamped inside the narrow
   // window, the form still visible around it (no backdrop).
   ['cn-scratchpad-light-compact', { tool: 'callNotes', tab: 'callNotes' }, COMPACT, 'light', '?compact=1', "cnOpenScratchpadModal_()"],
+  // F62 (cycle 26): the pad's own dialogs paint ABOVE it — in the pop-out the pad covers most of the window.
+  ['cn-scratchpad-newpage-light-compact', { tool: 'callNotes', tab: 'callNotes' }, COMPACT, 'light', '?compact=1', "cnOpenScratchpadModal_(); setTimeout(function () { cnScratchPageAdd_(); }, 400)"],
+  ['cn-scratchpad-delete-dark-compact', { tool: 'callNotes', tab: 'callNotes' }, COMPACT, 'dark', '?compact=1', "cnOpenScratchpadModal_(); setTimeout(function () { cnScratchPageDelete_(); }, 400)"],
+  // FT1 (cycle 26 follow-ons): unsaved text with no page to go to — the held
+  // row, in the pop-out with a full pad and wide with room.
+  ['cn-scratchpad-held-light-compact', { tool: 'callNotes', tab: 'callNotes' }, COMPACT, 'light', '?compact=1', "cnOpenScratchpadModal_(); setTimeout(function () { var pg = []; for (var i = 0; i < 10; i++) pg.push({ id: i ? 'p' + i : 'main', name: i ? 'Page ' + (i + 1) : 'Notes' }); CN_SCRATCH.pages = pg; CN_SCRATCH.pending['held~demo1'] = 'Callback for the Ortiz order — ask for <b>Dana</b> at ext 4410 before 3, and confirm the delivery window'; cnScratchRenderPages_(); }, 500)"],
+  ['cn-scratchpad-held-dark-wide', { tool: 'callNotes', tab: 'callNotes' }, WIDE, 'dark', '', "cnOpenScratchpadModal_(); setTimeout(function () { CN_SCRATCH.pending['held~demo1'] = 'Callback for the Ortiz order — ask for <b>Dana</b> at ext 4410 before 3'; cnScratchRenderPages_(); }, 500)"],
   // Operator 2026-08-17 (full-width round): the new .sp-top head+chart grid
   // stacks <1024px — shoot the stacked form so the breakpoint is on camera.
   ['spanish-light-mobile', { tool: 'timeClock', tab: 'metricsSpanish' }, MOBILE, 'light', ''],
@@ -618,6 +693,8 @@ const SCENARIOS = [
   ['reference-codes-light-wide',    { tool: 'reference', tab: null }, WIDE,    'light', '',           KBL_CODES],
   ['reference-codes-dark-wide',     { tool: 'reference', tab: null }, WIDE,    'dark',  '',           KBL_CODES],
   ['reference-drawer-xref-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',            KBD_XREF],
+  ['reference-notfound-gap-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '', KBL_NOTFOUND_GAP],
+  ['reference-notfound-gap-dark-mobile', { tool: 'reference', tab: null }, MOBILE, 'dark', '', KBL_NOTFOUND_GAP],
   ['manual-copy-light-wide',        { tool: 'reference', tab: null }, WIDE,    'light', '',           MANUAL_COPY],
   ['manual-copy-dark-wide',         { tool: 'reference', tab: null }, WIDE,    'dark',  '',           MANUAL_COPY],
 
@@ -645,6 +722,13 @@ const SCENARIOS = [
   // the Inferred tag is on camera beside the Out suggestion still offered).
   ['dayedit-activity-light-wide', { tool: 'manage', tab: 'manage' }, WIDE, 'light', '', DAYEDIT_ACTIVITY],
   ['dayedit-activity-dark-mobile', { tool: 'manage', tab: 'manage' }, MOBILE, 'dark', '', DAYEDIT_ACTIVITY],
+  // DQ3 (cycle 26, operator 2026-11-19): a Clock In SAVED as inferred — the
+  // "Confirm as is" button beside its tag; and, on the phone, after the press
+  // (the tag reads Confirmed, the button Undo).
+  ['dayedit-confirm-light-wide', { tool: 'manage', tab: 'manage' }, WIDE, 'light', '?inferred=1',
+    "openDayEditModal('E-1077', 'Nina Patel')"],
+  ['dayedit-confirm-dark-mobile', { tool: 'manage', tab: 'manage' }, MOBILE, 'dark', '?inferred=1',
+    "openDayEditModal('E-1077', 'Nina Patel'); setTimeout(function(){ var b=document.getElementById('de-clockin-inf-confirm'); if (b) b.click(); }, 900)"],
   // AC1 (operator 2026-11-11): the same day's clicks and keystrokes per HOUR.
   ['dayedit-activity-hourly-light-wide', { tool: 'manage', tab: 'manage' }, WIDE, 'light', '',
     DAYEDIT_ACTIVITY + "; setTimeout(function(){ var b=document.querySelector('#de-act [data-de-act-scale=\"hour\"]'); if (b) b.click(); }, 900)"],
@@ -708,6 +792,36 @@ const SCENARIOS = [
   // mid-shift. The Dashboard must still read as Chicago: today's date, the
   // punches, the ribbon's now-cursor and the break-chip states all on the
   // CST day, not a fresh PHT day with "Clock In".
+  // Cycle 26 (Batch 8 follow-on 11): Team Tools BETWEEN the phone and the desk.
+  // Every scenario above is 360–480px or 1440px; nothing had ever shot the app
+  // at the width of a window beside another one (800px), or half a 1920px
+  // screen (960px) — the widths where the handbook's hero was a 48px sliver
+  // (F65). One landing view per tool at 800, and the two densest at 960.
+  ['clock-light-tablet', { tool: 'timeClock', tab: 'clock' }, TABLET, 'light', ''],
+  ['manage-light-tablet', { tool: 'manage', tab: 'manage' }, TABLET, 'light', ''],
+  ['timeoff-light-tablet', { tool: 'timeClock', tab: 'timeoff' }, TABLET, 'light', ''],
+  ['cn-log-light-tablet', { tool: 'callNotes', tab: 'callNotes' }, TABLET, 'light', ''],
+  ['cn-history-light-tablet', { tool: 'callNotes', tab: 'callNotesHistory' }, TABLET, 'light', ''],
+  ['metrics-light-tablet', { tool: 'timeClock', tab: 'metricsMyStats' }, TABLET, 'light', ''],
+  ['metrics-team-light-tablet', { tool: 'timeClock', tab: 'metricsTeam' }, TABLET, 'light', '?teamrange=7d'],
+  ['spanish-light-tablet', { tool: 'timeClock', tab: 'metricsSpanish' }, TABLET, 'light', ''],
+  ['deptreq-looks-light-tablet', { tool: 'callNotes', tab: 'metricsDeptReq' }, TABLET, 'light', ''],
+  ['intake-light-tablet', { tool: 'intake', tab: null }, TABLET, 'light', ''],
+  ['reference-light-tablet', { tool: 'reference', tab: null }, TABLET, 'light', ''],
+  // Cycle 26 (second pass): below 1024px the shell caps the view at 600px, so
+  // Reference folds THERE — the reader is the column (it was 272px beside a
+  // 280px tree), and the chapter-end cards answer to their own width (their
+  // titles were 5px). `minWidth` holds both; the second scenario looks at the cards.
+  ['reference-manual-light-tablet', { tool: 'reference', tab: null }, TABLET, 'light', '', "kbOpenItem_('man-0-10')", { minWidth: { '.kb-main': 480, '.kb-man-cn': 200 } }],
+  ['reference-manual-chapend-light-tablet', { tool: 'reference', tab: null }, TABLET, 'light', '', "kbOpenItem_('man-3-8'); setTimeout(function(){ var n=document.querySelector('.kb-man-chapnav'); if(n) n.scrollIntoView({ block: 'center' }); }, 500)", { minWidth: { '.kb-main': 480, '.kb-man-cn': 200 } }],
+  ['reference-manual-chapend-light-mobile', { tool: 'reference', tab: null }, MOBILE, 'light', '', "kbOpenItem_('man-3-8'); setTimeout(function(){ var n=document.querySelector('.kb-man-chapnav'); if(n) n.scrollIntoView({ block: 'center' }); }, 500)", { minWidth: { '.kb-man-cn': 280 } }],
+  ['training-light-tablet', { tool: 'develop', tab: null }, TABLET, 'light', ''],
+  ['coaching-light-tablet', { tool: 'develop', tab: 'coaching' }, TABLET, 'light', ''],
+  ['qa-queue-light-tablet', { tool: 'qa', tab: 'qaQueue' }, TABLET, 'light', ''],
+  ['admin-system-light-tablet', { tool: 'manage', tab: 'callNotesAdmin' }, TABLET, 'light', '', "cnAdminTab_('system')"],
+  ['admin-config-light-tablet', { tool: 'manage', tab: 'callNotesAdmin' }, TABLET, 'light', '', "cnAdminTab_('config')"],
+  ['manage-light-half', { tool: 'manage', tab: 'manage' }, HALF, 'light', ''],
+  ['metrics-team-light-half', { tool: 'timeClock', tab: 'metricsTeam' }, HALF, 'light', '?teamrange=7d'],
   ['clock-light-wide-pht', { tool: 'timeClock', tab: 'clock' }, WIDE, 'light', '?tz=America/Chicago&role=rep', '', { tz: 'Asia/Manila', utc: [16, 5] }],
 ];
 
@@ -742,11 +856,15 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
   const ctx = await browser.newContext(ctxOpts);
   // HB4.1: the handbook's form viewer loads pdf.js from cdnjs; the harness
   // serves the same pinned build from node_modules (no network in CI or here).
-  await ctx.route('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/*', (route) => {
+  // Cycle 26 F56: both apps FETCH it now (checksum first), so the answer
+  // carries the CORS header a fetch needs; jsDelivr is the second source.
+  const servePdfJs = (route) => {
     const file = path.join(HERE, 'node_modules/pdfjs-dist/build', path.basename(new URL(route.request().url()).pathname));
-    if (!fs.existsSync(file)) return route.fulfill({ status: 404, body: '' });
-    return route.fulfill({ path: file, contentType: 'text/javascript' });
-  });
+    if (!fs.existsSync(file)) return route.fulfill({ status: 404, body: '', headers: { 'access-control-allow-origin': '*' } });
+    return route.fulfill({ path: file, contentType: 'text/javascript', headers: { 'access-control-allow-origin': '*' } });
+  };
+  await ctx.route('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/*', servePdfJs);
+  await ctx.route('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/*', servePdfJs);
   // ED3: the finished copy fetches pdf-lib from jsDelivr (SHA-256 pinned);
   // the harness serves the same pinned file from node_modules.
   await ctx.route('https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js', (route) =>
@@ -778,10 +896,11 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
   }
   if (AXE) {
     await page.addScriptTag({ content: AXE_SRC });
+    const swept = await page.evaluate(contrast.SWEEP);
     const res = await page.evaluate((tags) => window.axe.run(document, { runOnly: { type: 'tag', values: tags }, resultTypes: ['violations'] })
       .then((r) => r.violations.map((v) => ({ id: v.id, impact: v.impact, help: v.help, nodes: v.nodes.length,
         targets: v.nodes.slice(0, 4).map((n) => n.target.join(' ')), summary: (v.nodes[0] && v.nodes[0].failureSummary || '').split('\n').slice(0, 3).join(' ') }))), AXE_TAGS);
-    axeReport.push({ name, viewport: vp.width + 'x' + vp.height, mode, violations: res, errors: Array.from(new Set(errors)).slice(0, 4) });
+    axeReport.push({ name, viewport: vp.width + 'x' + vp.height, mode, violations: res, contrast: swept, errors: gate.keepErrors(errors, 4) });
     await ctx.close();
     continue;
   }
@@ -845,22 +964,54 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
     const scrollH = document.documentElement.scrollHeight;
     return { runaway: Math.max(0, Math.round(scrollH - Math.max(bottom, vh))), scrollH, narrow: narrow.slice(0, 5) };
   });
+  // Cycle 26 F65 — (3) A COLUMN TOO NARROW TO USE. A scenario may name the boxes
+  // that carry its content and the width each needs (opts.minWidth:
+  // { selector: px }). A box narrower than that — or not there at all, which is
+  // a selector that stopped matching, not a pass — is reported. `narrowText`
+  // cannot stand in for it: its floor is a word (48px), and a 208px column
+  // beside a 360px one is past that floor and still wrong.
+  const tooNarrow = opts && opts.minWidth ? await page.evaluate((want) => Object.keys(want).map((sel) => {
+    const el = document.querySelector(sel);
+    const w = el ? Math.round(el.getBoundingClientRect().width) : null;
+    return w === null || w < want[sel] ? { sel, w, min: want[sel] } : null;
+  }).filter(Boolean), opts.minWidth) : [];
+  // Cycle 26 — (4) TEXT TOO FAINT TO READ. Every text element's colour against
+  // what is painted behind it, composited and measured here rather than asked of
+  // axe (contrast.cjs says why). Measured after the scroll above, which moves
+  // nothing a colour depends on.
+  const swept = await page.evaluate(contrast.SWEEP);
   report.push({
     name, view, missing,
     viewport: vp.width + 'x' + vp.height,
     overflowPx,
     verticalRunawayPx: shape.runaway,
     narrowText: shape.narrow,
-    errors: Array.from(new Set(errors)).slice(0, 8),
+    tooNarrow,
+    mode,
+    contrast: swept,
+    errors: gate.keepErrors(errors, 8),   // F69: the broken-page lines are never the ones cut
   });
   await ctx.close();
 }
 await browser.close();
 if (AXE) {
   fs.writeFileSync(path.join(HERE, 'axe-report.json'), JSON.stringify(axeReport, null, 2));
-  const bad = axeReport.filter((r) => r.violations.length);
+  // Cycle 26: the contrast sweep rides the same run and fails it too. axe leaves
+  // a pair it cannot resolve "incomplete", and which pairs those are differs by
+  // Chromium build — a PASS here was not CI's, three times. The sweep measures
+  // the pair itself, so this command fails here where CI's axe would.
+  const faint = axeReport.filter((r) => gate.contrastFindings(r).length);
+  // F69 (cycle 26): a scenario whose page broke — its hook threw, or an
+  // uncaught error — was not on the screen it names, so "no violations" says
+  // nothing about that screen. It fails the run, by name.
+  const broke = axeReport.filter((r) => gate.pageErrorsOf(r.errors).length);
+  const bad = axeReport.filter((r) => gate.axeFailures(r).length);
   console.log('AXE (' + axeReport.length + ' handbook scenarios, WCAG 2.1 A + AA): ' + (bad.length ? 'FAIL' : 'PASS'));
-  bad.forEach((r) => r.violations.forEach((v) => console.log('  ' + r.name + '  ' + v.id + ' (' + v.impact + ', ' + v.nodes + ')  ' + v.targets.join(' | '))));
+  broke.forEach((r) => gate.pageErrorsOf(r.errors).forEach((e) => console.log('  ' + r.name + '  NOT CHECKED — the page broke: ' + String(e).slice(0, 160))));
+  axeReport.filter((r) => r.violations.length).forEach((r) => r.violations.forEach((v) => console.log('  ' + r.name + '  ' + v.id + ' (' + v.impact + ', ' + v.nodes + ')  ' + v.targets.join(' | '))));
+  console.log('CONTRAST SWEEP (' + axeReport.reduce((n, r) => n + (r.contrast ? r.contrast.checked : 0), 0) + ' text elements measured, ' +
+    axeReport.reduce((n, r) => n + (r.contrast ? r.contrast.unchecked : 0), 0) + ' over an image and not judged): ' + (faint.length ? 'FAIL' : 'PASS'));
+  faint.forEach((r) => gate.contrastFindings(r).forEach((f) => console.log('  ' + r.name + '  ' + f.detail)));
   if (!axeReport.length) { console.log('  no handbook scenario matched — nothing was checked'); process.exit(1); }
   process.exit(bad.length ? 1 : 0);
 }
@@ -879,10 +1030,31 @@ if (runaway.length) {
   console.log('\nVERTICAL RUNAWAY (the page scrolls past its content — an escaped absolute element?):');
   runaway.forEach((r) => console.log('  ' + r.name + '  +' + r.verticalRunawayPx + 'px blank @ ' + r.viewport));
 }
+const cramped = report.filter((r) => r.tooNarrow.length);
+if (cramped.length) {
+  console.log('\nTOO NARROW (a box its scenario says must be usable is narrower than it needs):');
+  cramped.forEach((r) => console.log('  ' + r.name + ' @ ' + r.viewport + '  ' + r.tooNarrow.map((n) => n.sel + ' ' + (n.w === null ? 'not found' : n.w + 'px') + ' (needs ' + n.min + 'px)').join(' · ')));
+}
 const squeezed = report.filter((r) => r.narrowText.length);
 if (squeezed.length) {
   console.log('\nSQUEEZED TEXT (a text column laid out narrower than a word):');
   squeezed.forEach((r) => console.log('  ' + r.name + ' @ ' + r.viewport + '  ' + r.narrowText.map((n) => n.tag + ' ' + n.w + 'px "' + n.text + '"').join(' · ')));
+}
+// Cycle 26: reported for every scenario, gated for the handbook (`--axe`). The
+// same pair shows on many screens, so the list is by PAIR, with how many
+// scenarios show it — the fix is the pair's, not each screen's.
+const faintRows = report.filter((r) => r.contrast && r.contrast.low.length);
+if (faintRows.length) {
+  const pairs = new Map();
+  faintRows.forEach((r) => r.contrast.low.forEach((l) => {
+    const k = r.mode + ' ' + l.el + ' ' + l.fg + ' on ' + l.bg;
+    const p = pairs.get(k) || { mode: r.mode, l, n: 0, first: r.name };
+    p.n++; pairs.set(k, p);
+  }));
+  console.log('\nLOW CONTRAST (text under WCAG AA against what is painted behind it — ' + faintRows.length + ' of ' + report.length + ' scenarios, ' + pairs.size + ' pairs):');
+  Array.from(pairs.values()).sort((a, b) => b.n - a.n).slice(0, 40).forEach((p) =>
+    console.log('  ' + p.mode + '  ' + p.l.el + '  ' + p.l.ratio + ':1 (needs ' + p.l.need + ')  ' + p.l.fg + ' on ' + p.l.bg + '  ×' + p.n + '  e.g. ' + p.first));
+  if (pairs.size > 40) console.log('  … and ' + (pairs.size - 40) + ' more (report.json has every one)');
 }
 const fixtureGaps = report.filter((r) => r.missing.length);
 if (fixtureGaps.length) {
@@ -893,7 +1065,7 @@ if (CI) {
   const v = gate.ciVerdict(report, gate.CI_SCENARIOS, gate.KNOWN);
   console.log('\nCI GATE (' + gate.CI_SCENARIOS.length + ' scenarios): ' + (v.ok ? 'PASS' : 'FAIL'));
   v.failures.forEach((f) => console.log('  ' + f.scenario + '  ' + f.kind + '  ' + f.detail));
-  v.stale.forEach((k) => console.log('  KNOWN entry no longer fires — remove it from ci-gate.cjs: ' + k.scenario + ' ' + k.kind));
+  v.stale.forEach((k) => console.log('  KNOWN entry ' + (k.match ? 'no longer fires — remove it from ci-gate.cjs' : 'has no `match`, so it excuses nothing — name the finding it is for') + ': ' + k.scenario + ' ' + k.kind));
   v.unshot.forEach((n) => console.log('  not shot: ' + n));
   if (!v.ok) process.exit(1);
 }

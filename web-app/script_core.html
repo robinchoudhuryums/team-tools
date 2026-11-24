@@ -391,6 +391,9 @@ window.addEventListener('load', () => {
       // surface as Dashboard greeting slides + the star buttons; this comment
       // previously claimed auto-open and could invite a regression).
       whatsNewInit_();
+      // F58 (cycle 26): Scratchpad text the last session never saved (kept in
+      // the browser) is said at boot — the pad may not be opened for hours.
+      if (typeof cnScratchBootNotice_ === 'function') cnScratchBootNotice_();
       // NOTE: the roster-vs-device timezone mismatch notice already runs via
       // remindersStart_ → tzMismatchCheck_ (9c5df81, operator 2026-08-13 —
       // once per browser-local day, sticky, offset-compared) — a second boot
@@ -902,9 +905,41 @@ function viewAsSet_(role) {
   empState.isAdmin = f.isAdmin; empState.isManager = f.isManager; empState.canSeeSpanish = f.canSeeSpanish;
   empState.canSeeQa = f.canSeeQa;
   settingsClose_();
+  // F61 (cycle 26): renderShell rebuilds the sidebar and the header, and what
+  // was ADDED to them since boot went with the old nodes — the What's-new star
+  // (rendered once, at boot) and every badge a poller had put on a nav button,
+  // until that poller's next round, minutes later.
+  var decor = shellNavDecorTake_();
   renderShell(empState);
+  shellNavDecorPut_(decor);
+  if (WHATSNEW_STATE) whatsNewRenderSidebarBtn_();
   // Land on a tab every role can see; enterTool bumps gated tabs anyway.
   enterTool('timeClock');
+}
+/** F61 — the nodes other code has added to the nav buttons (badges, the health
+ *  dot): every child element the shell's own template does not write. Keyed by
+ *  nav form and tool, so a badge goes back on the button it was on — and
+ *  nowhere, when the previewed role has no such button. */
+function shellNavDecorTake_() {
+  var out = [];
+  try {
+    document.querySelectorAll('.sb-link[data-tool], .nav-btn[data-tool]').forEach(function (btn) {
+      var form = btn.classList.contains('sb-link') ? '.sb-link' : '.nav-btn';
+      Array.prototype.forEach.call(btn.children, function (ch) {
+        if (ch.matches('.sb-icon, .sb-lbl, .nav-icon')) return;
+        out.push({ sel: form + '[data-tool="' + btn.getAttribute('data-tool') + '"]', node: ch });
+      });
+    });
+  } catch (e) {}
+  return out;
+}
+function shellNavDecorPut_(decor) {
+  (decor || []).forEach(function (d) {
+    try {
+      var btn = document.querySelector(d.sel);
+      if (btn) btn.appendChild(d.node);
+    } catch (e) {}
+  });
 }
 
 function renderShell(state) {
@@ -1333,6 +1368,9 @@ function recordViewUsage_(viewKey, timing) {
   try {
     if (!empState) return;
     if (typeof VIEW_AS !== 'undefined' && VIEW_AS.active) return;
+    // F60 (cycle 26): nor is the tour — it walks every tab the rep can see, and
+    // each one was logged as a tab they had used.
+    if (typeof TOUR_ACTIVE !== 'undefined' && TOUR_ACTIVE) return;
     // Boot: the landing view's row is DEFERRED so it can carry the startup
     // timings (bootTimingSend_ fires it once the view paints, or on the
     // fallback timer). The throttle stamp lands now so a tab-hop straight
@@ -1726,7 +1764,8 @@ function copyText_(text, done) {
  *
  *  The text is ASSIGNED to the field, never interpolated into the markup, so a
  *  note full of angle brackets is not an injection surface. */
-function manualCopyModal_(text, what) {
+function manualCopyModal_(text, what, opts) {
+  opts = opts || {};
   var body = String(text == null ? '' : text);
   // 40, not 60: a single-line input showed the TAIL of a 50-character price
   // line, because select() leaves the caret at the end — the rep could not see
@@ -1735,13 +1774,24 @@ function manualCopyModal_(text, what) {
   // Sized to the content, 3..12 lines. A fixed 8 made a two-line price look
   // like an empty form the rep was meant to fill in.
   var rows = Math.min(12, Math.max(3, body.split('\n').length + Math.floor(body.length / 48)));
-  var overlay = ensureOverlay('manual-copy-overlay', { labelledBy: 'manual-copy-h' });
+  // FX4 (cycle 26): ALWAYS the layer above the two non-modal panels. FT1 gave
+  // that layer only to a caller that asked (the Scratchpad); the Reference
+  // drawer's copy buttons did not ask, so a blocked copy there opened this
+  // dialog at 50 under a drawer at 55 — "nothing was copied", behind the
+  // panel the rep was looking at. It is the one thing on screen that must be
+  // read, wherever it was opened from; no caller has to remember.
+  var overlay = ensureOverlay('manual-copy-overlay', { labelledBy: 'manual-copy-h', extraClass: 'overlay-above-panels' });
   overlay.innerHTML = '<div class="modal manual-copy-modal">' +
-    '<div class="modal-head"><h3 id="manual-copy-h">Copy it by hand</h3>' +
+    '<div class="modal-head"><h3 id="manual-copy-h">' + esc(opts.title || 'Copy it by hand') + '</h3>' +
       '<button type="button" class="modal-x" aria-label="Close" onclick="closeOverlay(this.closest(\'.overlay\'))">' + icon('x', 15) + '</button></div>' +
     '<div class="modal-body">' +
-      '<p class="manual-copy-why">This browser blocked the clipboard, so <b>nothing was copied</b>. ' +
-        'Here it is — select it and press Ctrl/⌘+C.</p>' +
+      // F61 (cycle 26): the dialog is also where a note that did not SAVE is
+      // shown, and it told that rep the browser had blocked the clipboard. A
+      // caller with another reason gives it (`opts.why`, plain text).
+      (opts.why
+        ? '<p class="manual-copy-why">' + esc(opts.why) + '</p>'
+        : '<p class="manual-copy-why">This browser blocked the clipboard, so <b>nothing was copied</b>. ' +
+          'Here it is — select it and press Ctrl/⌘+C.</p>') +
       '<label class="manual-copy-lbl" for="manual-copy-val"></label>' +
       (multiline
         ? '<textarea id="manual-copy-val" class="manual-copy-val" rows="' + rows + '" readonly></textarea>'
@@ -2335,7 +2385,7 @@ function notifyRemind_(msg, tone, action) {
   var opts = { sticky: true };
   if (action && action.punch) {
     opts.actionLabel = action.label;
-    opts.onAction = function () { remindPunchNow_(action.punch); };
+    opts.onAction = function () { remindPunchNow_(action.punch, action.sig); };
   }
   if (typeof showToast === 'function') showToast(msg, tone || 'toast-warn', opts);
   if (p.sound) notifyChime_();
@@ -2490,17 +2540,22 @@ var PRESENCE = { sentAt: 0, bound: false };
 // and the thing clicked are never read. The counts ride the next presence
 // ping; a window whose rep has PAUSED for ACT_FLUSH_IDLE_MS sends what it has
 // through recordActivityCounts, which stamps no presence, so the minutes
-// before a break or the end of the day are kept. A send that fails puts its
-// counts back for the next one; counts still held when the window closes are
-// lost (said on the Day Edit card).
+// before a break or the end of the day are kept. A send that fails — the call
+// itself, or (F30, cycle 26) the server saying the row was not written — puts
+// its counts back for the next one; counts still held when the window closes
+// are lost (said on the Day Edit card). F29: `last` is the time of the last
+// gesture counted, sent with the counts so the manager's idle time is measured
+// from it and not from the last ping, which can be ten minutes older.
 var ACT_BLOCK_MS = 10 * 60 * 1000;            // = the server's ACTIVITY_BLOCK_MIN (pinned)
 var ACT_FLUSH_IDLE_MS = 2 * 60 * 1000;
-var ACT_COUNTS = { b: {}, t: null };
+var ACT_MAX_AGE_MS = 6 * 60 * 60 * 1000;      // = the server's ACTIVITY_COUNTS_MAX_AGE_MS (pinned): an older block would be dropped there
+var ACT_COUNTS = { b: {}, t: null, last: 0 };
 function actCount_(e) {
   if (!e || (e.type === 'keydown' && e.repeat)) return;
   var blk = Math.floor(Date.now() / ACT_BLOCK_MS);
   var cur = ACT_COUNTS.b[blk] || (ACT_COUNTS.b[blk] = [0, 0]);
   if (e.type === 'keydown') cur[1]++; else cur[0]++;
+  ACT_COUNTS.last = Date.now();
   if (ACT_COUNTS.t) clearTimeout(ACT_COUNTS.t);
   ACT_COUNTS.t = setTimeout(actFlush_, ACT_FLUSH_IDLE_MS);
 }
@@ -2510,16 +2565,27 @@ function actCount_(e) {
 function actTake_() {
   var ks = Object.keys(ACT_COUNTS.b);
   if (!ks.length) return null;
-  var out = { at: Date.now(), b: ks.map(function (k) { return [Number(k), ACT_COUNTS.b[k][0], ACT_COUNTS.b[k][1]]; }) };
+  var out = { at: Date.now(), last: ACT_COUNTS.last || 0, b: ks.map(function (k) { return [Number(k), ACT_COUNTS.b[k][0], ACT_COUNTS.b[k][1]]; }) };
   ACT_COUNTS.b = {};
   return out;
 }
+/** Put a send's counts back for the next one. A block too old for the server
+ *  to take is let go here, so a window whose sends keep failing never grows a
+ *  list the server would cut from the wrong end. */
 function actRestore_(p) {
   if (!p || !p.b) return;
+  var oldest = Math.floor((Date.now() - ACT_MAX_AGE_MS) / ACT_BLOCK_MS);
   p.b.forEach(function (e) {
+    if (!(e[0] >= oldest)) return;
     var cur = ACT_COUNTS.b[e[0]] || (ACT_COUNTS.b[e[0]] = [0, 0]);
     cur[0] += e[1]; cur[1] += e[2];
   });
+}
+/** F30 (cycle 26): the server answered — but did it WRITE the row? `logged:
+ *  false` is "not written": the counts go back, as they do when the call
+ *  fails. (A refusal with no `logged` — not on the roster — keeps nothing.) */
+function actSent_(p, res) {
+  if (p && res && res.logged === false) actRestore_(p);
 }
 function actFlush_() {
   ACT_COUNTS.t = null;
@@ -2527,7 +2593,7 @@ function actFlush_() {
     var p = actTake_();
     if (!p) return;
     google.script.run
-      .withSuccessHandler(function () {})
+      .withSuccessHandler(function (res) { actSent_(p, res); })
       .withFailureHandler(function () { actRestore_(p); })
       .recordActivityCounts(p);
   } catch (e) { /* never break input handling */ }
@@ -2540,7 +2606,7 @@ function presenceOnGesture_(e) {
     PRESENCE.sentAt = now;                         // stamp BEFORE the send — a slow/failed RPC never double-fires
     var p = actTake_();
     google.script.run
-      .withSuccessHandler(function () {})
+      .withSuccessHandler(function (res) { actSent_(p, res); })
       .withFailureHandler(function () { actRestore_(p); })   // the stamp stays; only the counts wait for the next send
       .recordPresence(p);
   } catch (err) { /* never break input handling */ }
@@ -2604,15 +2670,46 @@ var REMIND_PUNCH_LABELS = { ClockIn: 'Clock in', ClockOut: 'Clock out', LunchOut
 function remindPunchAction_(type) {
   var acts = (empState && empState.nextActions) || [];
   if (!REMIND_PUNCH_LABELS[type] || acts.indexOf(type) < 0) return null;
-  return { label: REMIND_PUNCH_LABELS[type], punch: type };
+  return { label: REMIND_PUNCH_LABELS[type], punch: type, sig: remindPunchSig_(empState) };
 }
-function remindPunchNow_(type) {
-  var acts = (empState && empState.nextActions) || [];
-  if (acts.indexOf(type) < 0) {
-    showToast('Your punches changed since this reminder — open the Dashboard to see where you are', 'toast-info');
-    return;
-  }
-  if (typeof submitPunch === 'function') submitPunch(type, null);
+/** PURE — F61 (cycle 26): the day's punches as one string, taken when a
+ *  reminder offers a punch and compared at the click. "Is this punch allowed
+ *  now" is not enough: Lunch out is allowed AGAIN after the rep comes back
+ *  from lunch, so a lunch reminder left on screen recorded a second lunch. */
+function remindPunchSig_(state) {
+  var p = (state && state.punches) || [];
+  var last = p.length ? p[p.length - 1] : null;
+  return String((state && state.today) || '') + '|' + p.length + '|' + (last ? String(last.type || '') + '@' + String(last.time || '') : '');
+}
+/** PURE — may a reminder's punch go ahead? Only while the punch is still one
+ *  the rep's state allows AND nothing has been punched since it was offered
+ *  (a reminder with no signature — an older page's — is judged on the first). */
+function remindPunchStillValid_(state, type, sig) {
+  var acts = (state && state.nextActions) || [];
+  if (acts.indexOf(type) < 0) return false;
+  return sig == null || sig === remindPunchSig_(state);
+}
+function remindPunchNow_(type, sig) {
+  var go = function () {
+    if (!remindPunchStillValid_(empState, type, sig)) {
+      showToast('Your punches changed since this reminder — open the Dashboard to see where you are', 'toast-info');
+      return;
+    }
+    if (typeof submitPunch === 'function') submitPunch(type, null);
+  };
+  // The snapshot this window holds may be older than a punch made in another
+  // window (the pop-out and the main window each keep their own), so ask the
+  // server where the rep is before punching. A failed ask judges on what this
+  // window has — the rule before F61.
+  try {
+    google.script.run
+      .withSuccessHandler(function (s) {
+        if (s && !s.error) { empState = s; viewAsReapply_(); _remindStateOkAt = Date.now(); }
+        go();
+      })
+      .withFailureHandler(function () { go(); })
+      .getEmployeeState();
+  } catch (e) { go(); }
 }
 function remindOnce_(key, msg, tone, action) {
   if (_remindFired[key]) return false;
@@ -3045,7 +3142,8 @@ function uiConfirm(opts) {
         + titleHtml
         + bodyHtml
         + '<div class="modal-footer">'
-          + '<button type="button" class="btn-modal-cancel ui-dialog-cancel">' + esc(opts.cancelLabel || 'Cancel') + '</button>'
+          + (opts.hideCancel ? ''   /* FR2 (cycle 26): a notice has nothing to cancel — one button; Escape and the backdrop still close it */
+            : '<button type="button" class="btn-modal-cancel ui-dialog-cancel">' + esc(opts.cancelLabel || 'Cancel') + '</button>')
           + '<button type="button" class="btn-modal-ok ui-dialog-ok' + (isDanger ? ' is-danger' : '') + '">' + esc(opts.confirmLabel || 'Confirm') + '</button>'
         + '</div>'
       + '</div>';
@@ -3087,7 +3185,8 @@ function uiConfirm(opts) {
         cleanup(!onCancel);
       }
     };
-    overlay.querySelector('.ui-dialog-cancel').addEventListener('click', function () { cleanup(false); });
+    const cancelBtn = overlay.querySelector('.ui-dialog-cancel');   // absent under hideCancel (FR2)
+    if (cancelBtn) cancelBtn.addEventListener('click', function () { cleanup(false); });
     overlay.querySelector('.ui-dialog-ok').addEventListener('click', function () { cleanup(true); });
     overlay.addEventListener('click', function (e) { if (e.target === overlay) cleanup(false); });
     document.addEventListener('keydown', onKey, true);
@@ -3324,7 +3423,9 @@ function overlayDiscardGuard_(el) {
  *  never get stuck. */
 function closeOverlay(el, opts) {
   if (!el) return;
-  if (!(opts && opts.discard) && overlayDiscardGuard_(el)) return;
+  // F63 (cycle 26): `saved` — a hook-less static modal closing itself after its
+  // own save has nothing to discard, and is not asked.
+  if (!(opts && (opts.discard || opts.saved)) && overlayDiscardGuard_(el)) return;
   var hook = el.id && OVERLAY_CLOSE_HOOKS[el.id];
   if (hook) {
     try { hook(); } catch (err) { el.classList.remove('open'); /* degrade to plain hide */ }
@@ -3463,6 +3564,10 @@ function overlayFocusTrap_(e) {
   // 22post B-2b: the floating Scratchpad (.cn-float-panel) is NON-modal too —
   // it exists to be typed in while a note (or the composer) is open.
   if (e.target && e.target.closest && e.target.closest('.cn-float-panel')) return;
+  // F60 (cycle 26): the tour's popover is its own dialog, above every overlay.
+  // With an overlay open beneath it (What's new, a modal left open) the trap
+  // pulled focus off the tour's buttons into that overlay, under the dim.
+  if (e.target && e.target.closest && e.target.closest('#tour-pop')) return;
   // F(cycle-8): hover-opened day popovers (.overlay.open.hover-mode — the
   // Time/PTO calendar) are NOT modal: the rep merely rested the pointer on a
   // cell, and trapping focus yanked Tab / month-nav clicks into the popover's

@@ -20,7 +20,19 @@ partials). Two harnesses, by what they reach:
 npm test            # both harnesses (from repo root)
 npm run test:client # pure-helper harness only (no deps)
 npm run test:dom    # DOM-lifecycle harness only (needs `npm ci` for jsdom)
+
+REQUIRE_DEPS=1 node test/client/run.js              # CI's SECOND pure run, after `npm ci`
+DOM_ONLY='<regex>' node test/client/dom/runDom.js   # a named subset — for a bite-check only
 ```
+
+CI runs the pure harness twice: first with nothing installed, then with
+`REQUIRE_DEPS=1` after `npm ci`. A pure pin that needs a dev dependency
+(`acorn`, `eslint-scope`) is registered with `testNeedsDeps([...], name, fn)`
+— a visible SKIPPED in the first run and a failure in the second if the
+package is missing. A bare `require` of one turns the first run red (cycle 26
+Batch 13). `DOM_ONLY` refuses a pattern that matches no test, its summary
+line says SUBSET, and it is never a harness result; `scripts/bite.sh --dom
+--only` uses it.
 
 The pure harness needs no `npm install`. The DOM harness needs the `jsdom`
 devDependency (`npm ci`). Neither ships — `clasp push` only touches `web-app/`.

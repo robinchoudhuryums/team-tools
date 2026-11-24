@@ -10,6 +10,627 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+
+## 2026-11-20 — Cycle 26 follow-ons after Batch 14 (FX1–FX8)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version) AND the
+handbook app (`npm run handbook:push` + New version) — its copied page shell
+changed with FX4.
+
+- **A blocked copy is always on top (FX4).** When the browser blocks a copy,
+  the "Copy it by hand" dialog now opens over the Reference drawer and the
+  Scratchpad. Opened from the drawer it used to sit under it.
+- **Search says when there are more (FX5).** A rep's Call Notes search that
+  matches more than 200 notes says it is showing the newest 200 and to
+  narrow by date range. It used to read "200 results".
+- **The pay-period tile (FX6).** If the timesheet archive cannot be read,
+  the tile on Time / PTO says hours from earlier in the period may be
+  missing — the calendar beside it already did.
+- **Reminders (FX8).** No visible change; the Mark done and Cancel buttons
+  are wired differently.
+- **After a stopped test run (FX1).** `cleanupTestData`'s log now says, for
+  each setting it restored, how long ago the run stopped and — if the value
+  it replaced was not the original — what that value was. If you had changed
+  that setting yourself in between, that is your change: set it again.
+
+## 2026-11-20 — Cycle 26 Batch 14: Docs and tooling (F68–F71, F73) with follow-ons (FW1–FW6)
+
+**Nothing to set, and nothing a rep or manager will see.** Team Tools'
+`Tests.js` changed, so the next `clasp push -f` carries it; no New version is
+needed for this batch alone. The handbook app is not affected.
+
+- **A stopped test run no longer loses a setting.** A test that changes a
+  live Script Property (the feature toggles, the admin and manager lists, the
+  archive window) now keeps a copy first. If a run is stopped or times out,
+  run `cleanupTestData` — it puts every copied value back and says which.
+  Until then you may see `TEST_STASH_…` properties: leave them.
+- **Two new editor tests** — `suite_stashRestoresAnOverwrittenProperty` and
+  `intakeFeedback_limitRefusesPastTheCap`. The run's own `Expected:` line
+  has the new total.
+- **Docs you may act on were wrong and are corrected:** the handbook app's
+  deploy steps now sit beside Team Tools' in `.cycle/config.md`; its
+  authorisation asks for four permissions, not two (it writes its own
+  spreadsheet and can send reminder email); the walk-through steps that said
+  "Metrics → …" now say where those tabs are (Dashboard → Stats, Dashboard →
+  Spanish Inbox, Call Notes → Dept Requests).
+- **CI is stricter in three places:** a handbook screen whose page fails to
+  open now fails the accessibility check instead of passing unchecked; the
+  intake two-card panel and the Team Training view are measured on every
+  push; newer JavaScript syntax and an ungated handbook function fail a pin.
+
+## 2026-11-20 — Cycle 26 follow-ons after Batch 13 (FV1–FV3)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The
+handbook app is not affected.
+
+- **"Same card as Card 1" (FV1):** when the card reader offers one card as
+  two suggestions — a second photo read slightly differently — the rep can
+  join them. The joined suggestion marks the values the two photos
+  disagreed on. A Medicare card and a plan card are never offered the
+  button.
+- **A limit on intake feedback (FV2):** one person can send twelve pieces of
+  feedback from intake emails in an hour. Past that they read "That is a lot
+  of feedback in one hour — nothing more was sent", and the AuditLog gets one
+  `IntakeFeedbackLimited` row for that hour. The number is
+  `INTAKE_FEEDBACK_MAX_PER_HOUR` in `00_config.js`.
+- **Older browsers (FV3):** nothing changes in the app. The test suite now
+  holds every page script to the 2015 level of JavaScript the code already
+  uses, so newer syntax cannot slip in and blank a tool on an old browser.
+
+## 2026-11-20 — Cycle 26 Batch 13: Intake remainder (F21, F22, F23, F67)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The
+handbook app is not affected.
+
+- **Two insurance cards (F21):** attaching more than one card and pressing
+  "Read the insurance details" now gives one suggestion per card — "Card 1",
+  "Card 2" — each with its own line and its own Use as primary / secondary.
+  Before, every image was merged into one line, which could put one card's
+  ID beside another card's group, and a plan card removed the Medicare ID
+  read from a Medicare card.
+- **Feedback from Sales and PAP (F22):** the "Send feedback on this
+  recommendation" button in an intake email now works for anyone signed in to
+  a company account. It used to answer "Not authorized." to recipients who
+  are not on the Employees sheet — which is the Sales and PAP teams. Their
+  rows in the `IntakeFeedback` tab carry the address and a blank name.
+- **The Intake store is kept (F23):** Storage Health said "Optional purge"
+  for the Intake spreadsheet. There is no purge: submissions and feedback
+  stay until deleted by hand. The row now reads "Kept — no purge exists" and
+  names the `IntakeFeedback` tab. Nothing about what is stored changed.
+- **Older Safari (F67):** on Safari and iOS before 16.4 the Intake tool did
+  not load at all. It loads now; only the card reader is unavailable there,
+  and says so.
+
+## 2026-11-20 — Cycle 26 follow-ons after Batch 12 (FU1–FU3)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The
+handbook app is not affected.
+
+- **Scratchpad saves and long jobs (FU2):** a pad save no longer waits on the
+  project lock, so a tag rename or another long job does not make pads fail
+  to save. (Batch 12 had introduced that dependency; it never shipped.)
+- **A save that takes too long (FU1):** a note or Scratchpad save that has
+  run for about fifty seconds stops with "Lock timeout: this save took too
+  long to finish safely — nothing was written. Try again." The note stays in
+  the form.
+- **Expired unsaved Scratchpad text (FU3):** when text that was never saved
+  passes its 24 hours in the browser and is removed, a notice now says so.
+
+## 2026-11-20 — Cycle 26 Batch 12: Server small items (F41–F43)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The
+handbook app is not affected.
+
+- **Dept Requests (F41):** a department mailbox's click on the resolve link
+  counts as the department's response even when that mailbox is on the roster
+  or the CC list (it was recorded as an untimed copy). Answering **Resolved**
+  on a held reply can no longer log the answer without resolving the request.
+  Two patients whose Patient & TRX say "TRX pending" are no longer folded
+  together; a fold's header counts what is still open after Mark resolved.
+- **Spanish inbox (F41):** a resolve that fails gives the outcome and the
+  typed note back when the dialog is opened again. A refresh that finishes
+  after you resolved or claimed a card no longer undoes it on screen.
+- **Scratchpad (F42):** saves no longer wait on other reps' saves. A new,
+  short-lived Script Property appears while a pad saves:
+  `CN_SCRATCH_LEASE_<sheet id>` — like `CN_REP_LEASE_…`, never delete one by
+  hand mid-shift.
+- **A stuck note save (F42):** a manager action or nightly job on that rep's
+  notes now stops after about eight seconds with "Lock timeout: a save to
+  these call notes has not finished" instead of holding everyone's punches
+  for up to a minute. Try again shortly.
+- **What's new, the agent's email copy (F43):** two small fixes — the panel
+  cannot show the wrong article after one is deleted; an agent whose address
+  is contained in another BCC address gets their own copy again.
+- **`npm run push:prod` / `push:dev` (F43):** they refuse to run while
+  `web-app/.clasp.json` has uncommitted changes. Commit it first.
+- **Not changed:** text that begins with an apostrophe still loses that one
+  character in some cells (see the g144 note in `docs/gotchas.md`).
+
+## 2026-11-20 — Cycle 26 follow-ons after Batch 11 (FT1–FT4)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version) and
+`npm run handbook:push` (its copies of the shell and the stylesheet changed).
+
+- **Scratchpad, a full pad (FT1):** unsaved text that has to go to a
+  "Recovered text" page is no longer written over the changed page when the
+  scratchpad already has ten pages. It is kept in a row at the top of the
+  pad with Move to a new page, Copy it and Discard, and moves by itself when
+  a page is deleted.
+- **Edit Day (FT2):** picking another date with unsaved changes asks
+  "Discard changes?" first; "Keep editing" puts the date back.
+- **Tour (FT3):** it now waits for My Stats, Team Metrics and Training to
+  finish loading too — the Stats step was still being skipped on a slow
+  load.
+- **No new browser storage key and no server change.**
+
+## 2026-11-19 — Cycle 26 Batch 11: Shell and Call Notes client (F58–F63)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version) and
+`npm run handbook:push` (its copies of the shell and the stylesheet changed).
+
+- **Scratchpad (F58):** switching page while it is saving no longer loses the
+  last lines typed. Unsaved text survives a reload: a notice at start-up says
+  so, and opening the pad restores it. If that page was changed on another
+  computer in between, the text is put on a new page called "Recovered
+  text". A page that fails to open has a "Try again" button.
+- **Call notes (F59):** answering "Not now" to "Restore an unsaved call
+  note?" now keeps that note — it is offered again the next time Call Notes
+  loads, for 24 hours.
+- **Tour (F60):** it waits for a slow page instead of skipping its step, and
+  no longer counts as visits in Feature usage.
+- **Reminders (F61):** a "Lunch out" button on an old reminder no longer
+  records a second lunch. The dialog for a call note that did not save now
+  says that, not that the clipboard was blocked. Switching View as keeps the
+  What's-new star and the nav badges.
+- **Dialogs (F62):** the Scratchpad's New page / Delete page dialogs appear
+  above the pad; Delete is the red button.
+- **Three forms ask before discarding (F63):** Request Punch Adjustment,
+  Edit Day and Add time off ask "Discard changes?" before Escape, Cancel or
+  a click outside loses typed work.
+- **Browser storage:** two new keys, `umsScratchUnsaved` and
+  `umsCallNotesParkedDrafts` — unsaved text only, 24 hours.
+
+## 2026-11-19 — Cycle 26 decisions, third round (DT1)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The
+handbook app is not touched.
+
+- **Stats → Team (DT1):** on a range, "Handled / day" now sits directly after
+  "Handled (adj.)": handled calls (answered plus connected outbound) over the
+  days the rep took inbound calls, a partial day counted as its share. Hover a
+  figure for what was added and the divisor. Copy table carries it as
+  "Handled (adj.) / day".
+- **Two things to know:** a day a rep spent only on outbound calls adds its
+  calls but no day, so that rep's figure reads high. And with every optional
+  column showing, the table is wider than its frame on a 1440px screen and
+  scrolls sideways inside it.
+- **Left as they are, by your decision:** the Confirm button stays on the pay
+  statement only; no "confirm all"; no per-day figure on the Team totals; the
+  Department card is not adjusted for partial days.
+
+## 2026-11-19 — Cycle 26 follow-ons after the second round (FS1–FS3)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version);
+`npm run handbook:push` keeps the handbook app's copied stylesheet in step.
+
+- **Pay Period Close (FS1):** a time set from app activity that the rep has
+  already asked to confirm says so on the card ("· rep asked to confirm"),
+  with a line naming where to approve it. The request is still counted as a
+  pending punch adjustment, as before.
+- **PTO Balance Drift (FS2):** a refused or failed "Credit & reconcile" used
+  to leave its button reading "Reconciling…"; it now reads "Credit &
+  reconcile" again. Recent Activity and this card were checked for the
+  bulk-failure problem fixed in FR2 — neither has a bulk action.
+- **App activity (FS3):** one person can add at most forty ActivityLog rows
+  in ten minutes. Real use is far below that. If it is ever reached, the
+  extra rows are not kept and one `ActivityRowsLimited` row appears in the
+  AuditLog and under Manage → Recent Activity, naming the person.
+- **Editor suite:** one new test, `activity_rowLimitRefusesPastTheCap` (it
+  writes no ActivityLog row).
+
+## 2026-11-19 — Cycle 26 decisions, second round (DS1–DS2)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version);
+`npm run handbook:push` keeps the handbook app's copied stylesheet in step.
+The `PunchAdjustRequests` tab's `Action` column may now read `confirm`.
+
+- **Reps — confirm an inferred time (DS1):** on the pay statement, a day
+  whose Clock In or Clock Out a manager set from app activity has a "Confirm"
+  button. It sends a request to the manager; the time stays marked Inferred
+  until a manager approves. If the time is wrong the rep uses Adjust instead.
+- **Managers:** the request arrives in the punch-adjustment queue (and by
+  email) as "Confirm ClockIn … (set from app activity — approving keeps the
+  time and clears the Inferred mark)". If the time was changed after the rep
+  asked, approval is refused with the reason — deny the request.
+- **Stats → Team (DS2):** a range now has "Ans / day": answered calls over
+  the days the rep took calls, with a partial day counted as its share. Hover
+  a figure for its divisor. Answered, Missed, % Ans and talk time are
+  unchanged. A rep with under one credited day shows "—".
+- **Not built, by your decision:** partial days on Day Edit and Team Punches;
+  a back-fill of "amended" onto older intake notes.
+- **Editor suite:** one new test, `punchAdjust_confirmRequestMovesOnlyTheMark`.
+
+## 2026-11-19 — Cycle 26 follow-ons after the decisions (FR1–FR4)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version);
+`npm run handbook:push` keeps the handbook app's copied shell and stylesheet
+in step (nothing a reader sees changes).
+
+- **Pay Period Close:** the card lists clock times set from app activity
+  that nobody has confirmed yet, per pay period, each opening Day Edit. A
+  period still reads "Ready to close" with such a list — the export file is
+  the same either way. The Periodic summary says "· N inferred to check".
+- **Bulk approve / deny:** when some requests cannot be decided, a notice
+  names each one and its reason (it used to be a count in a toast).
+- **Team Punches:** if today's app-activity bars could not be refreshed, the
+  note under the table says how old they are.
+- **Spanish Inbox:** a refresh that fails says "showing last loaded" once,
+  including when the server answers with an error.
+
+## 2026-11-19 — Cycle 26 decisions after the follow-ons (DQ1–DQ3)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The
+handbook app's copied stylesheet changed with it, so `npm run handbook:push`
+keeps the two in step; nothing a handbook reader sees changes.
+
+- **Managers — partial days (DQ1):** Stats → Team marks a rep who has partial
+  days in the window and lists the days under the table. The figures are not
+  adjusted. Reps still see only their own. **Tell call-data-reporting:** the
+  handoff said "an agent sees this for their OWN numbers only"; managers in
+  Team Tools now see dates and shares for their reps (never a reason — column
+  D is still not read).
+- **Intake count (DQ2):** amending a sent form no longer adds to "Intake".
+  The amended note shows "PMD amended". Amendments sent before this deploy
+  still count.
+- **Day Edit — Confirm as is (DQ3):** a time saved from app activity can be
+  confirmed without changing it. **The payroll export file does not change.**
+  The "inferred from app activity" list beside it now shows only punches
+  nobody has confirmed; confirmed ones are counted on their own line. Timesheet
+  column J reads `Confirmed (app activity)` for them — leave the cell alone.
+- **Editor suite:** one new test, `managerSaveDay_confirmsInferredAsIs`; the
+  run prints its own Expected count.
+
+## 2026-11-18 — Cycle 26 follow-ons after Batches 9, 10 and Partial Days (FQ1–FQ10)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The
+handbook app is not touched.
+
+- **Stats:** the hero names the day (a Monday reads "Fri Nov 13", not
+  "Yesterday"); Refresh no longer blanks the page, and a refresh that fails
+  keeps what was showing; a range lists your partial days; Team has no
+  "Transfers 0" on a day that is not in yet.
+- **Managers:** Team Metrics names a rep whose OUTBOUND calls are logged
+  under another spelling ("likely outbound name mismatch") — fix it with an
+  Agent Alias Overrides row, as for inbound. The idle line under Live Status
+  takes its minutes from the server's setting.
+- **Admins:** Manage → Admin → System warns when a name marked on the
+  Department Dashboard's Partial Days tab looks like a roster name spelled
+  differently — that rep's partial days are not being applied until the
+  alias row exists. The purge audit note now names the cap that was hit.
+- **Faster first open:** My Stats' day totals come from the read Team
+  Metrics and the hourly read-ahead already keep.
+
+## 2026-11-18 — Cycle 26 Batch PD (Partial Days)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The
+handbook app is not touched. The first loads after the deploy read cold (the
+data stamp gained a tab, so every stamped key turns over once).
+
+- **A day marked partial on the Department Dashboard now counts as its share
+  here.** For the marked rep only: the Dashboard's "on pace" line divides by
+  their credited days and shows "X of Y workdays, N partial" under it (hover
+  for the days and shares); the month-to-date change on Answered and Missed
+  compares over the same share of days; the daily Answered and Missed trends
+  on Stats mark the day. No count, total, rate or talk time changes.
+- **The Reason column is never read.** Team Tools opens columns A–C of the
+  `Partial Days` tab and nothing else, and writes nothing to the workbook.
+- **Admin → System → CDR Report** states the tab. "No partial days marked"
+  is normal until someone marks a day.
+- **Worth telling the team:** a rep sees only their own partial days; the
+  Department card and Team Metrics are not adjusted.
+- **For call-data-reporting:** this is the ninth tab of the CDR Report that
+  Team Tools reads. The tab name and columns A–C are now a two-repo contract.
+
+## 2026-11-18 — Cycle 26 Batch 10 (Stats)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The
+handbook app is not touched.
+
+- **Stats loads the outbound calls once for the team (F24).** The Outbound
+  Calls tab was re-read for every rep about every five minutes while a
+  Dashboard was open. It is now read once per window and kept until the CDR
+  Report changes. Nothing to check, but the `getMyMetrics` executions should
+  be shorter from the second one of the day.
+- **"Avg talk excl. intake" can no longer read higher than the average
+  (F34).** It is shown only when the timed intake forms ran longer than the
+  rep's average call, with that average beside it. Reps whose forms were
+  quick will no longer see the line — that is intended. An amended intake
+  send is no longer counted as a timed intake call.
+- **Team → Today no longer shows green zeros (F35).** Before the call report
+  is in, the page says "Call data for this day is not in yet" and each rep's
+  call cells are "—". The Intake column now sorts. The outbound row says
+  "not in yet" / "data through MM-DD" whenever the outbound export is behind
+  the call data.
+- **Worth telling the team:** "—" on Team → Today means not imported yet,
+  not zero.
+
+## 2026-11-18 — Cycle 26 Batch 9 (Time Clock)
+
+**Adds one auto-managed Script Property, nothing to set:** `ACTIVITY_LOG_FAILS`
+(appears only if an activity row cannot be written). Deploy Team Tools
+(`clasp push -f` + New version). The handbook app is not touched.
+
+- **Day Edit:** the "Suggested from app activity … Apply" line waits until the
+  day's punches have loaded. Before, on a slow load it could be offered over a
+  punch that was about to appear, and applying replaced that punch.
+- **App activity bars:** clicks and keystrokes are drawn only next to real app
+  activity (a ping within about ten minutes). Counts sent for stretches with
+  none are not drawn, and Day Edit says how many blocks that was. A day's
+  summary keeps the same.
+- **Idle chip:** timed from the rep's last click or key press, not from the
+  last ten-minute ping — it could show "idle 30 min" up to ten minutes early.
+  If the check cannot run, the card says so instead of showing the whole team
+  idle.
+- **If the activity log cannot be written** (a protected tab, a full
+  workbook), Admin → System now lists it and Day Edit says activity may be
+  missing; before, the day just read "No app activity recorded".
+- **Pay Period Close:** "today" is yours (it was India's, a day ahead every
+  afternoon), a day exactly 30 days back is still a Day Edit button, and the
+  caption says "Dates in CST." rather than "Dates in IST".
+- **Not visible:** a refused caller no longer waits on the app's one lock when
+  punching or deciding adjustments; the nightly activity summary waits six
+  hours past midnight so late counts are included.
+
+## 2026-11-17 — Cycle 26, the second pass over the Batch 8 follow-ons
+
+**Adds NO operator state.** Deploy BOTH apps when convenient: Team Tools
+(`clasp push -f` + New version) and the handbook app (`npm run handbook:push`
++ New version). Nothing depends on the order.
+
+- **Reference on a tablet or a half-width window (721–1023px):** one column —
+  the search box and Contents, then the reader at full width. It was a 280px
+  tree beside a 272px reader. From 1024px the tree is back.
+- **A handbook chapter's Previous / Next cards and its "In this chapter" list**
+  fit the reader's width (the cards' names were 5px wide at 800px; the list was
+  two cramped columns on a phone).
+- **Dark mode, all of Team Tools:** red, blue, amber and green status text —
+  "Overdue", "escalated", claim pills, count pills, avatars — is a light tint
+  now and reads clearly; it was darker than intended and under the 4.5:1
+  accessibility line in most places. Hovering Clock Out, Approve or Clear
+  shows a light tint with dark text. Light mode is unchanged.
+- **Handbook app:** the "I've read this" control starts with the number of the
+  section it is for.
+- **Measured, not changed:** in LIGHT mode Team Tools has a lot of text under
+  4.5:1 — mostly the brand green used as text on white (4.4:1), also the
+  breadcrumb separators and some muted captions. The handbook app already uses
+  a darker green for this. Changing Team Tools' green is a look decision, so it
+  is listed for you rather than done.
+
+## 2026-11-17 — Cycle 26, the Batch 8 follow-ons
+
+**Adds NO operator state.** Deploy BOTH apps when convenient: the handbook app
+(`npm run handbook:push` + New version) and Team Tools (`clasp push -f` + New
+version) — Team Tools' part is its Reference reader (the dark-mode CRITICAL
+kicker, an image inside a link). Nothing depends on the order.
+
+- **Dark mode:** the red "CRITICAL" label on a handbook callout is legible
+  (it measured 3.34:1; it passes the accessibility check now), in both apps.
+- **Managers:** Team training, Mine / My team and quiz lock-outs appear even
+  when Training or Profile is opened before the profile has loaded.
+- **A link to a section that is not in the handbook** (a draft, a removed
+  one) says so and leaves the reader where they were.
+- **Listen** works after a reload while paused, and stops when the tab closes.
+- **Profile** is one column up to 1040px wide.
+- **Notes, bookmarks and the note-sync setting are kept per person in the
+  browser.** After the deploy, the first person to open the handbook in a
+  browser keeps what that browser already held (operator 2026-11-17: one
+  person per browser profile); anyone else signing in to that same profile
+  later starts empty and their notes stay apart. Nothing to do.
+- **Open, found by the new mid-width shots:** in Team Tools → Reference at an
+  800px window, the card at the end of a handbook chapter is squeezed.
+
+## 2026-11-17 — Cycle 26 Batch 8 (the handbook page)
+
+**Adds NO operator state that must be set.** Deploy the handbook app:
+`npm run handbook:push` + New version. Team Tools' own change (its reader's
+scripted scroll honours the device's reduced-motion setting) rides with its
+next deploy; nothing depends on it.
+
+- **The toolbar above a section is for the section in view** — and stays on it
+  after "I've read this", Listen or a note. Before, a sign-off's own answer
+  put the FIRST-opened section's unsigned button back under the reader; a
+  second press signed that section too. If Team progress shows sign-offs of a
+  chapter's opening section clustered seconds after another section's, that
+  is this.
+- **A person whose manager was unmarked can choose again**: Profile's Manager
+  list is no longer emptied for them.
+- **A read that failed says so** — the toolbar, Home (My reading, Due for
+  you), Training, Saved — with a Try again; the Training count shows "?".
+  None of them reads as "nothing" any more.
+- **An unreadable changelog is an error, not "nothing to re-read".** If the KB
+  spreadsheet's `ManualMeta` cell cannot be read, the toolbar, Training and My
+  team say so, and the reminder run records `failed` (it used to find nobody
+  overdue). Nothing to set; re-import the handbook if it persists.
+- **A quiz in progress asks before it is left** — by the search, Back, the
+  rail, a tab or Profile, not only by "Leave quiz".
+- **A kept copy is under a banner** for as long as it shows, with Try again.
+- **Note sync turned off is the account's.** The `Notes` tab gains, per reader
+  who turns it off, one row whose SectionId is `sync-off`; leave it alone. A
+  reader who turned sync off BEFORE this deploy on one computer while another
+  still has it on is not protected until they turn it off once more.
+- **At 800–1100px** the home hero is one column, and up to 1040px the results
+  and home's two cards are too.
+- **Display → Theme "Match my device"** follows the device live; **Reduce
+  motion** reaches the in-chapter scroll.
+
+## 2026-11-16 — Cycle 26 Batch 7 (the handbook server)
+
+**Adds NO operator state that must be set.** Deploy the handbook app:
+`npm run handbook:push` + New version. Team Tools' own change (a search option
+only the handbook uses) rides with its next deploy; nothing depends on it.
+
+- **`npm run handbook:push` needs the script id somewhere real.** The committed
+  `handbook-app/.clasp.json` still holds the placeholder. Put the id in
+  `handbook-app/.clasp.local.json` as `{"scriptId": "…"}` (it is gitignored)
+  or in `HANDBOOK_SCRIPT_ID`, or commit it. With none, the push stops and says
+  so. `npm run handbook:push -- --dry-run` shows what it would do.
+- **"I've read this" is of the text on the page.** If the section changed
+  after the page was opened, the sign-off is refused with "reload" and nothing
+  is recorded. A page open across this deploy must be reloaded once.
+- **Who is asked to read again** no longer depends on dates. Expect a one-time
+  wave after the deploy: readers who signed a section before it, where the
+  text has since changed and the changelog flags that section for retraining.
+  This catches the people who signed the OLD text of a flagged change while
+  its import was pending (the two flagged changes of late October among them).
+- **A plan with an archived quiz or a removed section can finish.** The item
+  shows as "No longer available" and is not counted. Archiving a quiz names
+  the live plans that list it.
+- **Handbook search** finds handbook sections even when many Team Tools
+  Reference articles score higher for the same words.
+- **"Overdue" follows the day in Chicago**, not India.
+- **Limits:** 30 pieces of section feedback and 5 topic requests per reader
+  per six hours; the same feedback or topic twice is recorded once; 500 synced
+  notes per account.
+- **Reminders (still off by default):** each run records its outcome, shown on
+  Training → My team; two runs cannot overlap; the list of who was emailed
+  survives a long list and a cut-off run; the link ends /exec (or is
+  `HANDBOOK_URL`).
+- Walk S183 on DEV.
+
+## 2026-11-16 — Cycle 26 Batch 6 (Employee Docs integrity)
+
+**Adds NO operator state** (three constants in `00_config.js`: the copy-email
+cap, its window, the recap overlap). Deploy BOTH apps: Team Tools `clasp push
+-f` + New version, and `npm run handbook:push` + New version (the handbook's
+form viewer changed). No trigger reinstall.
+
+- **Verify is green only when everything was checked.** A signed PDF whose
+  file cannot be read now says "Integrity NOT verified" with the reason (it
+  said "verified"). A document that is not signed yet reports a PDF mismatch
+  too. A failed or incomplete verdict stays on screen until dismissed.
+- **The certificate checks its own record** when it is made and prints the
+  result: a Verification line, or a red "NOT VERIFIED" box with the reason.
+  **Print… / Email… make no copy from an altered record**, and the copy's
+  label ends "record verified" or "record NOT verified".
+- **Email a copy:** "the managers" now means people who are managers on the
+  roster today — the preview names anyone left out; one person can send 10
+  copies, then must wait (or download and attach it); the message says the
+  copy was put together on the sender's computer.
+- **Issuing:** a written body with an image by web address is refused (use a
+  PDF); a converted Google Doc's image placeholders are removed and counted;
+  "Add box" places a field box from the keyboard.
+- **Signing:** a review-only document no longer shows a Submit that fails;
+  very long answers are refused together with the longest named; a written
+  document's signature shows in its copy even without a signature block; the
+  certificate prints the acknowledgement text of the version that was signed.
+- **PDF viewer (both apps):** loaded with a checksum check from two CDNs; a
+  failed load can be retried without reloading the page. **Check on DEV
+  first** that a PDF document and a handbook form open — the CDN bytes could
+  not be fetched from the build sandbox, so the first real load is yours.
+- **Coaching recap:** covers everything since the previous recap (it could
+  drop an item logged in the gap when a run fired later than the week
+  before); an item logged within ten minutes of a run may appear twice.
+- **Scratchpad:** Ctrl+Enter ticks the checklist item the cursor is on, or
+  opens the link it is in.
+- Walk S182 on DEV.
+
+## 2026-11-16 — Cycle 26 Batch 5 (Payor lookups)
+
+**Adds NO operator state.** Deploy: Team Tools `clasp push -f` + New version
+(`handbook-app/` is untouched; no trigger reinstall).
+
+- **The insurance lookup says which payor tables it searched.** If a table
+  has not been imported (or its tab is empty), every result opens with "Not
+  searched: …", and a plan that is not found is no longer called "plan not
+  listed → TRY" until every table has been read. Import the tables the team
+  relies on to make the line go away.
+- **"TX excluded" is no longer shown on a plan that is FOR Texas.** A plan
+  name containing "Non-", "except" or "not in" was read as excluding the
+  state in the next column. Real exclusions ("all states other than TX")
+  still rank last and are labelled.
+- **Colours: green only for a plain accept.** "Accepted except HI",
+  "In-Network (… only)" and the like are now amber — read the rest of the
+  cell; "Cannot be accepted" is red (it was green); "No auth required" is
+  neutral (it was red). Expect more amber than before.
+- **The price row's payor line** shows the payor's state and table and the
+  column's own label (e.g. "K0827 (451- 600) No In HI"), not just the value.
+- **A card says when it was not compared with the other payor tables** (a
+  search that matches many plans stops comparing after 12).
+- **Reference data tables — Replace writes what the preview showed.** A page
+  open across the deploy must be reloaded once before it can Replace. If the
+  note or audit row cannot be written after the table went in, the import
+  says so instead of "Import failed".
+- **Handbook import:** the images, quizzes and forms tabs are replaced in one
+  write each; a failed write leaves the previous ones in place.
+- Walk S181 on DEV.
+
+## 2026-11-13 — Cycle 26 Batch 4 (Automation health honesty)
+
+**One new auto-managed Script Property: `PAY_WEEK_REMINDER_SENT`** (the day
+and who was sent that day's pay-week reminder; nothing to set). Deploy: Team
+Tools `clasp push -f` + New version (`handbook-app/` is untouched; no trigger
+reinstall).
+
+- **The health dot stops crying wolf about the PTO accrual credit.** From the
+  3rd to month end it said the credit "has not run this month" although it had
+  — every month. If it was that alarm that made you check whether September
+  was credited, the credit itself was not at fault; `previewPtoAccruals` still
+  answers the question directly.
+- **A failed accrual run is reported on the 1st and 2nd** (it was held back
+  to the 3rd).
+- **Feature toggles and retention windows: your Save writes only what you
+  changed.** A page left open no longer puts back a toggle — or a purge window
+  — another admin changed. If someone changed the same retention window, the
+  save is refused and says so; reload and decide. A page open across the
+  deploy is asked to reload once.
+- **Dashboard read-ahead:** the year-to-date card is now actually kept in the
+  cache; the job no longer fails hourly where there is no CDR store or
+  Transfer tab.
+- **Pay-week reminder:** sent at or after 9 am Central, so a missed run no
+  longer loses the reminder; turning the toggle off clears an old failure.
+- **A re-onboarded admin** is no longer listed as offboarded.
+- Walk S180 on DEV (two browser windows for the toggle and retention steps).
+
+## 2026-11-13 — Cycle 26 Batch 3 (Thread replies)
+
+**No new operator state.** Deploy: Team Tools `clasp push -f` + New version
+(`handbook-app/` is untouched).
+
+- **Spanish Inbox — the resolved reply is not sent outside the company.** When
+  the request's email includes any address outside `CONFIG.ORG_EMAIL_DOMAINS`
+  (the requester, Reply-To, To or Cc), the request resolves but no reply goes
+  out, and the toast says so. If staff write from a domain that list does not
+  hold, add it in `00_config.js`. The dialog now says the reply goes to
+  everyone on the request's email.
+- **A requester who replies to the "marked resolved" email** (quoting it) now
+  comes back as a new, unclaimed request; their out-of-office does not.
+- **Mark resolved on a request someone already answered by email** says
+  "Already resolved — nothing was changed": no row, no second reply.
+- **Dept Requests — the resolved reply goes on the request's own email.** On a
+  thread two same-subject requests share, the other department is no longer
+  told. Where that email cannot be found, no reply is sent and the person is
+  told.
+- **`MAIL_BCC_ALL` now receives both resolved replies** (it did not before).
+- Tell the Spanish Inbox members the first three. Walk S179 on DEV.
+
+## 2026-11-13 — Cycle 26 Batch 2 (Intake: the right patient)
+
+**No new operator state.** Deploy: Team Tools `clasp push -f` + New version
+(`handbook-app/` is untouched).
+
+- **Amend & re-send** now asks before it replaces a form that holds another
+  call's answers or insurance card images, and the amended form starts with no
+  images — attach the patient's cards again if they should go with it.
+- **The SSN is never kept in a draft.** It survives a switch to another tool;
+  after a reload, or when a parked draft is opened, the rep enters it again
+  (the toast says so). Drafts already stored are cleaned the first time the
+  app opens after the deploy.
+- A draft that was sent no longer stays in **Drafts** after a page reload.
+- The card reader says why it failed: the download (network), a file that
+  failed its safety check (tell the admin — it is also written to Admin →
+  System → client errors, by file name only), or the browser.
+- Tell the team the first two. Walk S178 on DEV.
+
 ## 2026-11-02 — Operator round, Batch H (Employee Docs from a PDF)
 
 **No new operator state** (the `EmpDocFiles` tab in the HR spreadsheet creates

@@ -295,6 +295,11 @@
   font: inherit; color: inherit; cursor: pointer;
 }
 .m-rep-link:hover { color: var(--info-deep); text-decoration: underline; }
+/* DQ1 (cycle 26): a rep with partial days in the window — the days are named in the hint under the table. */
+.m-partial-chip {
+  display: inline-block; margin-left: 6px; padding: 0 6px; font-size: 10px; font-weight: 600; white-space: nowrap;
+  color: var(--info-deep); border: 1px dashed var(--info-deep); border-radius: var(--radius-pill);
+}
 
 /* ── #10 — copy-table button ─────────────────────────────────────── */
 .m-section-row { display: flex; align-items: center; gap: var(--space-sm); }
@@ -406,6 +411,9 @@
   stroke-linejoin: round; stroke-linecap: round;
 }
 .m-dual-spark .own-dot { fill: var(--accent); }
+/* Batch PD: a partial day on the rep's own line — a ring, and a line of text under the chart. */
+.m-dual-spark .own-partial { fill: var(--paper-card); stroke: var(--accent); stroke-width: 1.5; }
+.m-kpi-note { font-size: 10px; color: var(--muted); margin-top: 4px; }
 .m-trends-note { font-size: 10px; color: var(--muted); margin-top: 6px; }
 /* A role="alert" saying a CDR tab could not be read, so the columns beside it
    may be incomplete. It had no rule at all: it rendered as plain body text,
@@ -685,6 +693,20 @@ function mMyPreset_(key) {
   mLoadMyStats_();
 }
 
+/** PURE (Node-pinned) — FQ4 (cycle 26): what a single day is called. "Today"
+ *  and "Yesterday" only when the day IS today or the calendar's yesterday;
+ *  any other day by its weekday and date ("Fri Nov 13"). The Yesterday preset
+ *  lands on the previous WORKDAY, so on a Monday the hero read "Yesterday"
+ *  over Friday's calls — the Dashboard card already named the day. */
+function mDayLabel_(dateIso, todayIso, calYesterdayIso) {
+  var d = String(dateIso || '');
+  if (d && d === todayIso) return 'Today';
+  if (d && d === calYesterdayIso) return 'Yesterday';
+  var dt = new Date(d + 'T12:00:00Z');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || isNaN(dt.getTime())) return d;
+  return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt.getUTCDay()] + ' ' +
+    ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][dt.getUTCMonth()] + ' ' + dt.getUTCDate();
+}
 function mLoadMyStats_(opts) {
   opts = opts || {};
   var requestedView = currentView;
@@ -707,7 +729,11 @@ function mLoadMyStats_(opts) {
   M_STATE.myCache = M_STATE.myCache || {};
   var cached = M_STATE.myCache[key];
   var painted = false;
-  if (!opts.force && cached) {
+  // FQ5 (cycle 26): Refresh (`force`) took the loader branch, so a refresh
+  // that then FAILED replaced the last-good view with an error card — the one
+  // path F56's "keep what is painted" did not cover. The refetch below always
+  // runs; a same-key payload stays on screen behind the pill until it answers.
+  if (cached) {
     mRenderMyStats_(cached.data);
     if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(true);
     painted = true;
@@ -780,9 +806,7 @@ function mRenderMyStats_(data) {
   // Single-day label is honest about WHICH day (the preset now lands on the
   // previous workday, and Custom can pick any day — a hardcoded 'Today' lied).
   var periodLabel = isRange ? (esc(data.from) + ' → ' + esc(data.to))
-    : (data.date === mTodayIso_() ? 'Today'
-      : data.date === mPrevWorkdayIso_() ? 'Yesterday'
-      : esc(data.date || ''));
+    : esc(mDayLabel_(data.date, mTodayIso_(), mDaysAgo_(1)));
 
   // No CDR data → minimal fallback (per S43)
   if (!c) {
@@ -805,7 +829,7 @@ function mRenderMyStats_(data) {
     // M1: a day with outbound calls and no inbound ones is still a day of
     // calls — the outbound row and the Adjusted panel stand below the card
     // (never when the inbound read FAILED: there is nothing to add them to).
-    if (!data.cdrUnavailable) html += mOutboundRowHtml_(data.outbound, data.outboundUnavailable, data.outboundThrough, data.to || data.date) + mAdjustedHtml_(data.adjusted, 'my');
+    if (!data.cdrUnavailable) html += mOutboundRowHtml_(data.outbound, data.outboundUnavailable, data.outboundThrough, data.to || data.date, data.from || data.date) + mAdjustedHtml_(data.adjusted, 'my');
     el.innerHTML = html;
     return;
   }
@@ -879,6 +903,9 @@ function mRenderMyStats_(data) {
   }
   html += mRailRow_('Calls answered', c.totalAnswered, 'good', null,
     { values: trend.map(function (t) { return t.answered; }) });
+  // FQ8 (cycle 26): a range's sparklines are the rep's raw daily counts — a
+  // partial day in it is named here (their own days only; never a reason).
+  html += mPartialDaysRowHtml_(data.partialDays);
   html += mRailRow_('Missed', c.totalMissed, c.totalMissed > 0 ? 'warn' : 'good',
     c.totalMissed > 0 ? c.totalMissed + ' calls unanswered' : 'no missed calls',
     { values: trend.map(function (t) { return t.missed; }), tone: 'warn' });
@@ -894,7 +921,7 @@ function mRenderMyStats_(data) {
       isRange ? null : { values: seriesOwn('transferPct') });
   }
   html += mRailRow_('Total talk', c.tttFormatted);
-  html += mOutboundRowHtml_(data.outbound, data.outboundUnavailable, data.outboundThrough, data.to || data.date);   // M1
+  html += mOutboundRowHtml_(data.outbound, data.outboundUnavailable, data.outboundThrough, data.to || data.date, data.from || data.date);   // M1
   html += '</div>';
   html += '</div>';
   html += mAdjustedHtml_(data.adjusted, 'my');   // M1 — beside the actual figures, never in place of them
@@ -1055,7 +1082,119 @@ function mKpiTrendCard_(def, series) {
         '<span class="team">team ' + esc(mKpiFmt_(def, teamLatest)) + '</span></span>' +
     '</div>' +
     mBuildDualSparkSvg_(series) +
+    mPartialNoteHtml_(series) +
   '</div>';
+}
+/** PURE — FQ8: the range view's row for the rep's partial days, '' with none. */
+function mPartialDaysRowHtml_(days) {
+  var d = (days || []).filter(function (x) { return x && x.credit != null && isFinite(x.credit); });
+  if (!d.length) return '';
+  return mRailRow_('Partial days', d.length, mPartialDaysText_(d.map(function (x) { return { date: x.date, partial: x.credit }; }), 6));
+}
+/** PURE — Batch PD: the rep's partial days on a trend card, as TEXT under the
+ *  chart (the chart itself is decorative): "Partial day: Nov 10 (0.5 day)".
+ *  Newest first, at most four named. '' when no point is marked. The count on
+ *  such a day is real and stays; the note says why it may read low. */
+/** PURE — DQ1 (cycle 26): a rep's partial days in a Team window, as words:
+ *  "Nov 10 (0.5 day), Nov 5 (not counted)". '' for none. */
+function mTeamPartialText_(r, max) {
+  var d = ((r && r.partialDays) || []).filter(function (x) { return x && x.credit != null && isFinite(x.credit); });
+  return d.length ? mPartialDaysText_(d.map(function (x) { return { date: x.date, partial: x.credit }; }), max) : '';
+}
+/** PURE — DQ1: the mark beside a rep's name on the manager's Team table. The
+ *  days themselves are TEXT in the hint under the table; the title repeats
+ *  them for a pointer. '' for a rep with none. */
+function mTeamPartialChipHtml_(r) {
+  var text = mTeamPartialText_(r, 6);
+  if (!text) return '';
+  var n = r.partialDays.length;
+  return '<span class="m-partial-chip" title="' + esc('Partial day' + (n === 1 ? '' : 's') + ': ' + text) + '">' +
+    esc(n + ' partial') + '</span>';
+}
+/** PURE — DQ1: the line under the manager's Team table. Marks that could not
+ *  be read are said (a row with no chip would read as a full window — g53);
+ *  otherwise each rep with partial days is named with them, and the line says
+ *  the table's figures are not adjusted. '' for a window with none. */
+function mTeamPartialHintHtml_(data, cap, multiDay) {
+  if (!data || !data.reps) return '';
+  if (data.partialDaysUnavailable === true) {
+    return '<div class="m-hint" style="margin-top:var(--space-md);color:var(--warning-deep)">' + icon('warning', 14) +
+      ' Partial-day marks could not be read — a rep’s partial days are not shown here' +
+      (multiDay ? ', and ' + mTeamPerDayNames_(data, 'counts', 'count') + ' every day as a whole one' : '') + '. Refresh to try again.</div>';
+  }
+  var marked = data.reps.filter(function (r) { return !!mTeamPartialText_(r, 1); });
+  if (!marked.length) return '';
+  return '<div class="m-hint" style="margin-top:var(--space-md)">' +
+    esc(marked.length + ' rep' + (marked.length === 1 ? '' : 's') + ' with partial days in this window — ' +
+      marked.slice(0, cap).map(function (r) { return r.repName + ': ' + mTeamPartialText_(r, 4); }).join('; ')) +
+    (marked.length > cap ? ' <em>+' + (marked.length - cap) + ' more</em>' : '') +
+    // DS2: on a range the per-day column counts them; nothing else in the table moves.
+    (multiDay ? '. ' + esc(mTeamPerDayNames_(data, 'counts', 'count')) + ' each as its share; no count, rate or talk time is changed.</div>'
+      : '. The figures in this table are not adjusted for them.</div>');
+}
+/** PURE — DS2 (cycle 26): a rep's answered calls per CREDITED day on the
+ *  manager's Team table. The basis is in the title — "44 answered over 4.5
+ *  credited days (5 days with calls, 1 partial)". "—" when the server gives no
+ *  figure: no call data, or under one credited day. */
+function mTeamPerDayCell_(r) {
+  if (!r || r.answeredPerDay == null) return mTeamPerDayNoneCell_(r);
+  return '<span title="' + esc(r.totalAnswered + ' answered over ' + mTeamPerDayBasis_(r)) + '">' + esc(Number(r.answeredPerDay).toFixed(1)) + '</span>';
+}
+/** PURE — the divisor both per-day cells name: "4.5 credited days (5 days with
+ *  calls, 1 partial)", or "3 days with calls" for a rep with no marked day. */
+function mTeamPerDayBasis_(r) {
+  var np = (r.partialDays || []).length;
+  var days = Number(r.daysActive) || 0;
+  return np
+    ? r.creditedDays + ' credited day' + (r.creditedDays === 1 ? '' : 's') + ' (' + days + ' day' + (days === 1 ? '' : 's') + ' with calls, ' + np + ' partial)'
+    : days + ' day' + (days === 1 ? '' : 's') + ' with calls';
+}
+/** PURE — a per-day cell with no figure: "—", and why in its title. */
+function mTeamPerDayNoneCell_(r) {
+  var why = (r && r.hasCdrData !== false && r.creditedDays != null && r.creditedDays < 1) ? 'under one credited day in this range' : 'no call data in this range';
+  return '<span style="color:var(--muted)" title="' + esc(why) + '">—</span>';
+}
+/** PURE — DT1 (cycle 26, operator 2026-11-19): Handled (adj.) per credited
+ *  day. The same days as Ans / day — the days the rep took INBOUND calls — and
+ *  the title says what was added: "52 handled (44 answered + 8 outbound
+ *  connected) over 4.5 credited days (…)". A rep with nothing adjusted reads
+ *  their answered figure, as the Handled column itself does. */
+function mTeamHandledPerDayCell_(r) {
+  if (!r || r.handledPerDay == null) return mTeamPerDayNoneCell_(r);
+  var ob = r.adjusted && r.adjusted.outbound;
+  var what = r.adjusted
+    ? r.adjusted.handled + ' handled (' + r.totalAnswered + ' answered + ' + (ob ? ob.connected : 0) + ' outbound connected)'
+    : r.totalAnswered + ' answered, no outbound call';
+  return '<span title="' + esc(what + ' over ' + mTeamPerDayBasis_(r)) + '">' + esc(Number(r.handledPerDay).toFixed(1)) + '</span>';
+}
+/** PURE — DT1: does the Team table show Handled (adj.)? One rule for the
+ *  column, its per-day twin and the line under the table: a rep placed an
+ *  outbound call in the window. */
+function mTeamHasAdjHandled_(data) {
+  return ((data && data.reps) || []).some(function (r) { return !!(r && r.adjusted && r.adjusted.outbound && r.adjusted.outbound.placed > 0); });
+}
+/** PURE — DT1: the per-day column(s) a range shows, as the line under the
+ *  table names them, with the verb that agrees. */
+function mTeamPerDayNames_(data, one, many) {
+  return mTeamHasAdjHandled_(data) ? 'Ans / day and Handled / day ' + many : 'Ans / day ' + one;
+}
+function mPartialNoteHtml_(series) {
+  var pts = (series || []).filter(function (p) { return p && p.partial != null && isFinite(p.partial); });
+  if (!pts.length) return '';
+  return '<div class="m-kpi-note">' + esc('Partial day' + (pts.length === 1 ? '' : 's') + ': ' + mPartialDaysText_(pts.slice().reverse(), 4)) + '</div>';
+}
+/** PURE — the days as words, in the order given, at most `max` named:
+ *  "Nov 12 (not counted), Nov 10 (0.5 day), +2 more". One text for the trend
+ *  card's note and the range view's row. */
+function mPartialDaysText_(pts, max) {
+  var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var names = (pts || []).slice(0, max).map(function (p) {
+    var dt = new Date(String(p.date) + 'T12:00:00Z');
+    var lbl = isNaN(dt.getTime()) ? String(p.date) : MON[dt.getUTCMonth()] + ' ' + dt.getUTCDate();
+    return lbl + ' (' + (Number(p.partial) === 0 ? 'not counted' : String(Math.round(Number(p.partial) * 100) / 100) + ' day') + ')';
+  });
+  var more = (pts || []).length - names.length;
+  return names.join(', ') + (more > 0 ? ', +' + more + ' more' : '');
 }
 /** Own (accent) + team-avg (muted dashed) over one shared scale. Both lines
  *  skip null points; the own series gets an end dot. */
@@ -1081,8 +1220,15 @@ function mBuildDualSparkSvg_(series) {
   var lastOwn = null;
   for (var k = n - 1; k >= 0; k--) { if (series[k].own != null && !isNaN(series[k].own)) { lastOwn = { i: k, v: series[k].own }; break; } }
   var dot = lastOwn ? '<circle class="own-dot" cx="' + (pad + lastOwn.i * xs).toFixed(1) + '" cy="' + (h - pad - lastOwn.v * ys).toFixed(1) + '" r="2.5"/>' : '';
+  // Batch PD: a ring on each of the rep's partial days.
+  var rings = '';
+  for (var q = 0; q < n; q++) {
+    if (series[q].partial != null && series[q].own != null && !isNaN(series[q].own)) {
+      rings += '<circle class="own-partial" cx="' + (pad + q * xs).toFixed(1) + '" cy="' + (h - pad - series[q].own * ys).toFixed(1) + '" r="3"/>';
+    }
+  }
   return '<svg class="m-dual-spark" aria-hidden="true" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
-    lineFor('team', 'team-line') + lineFor('own', 'own-line') + dot +
+    lineFor('team', 'team-line') + lineFor('own', 'own-line') + dot + rings +
   '</svg>';
 }
 
@@ -1169,12 +1315,38 @@ function mMiniSparkSvg_(values) {
  *  { values:[…], tone:'warn'? } trend sparkline rendered full-width below. */
 /** M1 — the Outbound calls rail row: drawn when the rep placed a call, or
  *  when the tab could not be read (named, never a zero — INV-175); the
- *  export runs each morning, so a window past its newest day says so. */
-function mOutboundRowHtml_(ob, unavailable, through, to) {
+ *  export runs each morning, so a window past its newest day says so.
+ *
+ *  F35 (cycle 26): and says so WHATEVER was placed. The notice rode the
+ *  placed-a-call branch only, so in exactly the lagged case — the day's
+ *  inbound calls in, its outbound export not yet — there was no row at all,
+ *  the same page as "placed none". mOutboundLag_ is the one rule: a window
+ *  wholly past the export's newest day has NO figure ("—", not in yet); one
+ *  that only reaches past it keeps its count and names the day it is in
+ *  through. A window the export covers, with no call placed, still draws
+ *  nothing (most reps place none). */
+function mOutboundRowHtml_(ob, unavailable, through, to, from) {
   if (unavailable) return mRailRow_('Outbound calls', '—', 'warn', 'not read — ' + unavailable);
-  if (!ob || !(ob.placed > 0)) return '';
-  var lag = through && to && through < to ? ' · data through ' + String(through).substring(5) : '';
-  return mRailRow_('Outbound calls', ob.placed, ob.connected + ' connected · ' + mFmtTalk_(ob.talkSec) + ' talk' + lag);
+  if (!ob) return '';
+  var lag = mOutboundLag_(through, from || to, to);
+  if (lag.state === 'none') return mRailRow_('Outbound calls', '—', lag.text);
+  var placed = ob.placed > 0;
+  if (!placed && lag.state !== 'part') return '';
+  return mRailRow_('Outbound calls', ob.placed || 0,
+    (placed ? ob.connected + ' connected · ' + mFmtTalk_(ob.talkSec) + ' talk' : '') + (lag.text ? (placed ? ' · ' : '') + lag.text : ''));
+}
+/** PURE — how far the outbound export reaches into a window [from, to].
+ *  {state: 'in' | 'part' | 'none', text}: 'none' when the window starts after
+ *  the export's newest day (or the tab holds no day at all) — nothing for it
+ *  has arrived; 'part' when only its end is past that day. */
+function mOutboundLag_(through, from, to) {
+  var day = function (v) { return /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : ''; };
+  var th = day(through), f = day(from), t = day(to);
+  if (!t) return { state: 'in', text: '' };
+  if (!th) return { state: 'none', text: 'not in yet — the Outbound Calls tab holds no day' };
+  if (th >= t) return { state: 'in', text: '' };
+  if (f && f > th) return { state: 'none', text: 'not in yet — outbound data is in through ' + th.substring(5) };
+  return { state: 'part', text: 'data through ' + th.substring(5) };
 }
 function mFmtTalk_(sec) {
   sec = Math.max(0, Math.round(Number(sec) || 0));
@@ -1195,7 +1367,10 @@ function mAdjustedHtml_(adj, scope) {
   }
   if (adj.attExIntakeFormatted) {
     var mins = adj.intakeAvgSec != null ? Math.round(adj.intakeAvgSec / 60) : null;
+    // F34: beside the average it was taken from — talk ÷ answered, the same
+    // sum — so the two lines are one comparison (absent on an older payload).
     rows += mRailRow_('Avg talk excl. intake', adj.attExIntakeFormatted,
+      (adj.attFormatted ? adj.attFormatted + ' with them · ' : '') +
       adj.intakeTimed + ' timed intake call' + (adj.intakeTimed === 1 ? '' : 's') + (mins != null ? ', ≈' + mins + ' min each' : ''));
   }
   if (!rows) return '';
@@ -1206,7 +1381,8 @@ function mAdjustedHtml_(adj, scope) {
         icon('info', 14) + '</button></div>' +
     '<div class="m-adj-why" id="' + id + '" hidden>The actual figures above are unchanged. <b>Handled calls</b> and <b>talk</b> add the connected outbound calls ' +
       '(from the CDR Report\u2019s Outbound Calls tab) and their talk time. <b>Avg talk excl. intake</b> takes the intake calls out, using each intake form\u2019s ' +
-      'time from first input to send as its length \u2014 an estimate, and only for forms the app timed. % Answered is never adjusted: it is the inbound standard.</div>' +
+      'time from first input to send as its length \u2014 an estimate, only for forms the app timed, and only when those forms ran longer than the average call ' +
+      '(a form\u2019s time is the least its call can have lasted). % Answered is never adjusted: it is the inbound standard.</div>' +
     rows + '</div>';
 }
 function mAdjInfo_(btn) {
@@ -1289,21 +1465,34 @@ function mTeamAdjColumns_(data) {
   var cols = [];
   var dash = '<span style="color:var(--muted)">—</span>';
   if (data && data.outboundMeta && data.outboundMeta.available) {
+    var obLag = mOutboundLag_(data.outboundMeta.through, data.from || data.date, data.to || data.date);
     cols.push({ key: 'outboundPlaced', label: 'Outbound', numeric: true, sortable: true, cell: function (r) {
       if (!r.outbound) return dash;
+      if (obLag.state === 'none') return '<span style="color:var(--muted)" title="' + esc(obLag.text) + '">—</span>';   // F35: not a zero
       if (!r.outbound.placed) return '<span style="color:var(--muted)">0</span>';
       return '<span title="' + esc(r.outbound.connected + ' connected · ' + mFmtTalk_(r.outbound.talkSec) + ' talk') + '">' + esc(r.outbound.placed) + '</span>'; } });
   }
-  if (reps.some(function (r) { return r.adjusted && r.adjusted.outbound && r.adjusted.outbound.placed > 0; })) {
+  if (mTeamHasAdjHandled_(data)) {
     cols.push({ key: 'adjHandled', label: 'Handled (adj.)', numeric: true, sortable: true, cell: function (r) {
-      return r.adjusted ? esc(r.adjusted.handled) : esc(r.totalAnswered); } });
+      return r.adjusted ? esc(r.adjusted.handled) : (mNoCallData_(r) ? mNoCallCell_() : esc(r.totalAnswered)); } });
+    // DT1 (cycle 26): its per-day twin — a range only, like Ans / day.
+    if (data.from && data.to && data.from !== data.to) {
+      cols.push({ key: 'handledPerDay', label: 'Handled / day', numeric: true, sortable: true, cell: mTeamHandledPerDayCell_ });
+    }
   }
   if (reps.some(function (r) { return r.adjusted && r.adjusted.attExIntakeFormatted; })) {
     cols.push({ key: 'attExIntake', label: 'ATT excl. intake', numeric: true, sortable: true, cell: function (r) {
-      return r.adjusted && r.adjusted.attExIntakeFormatted ? esc(r.adjusted.attExIntakeFormatted) : dash; } });
+      if (!(r.adjusted && r.adjusted.attExIntakeFormatted)) return dash;
+      var a = r.adjusted;   // F34: the average it was taken from, on the same sum
+      return a.attFormatted ? '<span title="' + esc(a.attFormatted + ' with the ' + a.intakeTimed + ' timed intake call' + (a.intakeTimed === 1 ? '' : 's')) + '">' + esc(a.attExIntakeFormatted) + '</span>'
+        : esc(a.attExIntakeFormatted); } });
   }
   return cols;
 }
+/** F35 — a rep row with no call-data row in the window (the server says so;
+ *  a payload that does not say draws as before). */
+function mNoCallData_(r) { return !!r && r.hasCdrData === false; }
+function mNoCallCell_() { return '<span style="color:var(--muted)" title="no call data for this rep in this window">—</span>'; }
 function mSortReps_(reps, sort) {
   var key = sort.key, dir = (sort.dir === 'asc') ? 1 : -1;
   var get = function (r) {
@@ -1311,14 +1500,17 @@ function mSortReps_(reps, sort) {
       case 'repName': return String(r.repName || '').toLowerCase();
       case 'totalRung': return r.totalRung || 0;
       case 'totalAnswered': return r.totalAnswered || 0;
+      case 'answeredPerDay': return (r.answeredPerDay == null ? -1 : r.answeredPerDay);   // DS2: no figure sorts lowest
       case 'totalMissed': return r.totalMissed || 0;
       case 'pctAnswered': return (r.pctAnswered == null ? -1 : r.pctAnswered);   // M1: no rate sorts lowest, never as 0%
       case 'attSeconds': return r.attSeconds || 0;
       case 'noteCount': return r.noteCount || 0;
+      case 'intakeNotes': return (r.intakeNotes == null ? -1 : r.intakeNotes);   // F35: the column was sortable and had no case; unread sorts lowest
       case 'noteCoverage': return (r.noteCoverage == null ? -1 : r.noteCoverage);
       case 'transferred': return r.transferred || 0;   // Phase 2
       case 'outboundPlaced': return r.outbound ? r.outbound.placed : -1;   // M1: unread sorts lowest
       case 'adjHandled': return r.adjusted ? r.adjusted.handled : (r.totalAnswered || 0);
+      case 'handledPerDay': return (r.handledPerDay == null ? -1 : r.handledPerDay);   // DT1: no figure sorts lowest
       case 'attExIntake': return r.adjusted && r.adjusted.attExIntakeSec != null ? r.adjusted.attExIntakeSec : -1;
       default: return 0;
     }
@@ -1569,7 +1761,7 @@ function mLoadTeamMetrics_(opts) {
   M_STATE.teamCache = M_STATE.teamCache || {};
   var cached = M_STATE.teamCache[key];
   var painted = false;
-  if (!opts.force && cached) {
+  if (cached) {   // FQ5: Refresh keeps what is on screen until the read answers (see mLoadMyStats_)
     mRenderTeamMetrics_(cached.data);
     if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(true);
     painted = true;
@@ -1600,6 +1792,35 @@ function mLoadTeamMetrics_(opts) {
     .getTeamMetrics(from, to);
 }
 
+/** PURE — the Team rail's four call rows. F35 (cycle 26): a window in which
+ *  no rep has a call-data row has no call figures — the rows drew "Answered 0"
+ *  and "Missed 0" in green for a today the import never holds, which reads as
+ *  a team that missed nothing. They are ONE row with no figure and the
+ *  reason: not in yet (the report is imported the next morning) or no calls
+ *  in the window.
+ *  `hasCallData` absent (a payload from before this) draws as before. */
+function mTeamCallRowsHtml_(t, multiDay) {
+  if (t && t.hasCallData === false) {
+    var span = multiDay ? 'this range' : 'this day';
+    var why = t.callDataPending ? 'Call data for ' + span + ' is not in yet — it is imported the next morning.'
+      : 'No call data for ' + span + '.';
+    return mRailRow_('Calls', '—', why);
+  }
+  return mRailRow_('Rung', t.rung) + mRailRow_('Answered', t.answered, 'good') +
+    mRailRow_('Missed', t.missed, t.missed > 0 ? 'warn' : 'good') + mRailRow_('Total talk', t.tttFormatted);
+}
+/** PURE — FQ3 (cycle 26): the Team rail's Transfers row. With no listed rep
+ *  holding a transfer row there is no transfer figure: nothing at all beside
+ *  "Calls —" (that row already says the day is not in), and "—" with the
+ *  reason when the calls are in and the transfers are not. It drew
+ *  "Transfers 0". `hasTransferData` absent (an older payload) draws as before. */
+function mTeamTransferRowHtml_(t, multiDay) {
+  if (t.hasTransferData === false) {
+    if (t.hasCallData === false) return '';
+    return mRailRow_('Transfers', '—', 'no transfer data for this ' + (multiDay ? 'range' : 'day'));
+  }
+  return mRailRow_('Transfers', t.transferred, t.transferPct != null ? t.transferPct + '% of calls' : null);
+}
 function mRenderTeamMetrics_(data) {
   var el = document.getElementById('m-team-content');
   if (!el) return;
@@ -1674,10 +1895,7 @@ function mRenderTeamMetrics_(data) {
 
   // Side rail
   html += '<div class="m-rail">';
-  html += mRailRow_('Rung', t.rung);
-  html += mRailRow_('Answered', t.answered, 'good');
-  html += mRailRow_('Missed', t.missed, t.missed > 0 ? 'warn' : 'good');
-  html += mRailRow_('Total talk', t.tttFormatted);
+  html += mTeamCallRowsHtml_(t, multiDay);
   // F5: flag a team total assembled from at least one unreadable rep Sheet.
   // NOTE mRailRow_'s 3rd arg is polymorphic (tone OR sub-line) and `sub` is
   // only rendered on the TONE branch — so the two cases need distinct calls.
@@ -1689,13 +1907,12 @@ function mRenderTeamMetrics_(data) {
   // (INV-175: a failed auxiliary read must not render as "0 transfers");
   // transferPct is null without its own-sheet denominator (INV-129).
   if (data.transferMeta && data.transferMeta.available && t.transferred != null) {
-    html += mRailRow_('Transfers', t.transferred,
-      t.transferPct != null ? t.transferPct + '% of calls' : null);
+    html += mTeamTransferRowHtml_(t, multiDay);
   }
   // M1 — the team's outbound calls (named when the tab could not be read).
   var om = data.outboundMeta || null;
   if (om) html += mOutboundRowHtml_(om.available ? { placed: t.outboundPlaced, connected: t.outboundConnected, talkSec: t.outboundTalkSec } : null,
-    om.available ? null : om.error, om.through, data.to || data.date);
+    om.available ? null : om.error, om.through, data.to || data.date, data.from || data.date);
   html += '</div>';
   html += '</div>';
   html += mAdjustedHtml_(t.adjusted, 'team');   // M1
@@ -1823,12 +2040,17 @@ function mRenderTeamMetrics_(data) {
         { key: 'repName', label: 'Rep', name: true, sortable: true, cell: function (r) {
             return '<button type="button" class="m-rep-link" data-rep="' + esc(r.repId) + '"' +
               ' data-date="' + esc(drillDate) + '" onclick="mRepDrill_(this)"' +
-              ' title="Open this rep in Team Notes (Per-Rep View)">' + esc(r.repName) + '</button>'; } },
-        { key: 'totalRung', label: 'Rung', numeric: true, sortable: true, cell: function (r) { return esc(r.totalRung); } },
-        { key: 'totalAnswered', label: 'Answered', numeric: true, sortable: true, cell: function (r) { return esc(r.totalAnswered); } },
-        { key: 'totalMissed', label: 'Missed', numeric: true, sortable: true, cell: function (r) { return r.totalMissed > 0 ? '<span style="color:var(--warn)">' + esc(r.totalMissed) + '</span>' : '0'; } },
+              ' title="Open this rep in Team Notes (Per-Rep View)">' + esc(r.repName) + '</button>' +
+              mTeamPartialChipHtml_(r); } },   // DQ1
+        // F35 (cycle 26): a rep with no call-data row in the window (the lagged
+        // Today, PTO, a non-phone day) has no call figures — "—", never a 0.
+        { key: 'totalRung', label: 'Rung', numeric: true, sortable: true, cell: function (r) { return mNoCallData_(r) ? mNoCallCell_() : esc(r.totalRung); } },
+        { key: 'totalAnswered', label: 'Answered', numeric: true, sortable: true, cell: function (r) { return mNoCallData_(r) ? mNoCallCell_() : esc(r.totalAnswered); } },
+        // DS2 (cycle 26): answered per credited day — a range only (one day has no average).
+        ].concat(multiDay ? [{ key: 'answeredPerDay', label: 'Ans / day', numeric: true, sortable: true, cell: mTeamPerDayCell_ }] : []).concat([
+        { key: 'totalMissed', label: 'Missed', numeric: true, sortable: true, cell: function (r) { return mNoCallData_(r) ? mNoCallCell_() : (r.totalMissed > 0 ? '<span style="color:var(--warn)">' + esc(r.totalMissed) + '</span>' : '0'); } },
         { key: 'pctAnswered', label: '% Ans', numeric: true, sortable: true, cell: function (r) { return (r.pctAnswered == null) ? '<span style="color:var(--muted)">—</span>' : '<span class="' + mPctClass_(r.pctAnswered, thr, band) + '">' + esc(r.pctAnswered) + '%</span>'; } },
-        { key: 'attSeconds', label: 'ATT', numeric: true, sortable: true, cell: function (r) { return esc(r.attFormatted); } },
+        { key: 'attSeconds', label: 'ATT', numeric: true, sortable: true, cell: function (r) { return mNoCallData_(r) ? mNoCallCell_() : esc(r.attFormatted); } },
         // F5 (cycle 12): a rep whose notes Sheet could not be read shows "—",
         // not "0" — a zero here reads as a rep who logged nothing.
         { key: 'noteCount', label: 'Notes', numeric: true, sortable: true, cell: function (r) { return r.noteCountUnavailable ? '<span style="color:var(--warn)" title="notes Sheet unreadable — count unavailable">—</span>' : esc(r.noteCount); } },
@@ -1837,7 +2059,7 @@ function mRenderTeamMetrics_(data) {
         // CDR attribution does not exist in this data). Null read → em dash.
         { key: 'intakeNotes', label: 'Intake', numeric: true, sortable: true, cell: function (r) { return r.intakeNotes == null ? '<span style="color:var(--muted)" title="count unavailable">—</span>' : (r.intakeNotes > 0 ? esc(r.intakeNotes) : '<span style="color:var(--muted)">0</span>'); } },
         { key: 'noteCoverage', label: 'Coverage', numeric: true, sortable: true, cell: function (r) { return r.noteCoverage != null ? mCoverageBadge_(r.noteCoverage) : '<span style="color:var(--muted)">—</span>'; } },
-      ].concat(mTeamAdjColumns_(data)).concat(hasQueues ? [
+      ]).concat(mTeamAdjColumns_(data)).concat(hasQueues ? [
         // Phase 2 — the TRANSFERS column is the only one that can carry a
         // per-queue split (Phase 0). Total + segmented bar + a real disclosure
         // button (INV-173/174) whose aria-controls points at the detail row
@@ -1879,6 +2101,20 @@ function mRenderTeamMetrics_(data) {
       }).join('; ')) +
       (data.likelyMismatches.length > M_NAME_CAP
         ? ' <em>+' + (data.likelyMismatches.length - M_NAME_CAP) + ' more</em>' : '') +
+      '. Fix with an Agent Alias Overrides row in the CDR Report.</div>';
+  }
+
+  html += mTeamPartialHintHtml_(data, M_NAME_CAP, multiDay);   // DQ1 — managers only: the rep view carries no `reps`
+
+  // FQ7 (cycle 26): the same pairing for the Outbound Calls tab — a rep whose
+  // outbound calls sit under another spelling had no line anywhere.
+  var obLikely = (data.outboundMeta && data.outboundMeta.likelyMismatches) || [];
+  if (obLikely.length > 0) {
+    html += '<div class="m-hint" style="margin-top:var(--space-md);color:var(--warning-deep)">' +
+      icon('warning', 14) + ' ' + obLikely.length + ' likely outbound name mismatch' + (obLikely.length === 1 ? '' : 'es') +
+      ' — these reps’ outbound calls are probably missing from this table: ' +
+      esc(obLikely.slice(0, M_NAME_CAP).map(function (m) { return m.cdr + ' → ' + m.roster; }).join('; ')) +
+      (obLikely.length > M_NAME_CAP ? ' <em>+' + (obLikely.length - M_NAME_CAP) + ' more</em>' : '') +
       '. Fix with an Agent Alias Overrides row in the CDR Report.</div>';
   }
 
@@ -2006,24 +2242,37 @@ function mTeamTableTsv_(data, scope, sort) {
     var hasTr = !!(data.queueRows && data.queueRows.length);
     var head = ['Rep', 'Rung', 'Answered', 'Missed', '% Ans', 'ATT', 'Notes', 'Intake', 'Coverage'];
     var hasOb = !!(data.outboundMeta && data.outboundMeta.available);   // M1
+    var obPast = hasOb && mOutboundLag_(data.outboundMeta.through, data.from || data.date, data.to || data.date).state === 'none';
     if (hasOb) head.push('Outbound placed', 'Outbound connected', 'Outbound talk', 'Handled (adj.)');
     var hasAdjAtt = (data.reps || []).some(function (r) { return r.adjusted && r.adjusted.attExIntakeFormatted; });
     if (hasAdjAtt) head.push('ATT excl. intake');
     if (hasTr) head.push('Transfers');
+    var hasPd = (data.reps || []).some(function (r) { return !!mTeamPartialText_(r, 1); });   // DQ1
+    var hasPerDay = !!(data.from && data.to && data.from !== data.to);   // DS2 — a range only
+    if (hasPerDay) head.push.apply(head, ['Ans / day'].concat(hasOb ? ['Handled (adj.) / day'] : [], ['Credited days']));   // DT1
+    if (hasPd) head.push('Partial days');
     out.push(tsvRow_(head));
     var reps = mSortReps_(data.reps || [], sort || { key: 'pctAnswered', dir: 'desc' });
     reps.forEach(function (r) {
-      var row = [r.repName, r.totalRung, r.totalAnswered, r.totalMissed,
+      var noCalls = mNoCallData_(r);   // F35: no call-data row exports BLANK, never 0
+      var row = [r.repName, noCalls ? '' : r.totalRung, noCalls ? '' : r.totalAnswered, noCalls ? '' : r.totalMissed,
         (r.pctAnswered != null ? r.pctAnswered + '%' : ''),
-        r.attFormatted,
+        noCalls ? '' : r.attFormatted,
         (r.noteCountUnavailable ? '' : r.noteCount),
         (r.intakeNotes == null ? '' : r.intakeNotes),   // batch 6 — an unavailable count exports BLANK, never 0
         (r.noteCoverage != null ? r.noteCoverage + '%' : '')];
       // M1: an outbound figure that was not read exports BLANK, never 0.
-      if (hasOb) row.push(r.outbound ? r.outbound.placed : '', r.outbound ? r.outbound.connected : '', r.outbound ? mFmtTalk_(r.outbound.talkSec) : '',
-        r.adjusted ? r.adjusted.handled : r.totalAnswered);
+      var ob = (r.outbound && !obPast) ? r.outbound : null;   // F35: a window the export has not reached exports BLANK too
+      if (hasOb) row.push(ob ? ob.placed : '', ob ? ob.connected : '', ob ? mFmtTalk_(ob.talkSec) : '',
+        r.adjusted ? r.adjusted.handled : (noCalls ? '' : r.totalAnswered));
       if (hasAdjAtt) row.push(r.adjusted && r.adjusted.attExIntakeFormatted ? r.adjusted.attExIntakeFormatted : '');
       if (hasTr) row.push(r.transferred);
+      if (hasPerDay) {
+        row.push(r.answeredPerDay == null ? '' : Number(r.answeredPerDay).toFixed(1));
+        if (hasOb) row.push(r.handledPerDay == null ? '' : Number(r.handledPerDay).toFixed(1));   // DT1: no figure exports BLANK
+        row.push(noCalls || r.creditedDays == null ? '' : r.creditedDays);
+      }
+      if (hasPd) row.push(mTeamPartialText_(r, 99));
       out.push(tsvRow_(row));
     });
   }
@@ -2260,6 +2509,37 @@ function enterSpanishInboxView(area) {
   spanishLoad_();
 }
 
+/** F41 (cycle 26) — a change made here to the pending list: a request gone
+ *  (resolved), or its claim set / cleared. Numbered, so a list read can tell
+ *  which changes came after it was asked for. The newest 200 are kept. */
+function spanishNoteLocal_(change) {
+  SPANISH_STATE.changeSeq = (SPANISH_STATE.changeSeq || 0) + 1;
+  change.n = SPANISH_STATE.changeSeq;
+  SPANISH_STATE.localChanges = (SPANISH_STATE.localChanges || []).concat([change]).slice(-200);
+}
+/** PURE (Node-pinned) — a pending answer with the changes made here AFTER it
+ *  was asked for (`sinceSeq`) applied, in order: a request marked gone leaves
+ *  the list, a claim is the one set here. Earlier changes are already in the
+ *  answer and are not applied again. */
+function spanishReapplyLocal_(res, changes, sinceSeq) {
+  if (!res || !Array.isArray(res.pending)) return res;
+  (changes || []).forEach(function (c) {
+    if (!c || !(Number(c.n) > Number(sinceSeq || 0))) return;
+    if (c.gone) res.pending = res.pending.filter(function (t) { return t.threadId !== c.tid; });
+    else res.pending.forEach(function (t) { if (t.threadId === c.tid) t.claim = c.claim; });
+  });
+  return res;
+}
+/** FR4 (cycle 26): a background refresh that failed kept the painted round
+ *  and said nothing — a server {error} on the stats, or either list half, left
+ *  a manager reading a pending list that might be an hour old as current. One
+ *  toast per load round (the stats and both halves share it). */
+function spanishRefreshFailed_() {
+  var round = (SPANISH_STATE.seq || 0) + ':' + (SPANISH_STATE.listSeq || 0);
+  if (SPANISH_STATE.failToastRound === round) return;
+  SPANISH_STATE.failToastRound = round;
+  showToast('Couldn’t refresh the Spanish inbox — showing last loaded', 'toast-warn');
+}
 function spanishLoad_() {
   var body = document.getElementById('spanish-body'); if (!body) return;
   // SWR (operator 2026-08-13 — the tab is three Gmail-scanning RPCs, so every
@@ -2293,7 +2573,7 @@ function spanishLoad_() {
         if (d && !d.error) {
           var h = document.getElementById('spanish-head');
           if (h) h.innerHTML = spanishHeadHtml_(d);
-        }
+        } else spanishRefreshFailed_();   // FR4: kept, and said
         return;   // a failed refresh keeps the painted round (last-good)
       }
       spanishRender_(d);
@@ -2301,7 +2581,7 @@ function spanishLoad_() {
     .withFailureHandler(function (e) {
       if (currentView !== 'metricsSpanish' || seq !== SPANISH_STATE.seq) return;
       if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(false);
-      if (painted) { showToast('Couldn’t refresh the Spanish inbox — showing last loaded', 'toast-warn'); return; }
+      if (painted) { spanishRefreshFailed_(); return; }
       body.innerHTML = errorStateHtml_((e && e.message) || 'Failed to load');   // A12
     })
     .getSpanishInboxStats(days);
@@ -2529,6 +2809,7 @@ function spanishAutoAssign_(btn) {
         }
         var pd = SPANISH_STATE.pendingRes;
         (r.assigned || []).forEach(function (a) {
+          spanishNoteLocal_({ tid: a.threadId, claim: a.claim });   // F41
           if (!pd || !Array.isArray(pd.pending)) return;
           for (var i = 0; i < pd.pending.length; i++) {
             if (pd.pending[i].threadId === a.threadId) pd.pending[i].claim = a.claim;
@@ -2601,6 +2882,7 @@ function spanishLoadList_(opts) {
   var days = SPANISH_STATE.days;
   SPANISH_STATE.listSeq = (SPANISH_STATE.listSeq || 0) + 1;
   var seq = SPANISH_STATE.listSeq;
+  var changeAsked = SPANISH_STATE.changeSeq || 0;   // F41: what this read cannot know about
   if (opts.background) {
     // SWR: the seeded (cached) lists paint NOW; the refetch swaps them
     // silently when it lands. State is NOT nulled — it is the painted content.
@@ -2626,12 +2908,22 @@ function spanishLoadList_(opts) {
       if (!d || d.error) {
         // A background refresh failing keeps the painted last-good half.
         if (!opts.background) SPANISH_STATE.pendingErr = (d && d.error) || 'Could not load pending';
-      } else { SPANISH_STATE.pendingRes = d; SPANISH_STATE.pendingErr = null; cacheHalf('pending', d); }
+        else spanishRefreshFailed_();   // FR4
+      } else {
+        // F41 (cycle 26): the painted cards are live while this Gmail scan
+        // runs. A resolve, claim, release or auto-assign made meanwhile is not
+        // in this answer — it was computed first — and it replaced the list
+        // and the session cache, so the resolved card came back (and could be
+        // resolved, and replied to, a second time) and a claim pill vanished.
+        d = spanishReapplyLocal_(d, SPANISH_STATE.localChanges, changeAsked);
+        SPANISH_STATE.pendingRes = d; SPANISH_STATE.pendingErr = null; cacheHalf('pending', d);
+      }
       done();
     })
     .withFailureHandler(function (e) {
       if (seq !== SPANISH_STATE.listSeq) return;
       if (!opts.background) SPANISH_STATE.pendingErr = (e && e.message) || 'Could not load pending';
+      else spanishRefreshFailed_();
       done();
     })
     .getSpanishInboxPending(days);
@@ -2640,12 +2932,14 @@ function spanishLoadList_(opts) {
       if (seq !== SPANISH_STATE.listSeq) return;
       if (!d || d.error) {
         if (!opts.background) SPANISH_STATE.resolvedErr = (d && d.error) || 'Could not load resolved';
+        else spanishRefreshFailed_();
       } else { SPANISH_STATE.resolvedRes = d; SPANISH_STATE.resolvedErr = null; cacheHalf('resolved', d); }
       done();
     })
     .withFailureHandler(function (e) {
       if (seq !== SPANISH_STATE.listSeq) return;
       if (!opts.background) SPANISH_STATE.resolvedErr = (e && e.message) || 'Could not load resolved';
+      else spanishRefreshFailed_();
       done();
     })
     .getSpanishInboxResolved(days);
@@ -3010,7 +3304,8 @@ function spanishResolveSelected_() {
   var ids = spanishSelIds_();
   if (!ids.length || SPANISH_STATE.bulkBusy) return;
   var requestedView = currentView;
-  spanishResolveAsk_(ids.length).then(function (ans) {   // SP1: how they ended, and a note for the replies
+  var askKey = spanishResolveKey_(ids);
+  spanishResolveAsk_(ids.length, askKey).then(function (ans) {   // SP1: how they ended, and a note for the replies
     if (!ans) return;
     SPANISH_STATE.bulkBusy = true;
     spanishSelSync_();
@@ -3022,6 +3317,11 @@ function spanishResolveSelected_() {
           return;
         }
         var gone = (r.resolved || []).concat(r.already || []);
+        // F41: requests that could not be resolved stay selected — and so does
+        // the answer, under the key of what is STILL selected.
+        var stillIds = (r.failed || []).map(function (f) { return f && f.threadId; }).filter(Boolean);
+        if (stillIds.length && SP_RESOLVE_ASK.last && SP_RESOLVE_ASK.last.key === askKey) SP_RESOLVE_ASK.last.key = spanishResolveKey_(stillIds);
+        else spanishResolveSettled_(askKey, !(r.failed || []).length);
         gone.forEach(function (tid) { delete SPANISH_STATE.selected[tid]; spanishRemovePendingLocal_(tid); });
         if (gone.length && typeof clkNeedsYouInvalidate_ === 'function') clkNeedsYouInvalidate_();   // 22post C-8
         if (typeof spAssignPollSoon_ === 'function') spAssignPollSoon_();   // the badge follows
@@ -3055,10 +3355,28 @@ function spanishResolveChoices_(res) {
   if (!o || typeof o !== 'object') return [];
   return Object.keys(o).map(function (k) { return { key: k, label: String(o[k]) }; });
 }
-var SP_RESOLVE_ASK = { resolve: null };
-/** Ask how the request(s) ended. Resolves { outcome, note } or null. */
-function spanishResolveAsk_(count) {
+// F41 (cycle 26): `last` is the answer of an attempt that did NOT go through —
+// {key, outcome, note} — so the dialog can give it back. The dialog closes
+// before the server answers; a "Resolve failed: Lock timeout…" used to leave
+// the member with a toast and up to 500 typed characters gone. It is kept for
+// the SAME request(s) only (`key`): a note written about one request is never
+// offered on another.
+var SP_RESOLVE_ASK = { resolve: null, last: null, key: '' };
+/** PURE (Node-pinned) — the key a kept answer belongs to: the request, or the
+ *  selection (order does not matter). */
+function spanishResolveKey_(ids) {
+  return (Array.isArray(ids) ? ids : [ids]).map(function (x) { return String(x == null ? '' : x); }).filter(Boolean).sort().join('|');
+}
+/** PURE (Node-pinned) — the kept answer to prefill for `key`, or null. */
+function spanishResolveKept_(last, key) {
+  return (last && key && last.key === key && (last.note || last.outcome)) ? { outcome: String(last.outcome || ''), note: String(last.note || '') } : null;
+}
+/** Ask how the request(s) ended. Resolves { outcome, note } or null. `key`
+ *  (spanishResolveKey_) names what is being resolved. */
+function spanishResolveAsk_(count, key) {
   return new Promise(function (resolveP) {
+    SP_RESOLVE_ASK.key = String(key || '');
+    var kept = spanishResolveKept_(SP_RESOLVE_ASK.last, SP_RESOLVE_ASK.key);
     var choices = spanishResolveChoices_(SPANISH_STATE.pendingRes);
     var noteMax = Number((SPANISH_STATE.pendingRes && SPANISH_STATE.pendingRes.resolveNoteMax) || 500);
     var finish = function (val) {
@@ -3081,8 +3399,10 @@ function spanishResolveAsk_(count) {
           : '') +
         '<label class="sp-res-note-lbl" for="sp-res-note">Note <span class="sp-res-opt-hint">(optional)</span></label>' +
         '<textarea id="sp-res-note" class="sp-res-note" rows="3" maxlength="' + noteMax + '"></textarea>' +
+        (kept ? '<p class="sp-res-hint" id="sp-res-kept" role="status">The last attempt did not go through — what you entered is filled in again.</p>' : '') +
         '<p class="sp-res-hint">' + esc((many ? 'Each request gets its own reply' : 'A reply') +
-          ' with the outcome and your note, sent on the email thread to the requester. A voicemail request has no email, so it gets none. ' +
+          ' with the outcome and your note goes to everyone on the request’s email — the requester and anyone copied. ' +
+          'A voicemail request has no email, so it gets none; neither does an email that includes an address outside the company. ' +
           'This can’t be undone in-app — if the requester writes again, it comes back as a new request, unclaimed.') + '</p>' +
       '</div>' +
       '<div class="modal-footer">' +
@@ -3090,7 +3410,20 @@ function spanishResolveAsk_(count) {
         '<button type="button" class="btn-modal-ok" id="sp-res-go"' + (choices.length ? ' disabled' : '') + ' onclick="spanishResolveConfirm_()">' +
           esc(many ? 'Resolve ' + count : 'Mark resolved') + '</button>' +
       '</div></div>';
+    if (kept) {
+      // Assigned, never interpolated; a prefill is not "typed work" (g166).
+      var noteEl = document.getElementById('sp-res-note');
+      if (noteEl) noteEl.value = kept.note.slice(0, noteMax);
+      var radios = ov.querySelectorAll('input[name="sp-res-outcome"]');
+      for (var i = 0; i < radios.length; i++) { if (radios[i].value === kept.outcome) radios[i].checked = true; }
+      spanishResolveSync_();
+    }
   });
+}
+/** F41 — an attempt ended: a clean one forgets the kept answer, a failed one
+ *  keeps it for the same request(s). */
+function spanishResolveSettled_(key, ok) {
+  if (ok && SP_RESOLVE_ASK.last && SP_RESOLVE_ASK.last.key === key) SP_RESOLVE_ASK.last = null;
 }
 /** The Resolve button follows the outcome: off until one is picked. */
 function spanishResolveSync_() {
@@ -3107,6 +3440,7 @@ function spanishResolveConfirm_() {
   if (ov.querySelector('input[name="sp-res-outcome"]') && !picked) { spanishResolveSync_(); return; }
   var note = document.getElementById('sp-res-note');
   var val = { outcome: picked ? picked.value : '', note: note ? String(note.value || '').trim() : '' };
+  SP_RESOLVE_ASK.last = { key: SP_RESOLVE_ASK.key, outcome: val.outcome, note: val.note };   // F41: until the server says it went through
   var r = SP_RESOLVE_ASK.resolve; SP_RESOLVE_ASK.resolve = null;
   closeOverlay(ov, { discard: true });   // the hook removes it and focus goes back to the button (g100)
   r(val);
@@ -3118,6 +3452,7 @@ function spanishBulkReplyText_(r) {
   var bits = [];
   if (p.sent) bits.push(p.sent + ' repl' + (p.sent === 1 ? 'y' : 'ies') + ' sent');
   if (p.voicemail) bits.push(p.voicemail + ' voicemail' + (p.voicemail === 1 ? '' : 's') + ' (no email to reply to)');
+  if (p.outside) bits.push(p.outside + ' not replied to (an address outside the company is on the email)');   // F12
   if ((p.failed || []).length) bits.push(p.failed.length + ' repl' + (p.failed.length === 1 ? 'y' : 'ies') + ' could not be sent');
   return bits.join(' · ');
 }
@@ -3343,7 +3678,11 @@ function spanishClaimRpc_(el, tid, assignee) {
       showToast(r.already ? 'Already claimed' :
         (assignee ? 'Assigned to ' + assignee.split('@')[0] + spanishNotifiedNote_(r) : 'Claimed — teammates will see you have it'), 'success');
     })
-    .withFailureHandler(function (e) { el.disabled = false; showToast((e && e.message) || 'Claim failed', 'error'); })
+    .withFailureHandler(function (e) {
+      el.disabled = false;
+      showToast((e && e.message) || 'Claim failed', 'error');
+      spanishRenderList_();   // F41 (cycle 26): the Assign select kept showing the name nothing was assigned to
+    })
     .claimSpanishThread(tid, assignee);
 }
 /** 22post C-8 — say whether the assignee was emailed (the server reports how
@@ -3372,6 +3711,7 @@ function spanishRelease_(btn) {
  *  the SAME object reference (cacheHalf), so mutating pendingRes keeps the
  *  cached copy in step too. */
 function spanishSetClaimLocal_(tid, claim) {
+  spanishNoteLocal_({ tid: tid, claim: claim });   // F41
   var pd = SPANISH_STATE.pendingRes;
   if (pd && Array.isArray(pd.pending)) {
     for (var i = 0; i < pd.pending.length; i++) {
@@ -3447,6 +3787,7 @@ function spanishTaskCard_(t) {
  *  that, because the card has to finish leaving first (SP2). The count IS
  *  refreshed here, synchronously, so it can never be waiting on an animation. */
 function spanishRemovePendingLocal_(tid) {
+  spanishNoteLocal_({ tid: tid, gone: true });   // F41
   var pd = SPANISH_STATE.pendingRes;
   if (pd && Array.isArray(pd.pending)) {
     for (var i = pd.pending.length - 1; i >= 0; i--) {
@@ -3488,7 +3829,8 @@ function spanishResolve_(btn) {
   var tid = btn.getAttribute('data-thread');
   var card = btn.closest('.sp-task');
   if (!tid || !card) return;
-  spanishResolveAsk_(1).then(function (ans) {   // SP1: how it ended, and a note for the reply
+  var askKey = spanishResolveKey_(tid);
+  spanishResolveAsk_(1, askKey).then(function (ans) {   // SP1: how it ended, and a note for the reply
     if (!ans) return;
     btn.disabled = true;
     // SP2 — the in-flight signal. `.sp-task.is-busy` and its keyframe were
@@ -3505,10 +3847,12 @@ function spanishResolve_(btn) {
           showToast((r && r.error) || 'Could not mark resolved', 'error');
           return;
         }
+        spanishResolveSettled_(askKey, true);   // F41: it went through — nothing is kept
         // The toast fires BEFORE the animation: it is the outcome, and a
         // reduced-motion user must not depend on a fade to learn anything.
-        showToast(r.already ? 'Already marked resolved' : 'Marked resolved.' + (r.replyNote ? ' ' + r.replyNote : ''),
-          (r.reply && r.reply.reason === 'failed') ? 'warn' : 'success');   // SP1: what became of the reply
+        // F11 (cycle 26): "already" is also a request a member answered by email — nothing was marked.
+        showToast(r.already ? 'Already resolved — nothing was changed' : 'Marked resolved.' + (r.replyNote ? ' ' + r.replyNote : ''),
+          (r.reply && (r.reply.reason === 'failed' || r.reply.reason === 'outside')) ? 'warn' : 'success');   // SP1: what became of the reply; F12: a withheld one is said
         spanishResolveDone_(tid, card);
       })
       .withFailureHandler(function (e) {

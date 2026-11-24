@@ -50,8 +50,9 @@ function doGet(e) {
   }
   // ── Intake recommendation-feedback route ───────────────────────────
   // The "Send feedback" button in a PPD/PMD/PAP email lands here. The
-  // recipient is an internal agent; submitIntakeFeedback re-authenticates
-  // via getEmployeeInfo_, so this page only COLLECTS the text.
+  // recipient is on the roster or signed in to an org account (the Sales and
+  // PAP teams are not on the roster — F22); submitIntakeFeedback identifies
+  // them itself, so this page only COLLECTS the text.
   if (e && e.parameter && e.parameter.intakefb) {
     return serveIntakeFeedbackPage_(e.parameter.intakefb, e.parameter.ft);
   }
@@ -415,7 +416,7 @@ function getRetentionConfig() {
  *  trigger handlers read the windows fresh per run. The two PURGE windows are
  *  irreversible PHI deletes; the client gates raising them behind a danger
  *  confirm. Returns the post-save safety warnings so the UI can surface them. */
-function saveRetentionConfig(settings) {
+function saveRetentionConfig(settings, baseline) {
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
@@ -439,18 +440,89 @@ function saveRetentionConfig(settings) {
     if (vu === null || ce === null) {
       return { success: false, error: 'Each window must be a whole number of days ≥ 0 (0 = disabled).' };
     }
-    const props = PropertiesService.getScriptProperties();
-    props.setProperty('CN_NOTE_ARCHIVE_DAYS', String(a));
-    props.setProperty('CN_NOTE_RETENTION_DAYS', String(r));
-    props.setProperty('CN_ARCHIVE_RETENTION_DAYS', String(ar));
-    if (hasVu) props.setProperty(VIEW_USAGE_RETENTION_PROP, String(vu));
-    if (hasCe) props.setProperty(CLIENT_ERR_RETENTION_PROP, String(ce));
-    writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
-      'Updated call-note retention windows (archive=' + a + 'd, purge=' + r + 'd, archivePurge=' + ar + 'd)' +
-      (hasVu || hasCe ? '; diagnostics (viewUsage=' + (hasVu ? vu + 'd' : 'unchanged') + ', clientErrors=' + (hasCe ? ce + 'd' : 'unchanged') + ')' : ''),
-      callerEmp.email);
-    return { success: true, warnings: retentionWarnings_(a, r, ar) };
+    // F18 (cycle 26): the page sends EVERY window it shows, and this wrote
+    // them all — so a page left open since morning put back the purge window
+    // another admin had set to 0 (an irreversible PHI delete, re-armed by
+    // someone who never touched it). Only the windows this caller CHANGED are
+    // written, and a window somebody else moved meanwhile refuses the save.
+    const next = { archiveDays: a, retentionDays: r, archiveRetentionDays: ar };
+    if (hasVu) next.viewUsageDays = vu;
+    if (hasCe) next.clientErrDays = ce;
+    const base = {};
+    const keys = Object.keys(next);
+    for (let i = 0; i < keys.length; i++) {
+      const b = (baseline && typeof baseline === 'object') ? parse(baseline[keys[i]]) : null;
+      if (b === null || !Object.prototype.hasOwnProperty.call(baseline, keys[i])) return { success: false, stale: true, error: ADMIN_SAVE_STALE_PAGE };
+      base[keys[i]] = b;
+    }
+    let changed = [];
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    try {
+      const current = retentionWindowsNow_();
+      const m = adminSettingsMerge_(next, base, current);
+      if (m.conflicts.length) {
+        return { success: false, conflict: m.conflicts, error: adminSaveConflictText_(m.conflicts.map(function (k) {
+          return RETENTION_WINDOWS[k].label + ' (now ' + (current[k] > 0 ? current[k] + ' days' : 'disabled') + ')';
+        })) };
+      }
+      changed = Object.keys(m.changes);
+      const props = PropertiesService.getScriptProperties();
+      const ch = m.changes, has = function (k) { return Object.prototype.hasOwnProperty.call(ch, k); };
+      if (has('archiveDays')) props.setProperty('CN_NOTE_ARCHIVE_DAYS', String(ch.archiveDays));
+      if (has('retentionDays')) props.setProperty('CN_NOTE_RETENTION_DAYS', String(ch.retentionDays));
+      if (has('archiveRetentionDays')) props.setProperty('CN_ARCHIVE_RETENTION_DAYS', String(ch.archiveRetentionDays));
+      if (has('viewUsageDays')) props.setProperty(VIEW_USAGE_RETENTION_PROP, String(ch.viewUsageDays));
+      if (has('clientErrDays')) props.setProperty(CLIENT_ERR_RETENTION_PROP, String(ch.clientErrDays));
+    } finally { lock.releaseLock(); }
+    if (changed.length) {
+      writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
+        'Updated retention windows: ' + changed.map(function (k) { return RETENTION_WINDOWS[k].short + '=' + next[k] + 'd'; }).join(', '),
+        callerEmp.email);
+    }
+    const now = retentionWindowsNow_();
+    return { success: true, changed: changed, warnings: retentionWarnings_(now.archiveDays, now.retentionDays, now.archiveRetentionDays) };
   } catch (err) { return { success: false, error: err.message }; }
+}
+/** F18 — the five retention windows the Admin panel saves, by payload key:
+ *  what the conflict message and the audit row call each. */
+const RETENTION_WINDOWS = {
+  archiveDays:          { label: 'Archive after',                short: 'archive' },
+  retentionDays:        { label: 'Purge live after',             short: 'purge' },
+  archiveRetentionDays: { label: 'Purge cold after',             short: 'archivePurge' },
+  viewUsageDays:        { label: 'Purge ViewUsage rows after',   short: 'viewUsage' },
+  clientErrDays:        { label: 'Purge ClientErrors rows after', short: 'clientErrors' },
+};
+/** F18 — every retention window as it is stored NOW (the resolved values the
+ *  panel loads; read inside the save's lock). */
+function retentionWindowsNow_() {
+  return { archiveDays: getNoteArchiveDays_(), retentionDays: getNoteRetentionDays_(), archiveRetentionDays: getArchiveRetentionDays_(),
+           viewUsageDays: viewUsageRetentionDays_(), clientErrDays: clientErrRetentionDays_() };
+}
+const ADMIN_SAVE_STALE_PAGE = 'This page is out of date — reload it, then make your change again. Nothing was saved.';
+/** PURE (Node-pinned; cycle 26 F18) — an admin save as a MERGE of what the
+ *  caller CHANGED, checked against what is stored now. `next` = the values the
+ *  page sent, `base` = the values that page LOADED, `current` = the stored
+ *  values at save time (all {key: value}). A key is the caller's change when
+ *  next differs from base. It is a CONFLICT when somebody else moved it
+ *  meanwhile (current differs from base) — unless they moved it to the very
+ *  value asked for. Returns { changes: {key: value}, conflicts: [key] }. A key
+ *  the caller did not change is never in `changes`, whatever the page sent for
+ *  it: a stale page cannot write an old value back. */
+function adminSettingsMerge_(next, base, current) {
+  const changes = {}, conflicts = [];
+  Object.keys(next || {}).forEach(function (k) {
+    if (next[k] === base[k]) return;
+    if (current[k] === next[k]) return;
+    if (current[k] !== base[k]) { conflicts.push(k); return; }
+    changes[k] = next[k];
+  });
+  return { changes: changes, conflicts: conflicts };
+}
+/** PURE — the refusal a conflicting save gets: what moved, and what to do. */
+function adminSaveConflictText_(names) {
+  return 'Changed by someone else since you opened this page: ' + (names || []).join('; ') +
+    '. Nothing was saved — reload to see the current settings, then make your change again.';
 }
 /** Manager-gated read of the feature-toggle registry + resolved values
  *  (also embedded in getAdminConfig; kept standalone for testability). */
@@ -473,7 +545,7 @@ function getFeatureFlags() {
  *  AdminConfigChange audit row (INV-57 family). Takes effect immediately:
  *  server reads getFlag_ fresh per request; clients pick it up on their next
  *  config fetch (page load / view enter) — see the runtime-flag design note. */
-function saveFeatureFlags(flagMap) {
+function saveFeatureFlags(flagMap, baseline) {
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
@@ -489,11 +561,41 @@ function saveFeatureFlags(flagMap) {
       if (v !== true && v !== false) return { success: false, error: 'Flag "' + k + '" must be true or false.' };
       clean[k] = v;
     }
-    propSetBounded_('CN_FEATURE_FLAGS', JSON.stringify(clean), { hint: 'the registry is bounded — this cannot happen' });
-    writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
-      'Updated feature toggles: ' + keys.map(function (k) { return k + '=' + (clean[k] ? 'on' : 'off'); }).join(', '),
-      callerEmp.email);
-    return { success: true, values: getFeatureFlagsResolved_() };
+    // F18 (cycle 26): the page sends EVERY toggle it shows, and this replaced
+    // the stored map with them — so a page left open put back a flag another
+    // admin had turned off since. `baseline` is what the page LOADED: only the
+    // toggles this caller flipped are written, onto the map as stored now, and
+    // a toggle somebody else flipped meanwhile refuses the save by name.
+    const base = {};
+    for (let i = 0; i < keys.length; i++) {
+      const b = (baseline && typeof baseline === 'object') ? baseline[keys[i]] : undefined;
+      if (b !== true && b !== false) return { success: false, stale: true, error: ADMIN_SAVE_STALE_PAGE };
+      base[keys[i]] = b;
+    }
+    let changed = [];
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    try {
+      // No conflict branch: a toggle has two values, so two admins who both
+      // flipped one have made the same change (the merge writes nothing for it).
+      const m = adminSettingsMerge_(clean, base, getFeatureFlagsResolved_());
+      changed = Object.keys(m.changes);
+      if (changed.length) {
+        // The stored overrides as they are NOW (registry keys only, as booleans), plus the changes.
+        const raw = getFlagOverrides_(), stored = {};
+        FEATURE_FLAGS.forEach(function (f) {
+          if (Object.prototype.hasOwnProperty.call(raw, f.key)) stored[f.key] = (raw[f.key] === true || raw[f.key] === 'true');
+        });
+        changed.forEach(function (k) { stored[k] = m.changes[k]; });
+        propSetBounded_('CN_FEATURE_FLAGS', JSON.stringify(stored), { hint: 'the registry is bounded — this cannot happen' });
+      }
+    } finally { lock.releaseLock(); }
+    if (changed.length) {
+      writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
+        'Updated feature toggles: ' + changed.map(function (k) { return k + '=' + (clean[k] ? 'on' : 'off'); }).join(', '),
+        callerEmp.email);
+    }
+    return { success: true, changed: changed, values: getFeatureFlagsResolved_() };
   } catch (err) { return { success: false, error: err.message }; }
 }
 function saveUpdateSuggestions(suggestionsJson) {
@@ -711,9 +813,10 @@ function recordClientError(payload) {
     // Batch K (B) — USER lock, not the global script lock: this is a
     // fire-and-forget single-appendRow diagnostics log, and holding the ONE
     // script lock made punch/note writes queue behind error beacons. The
-    // user lock still serializes a rep's own double-fires; appendRow itself
-    // is atomic, and a rare first-touch tab-create race just fails one
-    // best-effort call.
+    // "user" lock is ONE lock for every rep (the app runs as the deployer —
+    // cycle 26 F42), so it serialises every beacon, for the length of one
+    // append; appendRow itself is atomic, and a rare first-touch tab-create
+    // race just fails one best-effort call.
     const lock = LockService.getUserLock();
     lock.waitLock(15000);
     try {
@@ -1066,6 +1169,21 @@ function contiguousRowRunsDesc_(rowIdxs) {
 /** Delete rows of `sheet` whose column-A stamp is older than cutoffMs —
  *  OLDEST first (append order), at most `budget` rows. Returns
  *  {removed, hitCap}. Caller holds the lock. */
+/** PURE (Node-pinned) — FQ2 (cycle 26): which purge hit its per-run cap, and
+ *  THAT cap. The note named the shared diagnostics budget whichever tab hit —
+ *  the activity log has its own, three times larger, so "hitPerRunCap=2000"
+ *  was written for a run that had removed 6000 activity rows. `hits` is
+ *  [{name, hit, cap}]; tabs sharing one budget are named together. */
+function diagPurgeCapNote_(hits) {
+  var by = {}, order = [];
+  (hits || []).forEach(function (h) {
+    if (!h || !h.hit) return;
+    var k = String(h.cap);
+    if (!by[k]) { by[k] = []; order.push(k); }
+    by[k].push(h.name);
+  });
+  return order.map(function (k) { return by[k].join('+') + ':' + k; }).join(',');
+}
 function diagPurgeTab_(sheet, cutoffMs, budget) {
   const out = { removed: 0, hitCap: false };
   if (!sheet || !(budget > 0)) return out;
@@ -1269,7 +1387,10 @@ function purgeOldDiagnostics() {
       `viewUsageDays=${vuDays}; clientErrDays=${ceDays}; digestDeliveryDays=${ddDays}; viewUsageRemoved=${vu.removed}; clientErrorsRemoved=${ce.removed}; digestDeliveriesRemoved=${dd.removed}` +
       `; activityLogDays=${ACTIVITY_LOG_DAYS}; activityDaysCondensed=` + (alError ? 'not run' : al.condensed) + `; activityLogRemoved=${al.removed}` +
       `; searchSignalDays=${KB_SEARCH_SIGNAL_DAYS}; searchSignalRemoved=` + (ksError ? 'not run' : ks.removed) +
-      (capped ? `; hitPerRunCap=${DIAG_PURGE_MAX_ROWS_PER_RUN}` : ''));
+      (capped ? '; hitPerRunCap=' + diagPurgeCapNote_([
+        { name: 'ViewUsage', hit: vu.hitCap, cap: DIAG_PURGE_MAX_ROWS_PER_RUN }, { name: 'ClientErrors', hit: ce.hitCap, cap: DIAG_PURGE_MAX_ROWS_PER_RUN },
+        { name: 'DigestDeliveries', hit: dd.hitCap, cap: DIAG_PURGE_MAX_ROWS_PER_RUN }, { name: 'KbSearchSignal', hit: ks.hitCap, cap: DIAG_PURGE_MAX_ROWS_PER_RUN },
+        { name: 'ActivityLog', hit: al.hitCap, cap: ACTIVITY_LOG_PURGE_MAX_PER_RUN }]) : ''));
     Logger.log(`purgeOldDiagnostics: removed ${vu.removed} ViewUsage + ${ce.removed} ClientErrors + ${dd.removed} DigestDeliveries + ${al.removed} ActivityLog + ${ks.removed} KbSearchSignal row(s); condensed ${al.condensed} activity day(s)` +
       (capped ? ' (per-run cap hit — the backlog drains over successive runs)' : '') + (ksError ? ' — the KB store could not be opened: ' + ksError : '') +
       (alError ? ' — the activity log was not condensed (nothing of it purged): ' + alError : '') + '.');
@@ -1542,18 +1663,34 @@ function moveLedgersOutOfScriptProperties() {
     ((report.pto.error || report.runs.error) ? ' failed=1' : ''));
   return report;
 }
-/** PURE-ish (the two converters are passed) — folds the run ledger into the
- *  tail scan's {action: last} map IN PLACE. The NEWER run wins, so a ledger
- *  stamp never hides a later tail row and vice versa; an unparseable ledger
- *  stamp never displaces a tail row that parsed. */
-function automationLastRunMerge_(byAction, ledger, parseMs, toMgr) {
+/** F2 (cycle 26) — THE one builder of a job's last-run record, from its stored
+ *  stamp ('yyyy-MM-dd HH:mm:ss', written in CONFIG.TIMEZONE): `ms` the run's
+ *  time, `ym` its MONTH in the manager's timezone, `timestampMgr` the DISPLAY
+ *  string ("Nov 1, 6:02 PM"). "Ran this month" is decided on `ym`. It used to
+ *  be decided on `timestampMgr` — tested for a '2026-11' prefix it can never
+ *  have — so the monthly accrual line read "has not run this month" from the
+ *  3rd to month end, every month, beside a credit that had been paid. An
+ *  unparseable stamp gives ms null and ym '' (unknown — never "this month",
+ *  never "another month"). Never throws. */
+function automationRunRecord_(tsRaw, mgrTz, notes) {
+  let ms = null;
+  try { ms = Utilities.parseDate(String(tsRaw), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss').getTime(); } catch (_) { ms = null; }
+  if (!isFinite(ms)) ms = null;
+  let ym = '';
+  if (ms) { try { ym = Utilities.formatDate(new Date(ms), mgrTz, 'yyyy-MM'); } catch (_) { ym = ''; } }
+  return { timestampMgr: convertAuditTs_(tsRaw, CONFIG.TIMEZONE, mgrTz), ms: ms, ym: ym, notes: notes };
+}
+/** PURE-ish (the record builder is passed — automationRunRecord_) — folds the
+ *  run ledger into the tail scan's {action: last} map IN PLACE. The NEWER run
+ *  wins, so a ledger stamp never hides a later tail row and vice versa; an
+ *  unparseable ledger stamp never displaces a tail row that parsed. */
+function automationLastRunMerge_(byAction, ledger, build) {
   Object.keys(ledger || {}).forEach(function (a) {
-    let ms = null;
-    try { ms = parseMs(ledger[a].ts); } catch (_) { ms = null; }
-    if (!isFinite(ms)) ms = null;
+    const rec = build(ledger[a].ts, ledger[a].notes);
     const tail = byAction[a];
-    if (tail && (!ms || (tail.ms && tail.ms >= ms))) return;
-    byAction[a] = { timestampMgr: toMgr(ledger[a].ts), ms: ms, notes: ledger[a].notes, source: 'ledger' };
+    if (tail && (!rec.ms || (tail.ms && tail.ms >= rec.ms))) return;
+    rec.source = 'ledger';
+    byAction[a] = rec;
   });
   return byAction;
 }
@@ -1633,19 +1770,30 @@ function automationJobProblems_(lastRuns, errors, nowMs, todayDom, thisMonthPref
     };
     if (job.cadence === 'monthly') {
       // In arrears: a row is expected on/just after the 1st. Before the grace
-      // day the absence is normal, so the check simply does not apply yet.
-      if (todayDom < (job.graceDays || 3)) return;
-      const ranThisMonth = !!(last && last.timestampMgr &&
-        String(last.timestampMgr).indexOf(thisMonthPrefix) === 0);
-      if (!ranThisMonth && ran && ran.ym === thisMonthPrefix) {
+      // day the absence is normal, so the LIVENESS check does not apply yet.
+      // F17 (cycle 26): only the liveness check — this was a `return` out of
+      // the whole job, so a FAILURE the job stamped on the 1st was hidden on
+      // the 1st and 2nd of every month, the two days it is most likely.
+      const judged = todayDom >= (job.graceDays || 3);
+      // F2 (cycle 26): the run's MONTH (`last.ym` — automationRunRecord_),
+      // never its display string.
+      const ranThisMonth = !!(last && last.ym && last.ym === thisMonthPrefix);
+      if (!judged || ranThisMonth) {
+        // nothing to say about liveness
+      } else if (ran && ran.ym === thisMonthPrefix) {
         // 25post: the job RAN this month and wrote no row — the trigger is
         // alive, and "may be missing" would send the operator to reinstall it.
         push('job', job.action, 'The ' + job.label + ' ran on ' + ran.mgr + ' but wrote no row this month, so its trigger is running' +
           (typeof job.noRowHint === 'function' ? ' — ' + job.noRowHint(thisMonthPrefix) : '') + '.');
-      } else if (!ranThisMonth && watched && watched.ym === thisMonthPrefix) {
+      } else if (watched && watched.ym === thisMonthPrefix) {
         // 25post: first watched this month, after the 1st it is judged on — a
         // deploy or a setting started the watch, and the 1st was never seen.
-      } else if (!ranThisMonth && (last || auditWindowCoversMonth_(auditWindow, thisMonthPrefix))) {
+      } else if (last && !last.ym) {
+        // F2: a run is on record but its stamp cannot be read — which month it
+        // ran in is UNKNOWN, and "the trigger may be missing" would be a guess.
+        push('job', job.action, 'The ' + job.label + ' has a run on record (' + (last.timestampMgr || 'no time') +
+          ') whose time could not be read, so whether it ran this month is unknown — check the ' + AUTOMATION_RUN_LEDGER_PROP + ' Script Property.');
+      } else if (last || auditWindowCoversMonth_(auditWindow, thisMonthPrefix)) {
         // A1 (cycle 22): with NO run on record, absence is only evidence when the
         // AuditLog window read reaches back past the 1st. A truncated window that
         // starts mid-month cannot tell "did not run" from "scrolled out" — that is
@@ -1768,6 +1916,13 @@ function triggerOwnerOffboarded_(owner, rosterEmails, offboarded) {
   const gone = (offboarded || []).some(function (e) { return String(e || '').toLowerCase().trim() === email; });
   return (gone && !onRoster) ? email : '';
 }
+/** PURE (Node-pinned; cycle 26 F32) — the roster as managerSourceDrift_ needs
+ *  it for the ADMIN_EMAILS check: who is ON the roster, with nobody "demoted"
+ *  (that half is MANAGER_EMAILS' — an admin listed without the manager bit
+ *  simply has no power). */
+function adminDriftRoster_(pairs) {
+  return (pairs || []).map(function (p) { return { email: p && p.email, isManager: true }; });
+}
 function readOffboardedEmails_() {
   try {
     const a = JSON.parse(PropertiesService.getScriptProperties().getProperty(OFFBOARDED_EMAILS_PROP) || '[]');
@@ -1851,7 +2006,11 @@ function automationDetectorChecks_() {
     // bit (empIsAdmin_ is a subset check), but an offboarded address left there
     // is re-armed by a re-onboard as manager — name it.
     const adminRaw = String(PropertiesService.getScriptProperties().getProperty('ADMIN_EMAILS') || '');
-    const adminDrift = managerSourceDrift_(adminRaw.split(','), [], offboarded);
+    // F32 (cycle 26): this passed an EMPTY roster, so "not back on the roster"
+    // was true of everyone and a re-onboarded admin was named for ever — the
+    // offboarded record keeps the address. The roster rides along (every row
+    // as a manager: ADMIN_EMAILS has no demotion half to judge, only presence).
+    const adminDrift = managerSourceDrift_(adminRaw.split(','), adminDriftRoster_(pairs), offboarded);
     if (adminDrift.length) {
       throw new Error('ADMIN_EMAILS still lists offboarded ' + adminDrift.join(', ') +
         ' — remove them (offboarding keeps a list\'s LAST entry rather than empty it; add a replacement first).');
@@ -1982,13 +2141,8 @@ function computeAutomationHealth_(opts) {
           // `ms` (raw run time) is additive — the Admin panel renders timestampMgr/
           // notes; sendAutomationHealthDigest uses ms to detect a STALE last run
           // (the F1 class — a daily job that silently stopped).
-          let _runMs = null;
-          try { _runMs = Utilities.parseDate(tsRaw, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss').getTime(); } catch (_) {}
-          lastRunByAction[action] = {
-            timestampMgr: convertAuditTs_(tsRaw, CONFIG.TIMEZONE, mgrTz),
-            ms: _runMs,
-            notes: String(data[i][AUDIT.NOTES]),
-          };
+          // F2 (cycle 26): `ym` rides the record too — the one builder.
+          lastRunByAction[action] = automationRunRecord_(tsRaw, mgrTz, String(data[i][AUDIT.NOTES]));
         }
       }
     }
@@ -1996,8 +2150,7 @@ function computeAutomationHealth_(opts) {
     // a job that has not stamped it yet (every job, the day this ships). The
     // NEWER of the two wins, so neither can mask the other's later run.
     automationLastRunMerge_(lastRunByAction, readAutomationRunLedger_(),
-      function (ts) { return Utilities.parseDate(ts, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss').getTime(); },
-      function (ts) { return convertAuditTs_(ts, CONFIG.TIMEZONE, mgrTz); });
+      function (ts, notes) { return automationRunRecord_(ts, mgrTz, notes); });
     const automationLastRuns = AUTOMATION_AUDIT_ACTIONS.map(function (a) {
       return { action: a, last: lastRunByAction[a] || null };
     });
@@ -2169,6 +2322,18 @@ function computeAutomationHealth_(opts) {
       }
     } catch (_) {}
 
+    // F30 (cycle 26) — ActivityLog rows that could not be written
+    // (ACTIVITY_LOG_FAIL_PROP, stamped by activityLogAppend_). Reported while
+    // the latest failure is inside ACTIVITY_LOG_FAIL_RECENT_MS; an old blip is
+    // history, and the counter does not know about later successes.
+    let activityLogFails = null;
+    try {
+      const nowMs = Date.now();
+      activityLogFails = activityLogFailsView_(PropertiesService.getScriptProperties().getProperty(ACTIVITY_LOG_FAIL_PROP),
+        nowMs - ACTIVITY_LOG_FAIL_RECENT_MS, nowMs);
+      if (activityLogFails) activityLogFails.lastMgr = Utilities.formatDate(new Date(activityLogFails.lastMs), mgrTz, 'yyyy-MM-dd HH:mm');
+    } catch (_) { activityLogFails = null; }
+
     // K-A alternative — last nightly self-test outcome (SELF_TEST_LAST_RESULT
     // Script Property; null = never ran, the fresh-deploy posture).
     let selfTest = null;
@@ -2212,6 +2377,7 @@ function computeAutomationHealth_(opts) {
       detectors: detectors,   // Turn C — detector-liveness checks
       clientErrors: clientErrorsSummary_(mgrTz),   // #1 — client error beacon (INV-150)
       witnessFails: witnessFails,   // C4 — lost tamper-witness audit rows
+      activityLogFails: activityLogFails,   // F30 — app-activity rows that could not be written (recent), or null
       accrualReconcile: readAccrualReconcile_(),   // the last PTO accrual reconcile pass (operator 2026-09-15)
       openPunches: openPunches,                    // the last open-punch scan (operator 2026-09-15)
       selfTest: selfTest,     // K-A alternative — nightly self-test outcome
@@ -2352,6 +2518,14 @@ function automationProblems_(report, opts) {
     add('witness', '', 'A tamper-witness audit row was LOST in the last 48h (' +
       report.witnessFails.lastAction + '; ' + report.witnessFails.count +
       ' total) — a signed/submitted record has no independent audit witness. See INV-113/122.');
+  }
+  // F30 (cycle 26): the app-activity record is written best-effort on every
+  // gesture ping, and a failed write reached only console.warn — Day Edit then
+  // read "No app activity recorded" for a rep who was working.
+  if (report.activityLogFails && report.activityLogFails.count > 0) {
+    const af = report.activityLogFails;
+    add('activityLog', '', 'The app-activity log could not be written ' + af.count + ' time(s), most recently ' + (af.lastMgr || 'recently') +
+      (af.lastError ? ' (' + af.lastError + ')' : '') + ' — Day Edit and Team Punches may show no activity, or less, for work that happened.');
   }
   (report.detectors || []).forEach(function (c) {
     if (c && c.ok === false) add('detector', c.key, 'Detector dead: ' + c.label + ' — ' + c.detail);
@@ -2686,13 +2860,18 @@ function getStorageHealth(opts) {
     if (cdrStore.reachable) {
       cdrStore.standard = cdrStandardProbe_();
       cdrStore.holidays = cdrHolidayProbe_();
+      cdrStore.partialDays = cdrPartialProbe_();   // Batch PD
     }
     stores.push(cdrStore);
 
     const intakeProp = props.getProperty('INTAKE_SS_ID');
     const intakeId = intakeProp || (isPlaceholder(CONFIG.INTAKE.SS_ID) ? '' : CONFIG.INTAKE.SS_ID);
-    stores.push(probe({ label: 'Intake (PHI)', role: 'Offerings + PPD/PMD/PAP submissions',
-      cls: 'PHI', retention: 'Optional purge', prop: 'INTAKE_SS_ID', id: intakeId,
+    // F23 (cycle 26): this row said "Optional purge". No purge of this store
+    // exists — every submission, and the feedback written about one, is kept —
+    // and an operator deciding what to do about PHI at rest read it as a
+    // setting they had. The feedback tab was not named anywhere either.
+    stores.push(probe({ label: 'Intake (PHI)', role: 'Offerings + PPD/PMD/PAP submissions + ' + CONFIG.INTAKE.FEEDBACK_TAB,
+      cls: 'PHI', retention: 'Kept — no purge exists', prop: 'INTAKE_SS_ID', id: intakeId,
       source: intakeProp ? 'Script Property' : (intakeId ? 'CONFIG' : 'unset'),
       note: intakeId ? '' : 'Set INTAKE_SS_ID — Intake fails on first preview/send without it.' }));
 
@@ -2982,6 +3161,34 @@ function cdrHolidayProbe_() {
     try { thisYear = (source === 'sheet') ? companyHolidayDatesInYear_(ranges, year).length : 0; } catch (e2) { thisYear = 0; }
     return { source: source, ranges: ranges.length, thisYear: thisYear, year: year, error: hol.error || '' };
   } catch (e) { return { source: 'unavailable', ranges: 0, thisYear: 0, year: '', error: String((e && e.message) || e) }; }
+}
+
+/** Batch PD (cycle 26) — the Partial Days tab's state as the Storage Health
+ *  row carries it: {source, rows, marks, agents, offRoster, error}. COUNTS
+ *  only — no name, no date and no reason (the Reason column is never read).
+ *  `offRoster` is how many marked agents are not on this roster: on a phone
+ *  system shared with other departments that is normal, so it is a fact on
+ *  the row and never a warning (g02). A missing tab is the steady state — the
+ *  dashboard creates it on first use. */
+function cdrPartialProbe_() {
+  try {
+    const pd = getCdrPartialDays_() || {};
+    const onRoster = {};
+    cdrCohortNames_(getEmployeeRosterRows_()).forEach(function (n) { onRoster[n] = true; });
+    const agents = Object.keys(pd.marks || {});
+    const off = agents.filter(function (a) { return !onRoster[a]; });
+    // FQ9 (cycle 26): the count could not tell another department's agent
+    // from a colleague whose name is spelled differently in the tab — and the
+    // second one's partial days are silently not applied. The pairing Team
+    // Metrics uses for call data (two shared name tokens) picks those out:
+    // NAMES only, for the admin who can add the alias row — never a date, a
+    // credit or a reason. Roster names that already have a mark are not
+    // offered (their marks are applied).
+    const unmarked = Object.keys(onRoster).filter(function (n) { return !(pd.marks || {})[n]; });
+    const likely = cdrLikelyNameMismatches_(unmarked, off).slice(0, CDR_PARTIAL_LIKELY_MAX);
+    return { source: pd.source || 'unavailable', rows: pd.rows || 0, marks: pd.kept || 0, agents: agents.length,
+             offRoster: off.length, likely: likely, error: pd.error || '' };
+  } catch (e) { return { source: 'unavailable', rows: 0, marks: 0, agents: 0, offRoster: 0, likely: [], error: String((e && e.message) || e) }; }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -3537,7 +3744,9 @@ function sendRepEmail_(emp, opts) {
   if (emp && emp.email) {
     const self = String(emp.email);
     const bcc = String(merged.bcc || '');
-    if (bcc.toLowerCase().indexOf(self.toLowerCase()) < 0) {
+    // F43 (cycle 26): whole addresses. A substring test skipped the copy for
+    // ann@x.com whenever the list already held maryann@x.com.
+    if (!mailListHasAddress_(bcc, self)) {
       merged.bcc = bcc ? bcc + ',' + self : self;
     }
   }
@@ -3746,6 +3955,46 @@ function mailMergeBcc_(opts) {
 /** The ONE MailApp call for every automated (system-identity) send. */
 function appSendMail_(opts) {
   MailApp.sendEmail(mailMergeBcc_(opts));
+}
+/** PURE (Node-pinned; cycle 26 F12 + F33) — every address in the given header
+ *  values, lowercased, de-duplicated, in order. Read by PATTERN, never by
+ *  splitting on commas: a display name may hold one ("Ruiz, Ana" <ana@x.com>). */
+function mailHeaderAddrs_(headers) {
+  const seen = {}, out = [];
+  (Array.isArray(headers) ? headers : [headers]).forEach(function (h) {
+    (String(h == null ? '' : h).match(/[^\s<>"',;:()]+@[^\s<>"',;:()]+/g) || []).forEach(function (a) {
+      const v = a.toLowerCase();
+      if (!seen[v]) { seen[v] = 1; out.push(v); }
+    });
+  });
+  return out;
+}
+/** PURE (Node-pinned) — F43 (cycle 26): is this WHOLE address in a bcc / cc /
+ *  to list? By address, never by substring. */
+function mailListHasAddress_(list, addr) {
+  const want = String(addr == null ? '' : addr).trim().toLowerCase();
+  return !!want && mailHeaderAddrs_(list).indexOf(want) >= 0;
+}
+/** Everyone a reply-all to this Gmail message can reach: its From, Reply-To,
+ *  To and Cc. Deliberately the WIDEST reading (Gmail answers Reply-To when
+ *  there is one, else From) — a caller deciding whether a reply may leave the
+ *  company must see every address either reading could mail. */
+function mailReplyAudience_(message) {
+  return mailHeaderAddrs_([message.getFrom(), message.getReplyTo(), message.getTo(), message.getCc()]);
+}
+/** Cycle 26 F33 — THE one reply on an existing thread, for every automated
+ *  reply (the Dept Request and Spanish "resolved" replies). A reply is a send:
+ *  both call sites called `replyAll` themselves, so MAIL_BCC_ALL — which rides
+ *  every other mail the app sends — never saw them, and the MAIL-SWEEP pin
+ *  counted `sendEmail` only. The BCC list rides here (never an address already
+ *  on the message), as "UMS Team Tools", from the Send-mail-as alias when one
+ *  is set. Throws like any send; the caller records the outcome. */
+function appReplyAll_(message, text, htmlBody) {
+  const opts = mailMergeBcc_({ to: mailReplyAudience_(message).join(','), htmlBody: htmlBody, name: 'UMS Team Tools' });
+  delete opts.to;   // only there so the merge can skip an address the reply already reaches
+  const from = repSenderFrom_();
+  if (from) opts.from = from;
+  message.replyAll(text, opts);
 }
 function esc_(s) {
   return String(s == null ? '' : s)
@@ -5207,6 +5456,36 @@ function appendRowsSafe_(sheet, rows) {
   sheet.getRange(r, 1, rows.length, rows[0].length).setValues(sheetSafeRows_(rows));
   return r;
 }
+/** Cycle 26 F40 — REPLACE a tab's data rows (row 2 down) with `rows`, in ONE
+ *  write. The block written covers the new rows AND whatever the tab held
+ *  before — the old rows past the new ones, and any columns past `width`, are
+ *  written blank in the same call — so the tab goes from the old table to the
+ *  new one in a single step, or (when the write throws) stays the old one.
+ *  The writers this replaces cleared the tab first and wrote after: a write
+ *  that failed left the handbook's images, quizzes or forms EMPTY, with no
+ *  copy to put back. `textIdx` are the plain-text columns ('@' formatted on
+ *  the new rows before the write, their cells written raw — g144); every other
+ *  cell is sheet-safe. The grid is grown first (g145). The caller holds the
+ *  ScriptLock and writes the header row itself. Returns the rows written. */
+function sheetReplaceBody_(sheet, width, rows, textIdx) {
+  const n = rows ? rows.length : 0;
+  const before = Math.max(0, sheet.getLastRow() - 1);
+  const span = Math.max(n, before);
+  if (!span) return 0;
+  const wide = Math.max(sheet.getLastColumn(), width);
+  if (span + 1 > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), span + 1 - sheet.getMaxRows());
+  if (wide > sheet.getMaxColumns()) sheet.insertColumnsAfter(sheet.getMaxColumns(), wide - sheet.getMaxColumns());
+  const idx = textIdx || [];
+  if (n) idx.forEach(function (i) { sheet.getRange(2, i + 1, n, 1).setNumberFormat('@'); });
+  const block = [];
+  for (let r = 0; r < span; r++) {
+    const row = r < n ? rows[r].slice(0, wide) : [];
+    while (row.length < wide) row.push('');
+    block.push(row);
+  }
+  sheet.getRange(2, 1, span, wide).setValues(sheetTextRows_(block, idx));
+  return n;
+}
 /** Column LETTER for a 0-based index (A..Z — every '@' column in this app is
  *  inside the first 26). One source for the '@' columns: the index list. */
 function sheetColLetter_(i) { return String.fromCharCode(65 + i); }
@@ -5428,6 +5707,11 @@ function getWhatsNew() {
       for (let i = 0; i < ids.length; i++) {
         if (String(ids[i][0]) !== id) continue;
         const row = sheet.getRange(i + 2, 1, 1, KB_HEADERS.length).getValues()[0];
+        // F43 (cycle 26, g164): the row is fetched by INDEX after an unlocked
+        // id scan — an article deleted between the two reads puts ANOTHER
+        // article under that index, and its title and body would open for
+        // every rep as "What's new". The fetched row must still carry the id.
+        if (String(row[KB.ID]) !== id) break;
         // A DRAFT stays invisible to EVERYONE here (INV-140/147 — this is a
         // broadcast surface; an admin previews drafts in Reference, not here),
         // and only native articles render (an embed has no body for kbMd_).
