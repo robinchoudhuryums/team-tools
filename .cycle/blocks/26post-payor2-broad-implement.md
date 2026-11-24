@@ -1,0 +1,49 @@
+---BROAD SCAN IMPLEMENTATION SUMMARY---
+Findings implemented (26post — between-cycles operator work after cycle 26; the two follow-on checks the operator approved on 2026-11-24, and what they found):
+  FO-26-3 — a search driven over the converted REAL payor tables. Found: (a) the District of Columbia was not read as a state, or was read as Washington; (b) with a state in the search, another state's plan could rank first; (c) a plan on no sheet came back as eight cards for other plans, and the not-listed rule was almost never given; (d) the count under the cards counted every row sharing one word.
+  FO-26-4 — what the lookup shows for a BLANK item cell. Found: nothing — the code is missing from the card.
+New capabilities (G/ST): None
+Files modified: web-app/70_kb.js, web-app/kb/script_kb.html, test/client/run.js, test/client/dom/runDom.js, test/client/server-split-manifest.json, test/visual/mock.js, .cycle/config.md, CLAUDE.md, docs/gotchas.md, docs/design-decisions.md, docs/modules.md, docs/operator-log.md, docs/test-harness-log.md, .cycle/STATE.md
+Estimate: M (~6 h), written to STATE.md's Estimates line before the first edit (commit fdfbd8e)
+Actual: ~5 h
+
+CHANGES:
+FO-26-3a | web-app/70_kb.js | `insDcPad_` (new, pure): every form of the District of Columbia rewritten as the code DC at the same length. `insStatesIn_`, `insLeadingStates_` and `insPayorNameStates_` read through it.
+FO-26-3b | web-app/70_kb.js | `insStatesIn_` returns `sure` (a full name, or a code that is not also a word on these sheets); `insPayorNameStates_` passes it on; `insPayorMatch_` returns `other` for a plan that names, for certain, only states that were not searched; `searchInsurancePayors` sorts excluded, then `other`, then score. The 20-point loss for any named state is unchanged.
+FO-26-3c | web-app/70_kb.js, web-app/kb/script_kb.html | `insPayorHasAll_` (new, pure); `insPayorMatch_` returns `all`; the search returns `full` and marks a card `partial`. The lookup (`insMatchKind_`, new) draws a notice with the not-listed rule above the cards when no plan holds every word — a catch-all row is named as coming first, and with a table not searched it is "not yet" not listed; a partial card beside full ones is marked.
+FO-26-3d | web-app/kb/script_kb.html | The line under the cards counts plans with every word; with none it says "the N nearest of M plans that share a word"; an answer with no `full` keeps the old line.
+FO-26-4 | web-app/70_kb.js, web-app/kb/script_kb.html | `insPayorBlankCodes_` (new, pure): the code columns a row leaves blank. Each card carries `codeCount` and `blank`; the lookup names them on the button's count and under the answers, and says on the card itself when every code is blank.
+Tests | test/client/run.js, test/client/dom/runDom.js, test/visual/mock.js | Nine pure pins and three DOM drives; six older pins followed; the visual fixture carries the new fields.
+
+TEST RESULTS: passed. Pure 1826/1826, DOM 511/511; `lint-server`, `split-manifest --check`, `handbook-sync --check`, `counts.mjs` (regenerated in the code commit) clean; `cycle-closeout --check` in step.
+  Measured on the real data, before and after: the real search endpoint was run over the five converted real tabs (about 2,900 plans) behind sheet stand-ins. Before: "dc medicaid" listed three Texas MCO rows, two payer-ID rows and "Traditional Medicaid in ALL Other States" and none of the District's four Medicaid rows in its first eight; "washington medicaid" listed two District rows; "bcbs arkansas medicaid" opened with a Pennsylvania plan; "bright health" returned eight Aetna cards and "8 of 795". After: the District's four rows lead every DC spelling; Arkansas's row leads; "bright health" reports 0 plans with every word. Blank code cells: 18% of Medicare / MA's, 17% of Medicaid's, 15% of UHC's, 5% of BCBS's, 11% of Manual Mobility's; 44 plans with every code blank. No data row in any payor tab has merged cells.
+  Bite-checks: 46 mutations (28 pure, 18 DOM); 45 bit on their first run. One did not (a non-match returning `all`): the pin was strengthened (commit after the code commit) and the mutation then bit. Two DOM mutations were first written wrong and changed nothing; corrected, both bit.
+  CI: ecb9081 (code, pins, counts, docs) — client-tests and visual-layout both passed, read after the push.
+  NOT verified here: nothing ran in a deployed Apps Script project and the editor suite was not run. The search was driven with the alias families the app SUGGESTS as its synonym list; the operator's saved list was not available. A real CSV export has not been through `kbParseCsv_` (FO-26-5 — waiting for the operator's files).
+  Regression scenarios whose Subsystem overlaps the modified files (Server; Client (Reference views)): every scenario of those subsystems, and the new S212 — NOT WALKED: each needs a deployed instance (Test Command is `manual`).
+REGRESSION RISKS: (1) With a state in the search, a plan whose name names other states for certain and not the searched one now comes after every other card. A multi-state plan that lists its states but serves the searched one too is such a plan, and so is a name where an unambiguous code means something else ("Champus VA"). It is still listed if it is within the first eight. (2) The notice leads with "no plan has every word" when a rep types a word the plan's name does not have (a year, "plan"); the plan is then among the cards under a notice that speaks of "not listed". The notice says "if the plan is not one of them". (3) Each card's payload grows by its blank-code list (at most 55 labels). (4) `insStatesIn_` and `insPayorNameStates_` return one more key; the two callers outside the search path (`insPayorAliasSuggest_` does not call them; the eligibility grammar has its own reader) were checked.
+INVARIANTS AT RISK: None broken. INV-410 (one ranking across the payor tables) gains a sort key and keeps the order of the others; INV-411 (the State cell is scored with the name) holds — the cell is now also read for DC; INV-422 (a lookup says what it searched) is reused for the "not yet" form; INV-185 (a fixture mirrors the server): the visual fixture carries the new fields. The operator's rule that a stray "Y" stays neutral is untouched.
+NET SCORE: 2 production fixes − 2 new failure modes = 0. (a) The not-listed notice YES — it fires on the Medicare / MA table alone, live since August: a plan on no sheet returned cards and no rule. Blank codes YES — every Medicare / MA row leaves at least one code blank and the card showed nothing for it. The District of Columbia NO — it needs a by-state table uploaded, and nothing confirms one is. Another state's plan ranked first NO — measured only across the by-state tables. (b) The certain-state rule YES (risk 1). The notice YES (risk 2). The District reading NO. Blank codes NO.
+
+OPERATOR ACTIONS / DEPLOY:
+- Send one tab of each workbook exported as CSV (File → Download → Comma-separated values, with that tab open), for FO-26-5 | BLOCKS DEPLOY: N
+- Say whether a lower-case "in" / "or" / "me" in a search should read as Indiana / Oregon / Maine (FO-26-9) | BLOCKS DEPLOY: N
+- Still open from Payor 1: the Reimbursement Status words (FO-26-1), the 81 BCBS plans above the first state (FO-26-2), a bare "Y" (FO-26-7) | BLOCKS DEPLOY: N
+Deploy: Team Tools — `cd web-app && clasp push -f`, then Deploy → Manage deployments → Edit → Version: New version. This carries Payor 1 as well if that has not been deployed. The handbook app is not affected (`handbook-sync --check` reports its copies current).
+
+(Not complete in production until blocking operator actions are done AND the deploy step is confirmed.)
+
+FOLLOW-ON ITEMS:
+- FO-26-5 | web-app/70_kb.js: kbImportDataTable — the real tabs have still not been run through `kbParseCsv_` | → this cycle (when the operator sends the CSV exports)
+- FO-26-9 | web-app/70_kb.js: insStatesIn_ — a lower-case "in", "or" or "me" in a search is a word (the operator's rule of 2026-10-27), so "in medicaid" finds Wisconsin plans, the text matching inside "Wisconsin Medicaid" | → decision
+- FO-26-10 | web-app/kb/script_kb.html: insRenderResults_ — cards are drawn grouped by table in the tables' configured order, not in rank order: "wyoming medicaid" draws the Medicare / MA group's "Medicaid - Molina" above Wyoming's own rows | → decision
+- FO-26-11 | the BCBS tab's twelve rows named only "medicaid" (insurer and payer ID, no answers) lead a "<state> medicaid" search for their state; their cards now say every code is blank. Part of FO-26-2 | → decision
+- FO-26-12 | web-app/70_kb.js: insPayorScore_ — a one-word misspelling ("sunflwer") shares no word with any row and gets the plain not-listed answer with no near name | → next audit
+- FO-26-13 | web-app/70_kb.js: insStatesIn_'s certain-code list — an unambiguous code that is not a state on a given row ("Champus VA", "SD" for San Diego) sends that plan behind a state search | → next audit
+- FO-26-14 | web-app/70_kb.js: oopExceptStatesClause_ and the Area Eligibility grammar read one- and two-word state names only; "District of Columbia" in an eligibility cell was not checked against the real pricing tab (an unread cell is UNKNOWN, the safe direction) | → next audit
+- FO-26-15 | the sheets themselves — E1161 and K0005 blank on 96–100% of plans, K0816 on 77% (Medicare / MA), K0837 / K0838 on 72–77% (Medicaid), K0841 on 82% (UHC) | → won't do (the operator's sheet; listed in the operator log)
+- FO-26-3 and FO-26-4 are DONE by this batch.
+
+DOCUMENTATION UPDATES NEEDED:
+- None outstanding — done in this batch: CLAUDE.md (clauses on g53 and g156; the decisions index; the counts block, by `--write`), docs/gotchas.md (two amendments), docs/design-decisions.md (p26-payor-2), docs/modules.md, docs/operator-log.md, docs/test-harness-log.md, .cycle/config.md (INV-459, S212).
+---END BROAD SCAN IMPLEMENTATION SUMMARY---

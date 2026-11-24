@@ -4595,3 +4595,42 @@ F53, F54, F57.**
   harness in that run passed). The next commit regenerated it. New pins and
   `counts.mjs --write` belong in one commit.
 - **Bite-checks: 19 mutations (all pure), 19 bit, each on its first run.**
+
+## 26post Payor 2 — the payor lookup's searches against the real tables (FO-26-3, FO-26-4)
+
+- **Measured first, on the real data.** A driver in the session's scratch
+  directory loaded the REAL `searchInsurancePayors` and its helpers out of the
+  server source (`serverSource()` + `extractRawFunction`) and ran them over
+  the five converted real tabs behind sheet stand-ins — about 2,900 plans.
+  Some forty queries were read by eye before anything was changed: a state
+  with Medicaid, the District of Columbia five ways, insurer and state, plan
+  numbers, a plan on no sheet, a misspelling. The workbooks are not in the
+  repo (it is public); the pins use small made-up tables.
+- **Nine pure pins** (`test/client/run.js`, "26post Payor 2"): `insDcPad_`;
+  the three state readers reading the District; the District's rows ranked
+  for "dc medicaid" and marked for "washington medicaid"; `insPayorHasAll_`
+  and `all`; `sure` and `other`; the search's `full` and `partial` (driven);
+  another state's plan last (driven, with the score shown to disagree);
+  `insPayorBlankCodes_` and the cards' `blank` (driven); the client's
+  `insMatchKind_` and `insBlankList_`.
+- **Three DOM drives** (`runDom.js`, "Payor 2 DOM"): the nearest-names notice
+  with its catch-all and not-yet forms; the partial mark and the three count
+  lines, with an answer from before this batch; the blank-code notes.
+- **Older pins followed:** three sandboxes now load `insDcPad_` and
+  `insPayorHasAll_`; PT1's search sandbox loads `insPayorBlankCodes_` and its
+  stand-in matcher returns `all`; D1's `insStatesIn_` shape gained `sure`;
+  F6's name-states helper compares the two lists it is about.
+- **The visual fixture** for the payor search carries `full`, a partial card,
+  a card with two blank codes and one with every code blank. Shots of the
+  results panel were taken in light and dark and read.
+- **Bite-checks: 46 mutations (28 pure, 18 DOM). 45 bit on their first run.**
+  One did not: returning `all` on a non-match. The pin said "a non-match is
+  never all" and tested it with a case where `all` was false anyway. A case
+  where it would be true (a state-only search of another state's plan) was
+  added and the mutation bit. Two DOM mutations first "changed nothing" —
+  the mutation text was wrong (an escape where the file has the character);
+  corrected, both bit.
+- **Not verified:** nothing ran in a deployed Apps Script project; the editor
+  suite was not run. A real CSV export has still not been through
+  `kbParseCsv_` (FO-26-5).
+
